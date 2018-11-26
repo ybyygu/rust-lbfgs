@@ -186,7 +186,7 @@ pub const LBFGS_LINESEARCH_DEFAULT: unnamed_0 = 0;
  *  Call lbfgs_parameter_init() function to initialize parameters to the
  *  default values.
  */
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct lbfgs_parameter_t {
     pub m: libc::c_int,
