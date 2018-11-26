@@ -1,10 +1,69 @@
-// lbfgs.rs
-// :PROPERTIES:
-// :header-args: :tangle src/lbfgs.rs
-// :END:
+// header
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs.rs][lbfgs.rs:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*header][header:1]]
+//       Limited memory BFGS (L-BFGS).
+//
+//  Copyright (c) 1990, Jorge Nocedal
+//  Copyright (c) 2007-2010 Naoaki Okazaki
+//  All rights reserved.
+//
+//  Permission is hereby granted, free of charge, to any person obtaining a copy
+//  of this software and associated documentation files (the "Software"), to deal
+//  in the Software without restriction, including without limitation the rights
+//  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//  copies of the Software, and to permit persons to whom the Software is
+//  furnished to do so, subject to the following conditions:
+//
+//  The above copyright notice and this permission notice shall be included in
+//  all copies or substantial portions of the Software.
+//
+//  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+//  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+//  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+//  THE SOFTWARE.
+
+// This library is a C port of the FORTRAN implementation of Limited-memory
+// Broyden-Fletcher-Goldfarb-Shanno (L-BFGS) method written by Jorge Nocedal.
+// The original FORTRAN source code is available at:
+// http://www.ece.northwestern.edu/~nocedal/lbfgs.html
+
+// The L-BFGS algorithm is described in:
+//     - Jorge Nocedal.
+//       Updating Quasi-Newton Matrices with Limited Storage.
+//       <i>Mathematics of Computation</i>, Vol. 35, No. 151, pp. 773--782, 1980.
+//     - Dong C. Liu and Jorge Nocedal.
+//       On the limited memory BFGS method for large scale optimization.
+//       <i>Mathematical Programming</i> B, Vol. 45, No. 3, pp. 503-528, 1989.
+
+// The line search algorithms used in this implementation are described in:
+//     - John E. Dennis and Robert B. Schnabel.
+//       <i>Numerical Methods for Unconstrained Optimization and Nonlinear
+//       Equations</i>, Englewood Cliffs, 1983.
+//     - Jorge J. More and David J. Thuente.
+//       Line search algorithm with guaranteed sufficient decrease.
+//       <i>ACM Transactions on Mathematical Software (TOMS)</i>, Vol. 20, No. 3,
+//       pp. 286-307, 1994.
+
+// This library also implements Orthant-Wise Limited-memory Quasi-Newton (OWL-QN)
+// method presented in:
+//     - Galen Andrew and Jianfeng Gao.
+//       Scalable training of L1-regularized log-linear models.
+//       In <i>Proceedings of the 24th International Conference on Machine
+//       Learning (ICML 2007)</i>, pp. 33-40, 2007.
+
+// I would like to thank the original author, Jorge Nocedal, who has been
+// distributing the effieicnt and explanatory implementation in an open source
+// licence.
+// header:1 ends here
+
+// base
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
 use libc;
+
 extern "C" {
     #[no_mangle]
     fn malloc(_: libc::c_ulong) -> *mut libc::c_void;
@@ -276,10 +335,740 @@ pub struct tag_iteration_data {
     pub ys: lbfgsfloatval_t,
 }
 pub type callback_data_t = tag_callback_data;
-/*
- *      Limited memory BFGS (L-BFGS).
+// base:1 ends here
+
+// parameter
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*parameter][parameter:1]]
+static mut _defparam: lbfgs_parameter_t = lbfgs_parameter_t {
+    m: 6i32,
+    epsilon: 0.00001f64,
+    past: 0i32,
+    delta: 0.00001f64,
+    max_iterations: 0i32,
+    linesearch: LBFGS_LINESEARCH_DEFAULT as libc::c_int,
+    max_linesearch: 40i32,
+    min_step: 1e-20f64,
+    max_step: 100000000000000000000.0f64,
+    ftol: 0.0001f64,
+    wolfe: 0.9f64,
+    gtol: 0.9f64,
+    xtol: 1e-16f64,
+    orthantwise_c: 0.0f64,
+    orthantwise_start: 0i32,
+    orthantwise_end: -1i32,
+};
+
+/* *
+ * Initialize L-BFGS parameters to the default values.
  *
- * Copyright (c) 1990, Jorge Nocedal
+ *  Call this function to fill a parameter structure with the default values
+ *  and overwrite parameter values if necessary.
+ *
+ *  @param  param       The pointer to the parameter structure.
+ */
+#[no_mangle]
+pub unsafe extern "C" fn lbfgs_parameter_init(mut param: *mut lbfgs_parameter_t) {
+    memcpy(
+        param as *mut libc::c_void,
+        &_defparam as *const lbfgs_parameter_t as *const libc::c_void,
+        ::std::mem::size_of::<lbfgs_parameter_t>() as libc::c_ulong,
+    );
+}
+// parameter:1 ends here
+
+// BackTracking
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*BackTracking][BackTracking:1]]
+pub type line_search_proc = Option<
+    unsafe extern "C" fn(
+        _: libc::c_int,
+        _: *mut lbfgsfloatval_t,
+        _: *mut lbfgsfloatval_t,
+        _: *mut lbfgsfloatval_t,
+        _: *mut lbfgsfloatval_t,
+        _: *mut lbfgsfloatval_t,
+        _: *const lbfgsfloatval_t,
+        _: *const lbfgsfloatval_t,
+        _: *mut lbfgsfloatval_t,
+        _: *mut callback_data_t,
+        _: *const lbfgs_parameter_t,
+    ) -> libc::c_int,
+>;
+
+unsafe extern "C" fn line_search_backtracking(
+    mut n: libc::c_int,
+    mut x: *mut lbfgsfloatval_t,
+    mut f: *mut lbfgsfloatval_t,
+    mut g: *mut lbfgsfloatval_t,
+    mut s: *mut lbfgsfloatval_t,
+    mut stp: *mut lbfgsfloatval_t,
+    mut xp: *const lbfgsfloatval_t,
+    mut gp: *const lbfgsfloatval_t,
+    mut wp: *mut lbfgsfloatval_t,
+    mut cd: *mut callback_data_t,
+    mut param: *const lbfgs_parameter_t,
+) -> libc::c_int {
+    let mut count: libc::c_int = 0i32;
+    let mut width: lbfgsfloatval_t = 0.;
+    let mut dg: lbfgsfloatval_t = 0.;
+    let mut finit: lbfgsfloatval_t = 0.;
+    let mut dginit: lbfgsfloatval_t = 0.0f64;
+    let mut dgtest: lbfgsfloatval_t = 0.;
+    let dec: lbfgsfloatval_t = 0.5f64;
+    let inc: lbfgsfloatval_t = 2.1f64;
+    /* Check the input parameters for errors. */
+    if *stp <= 0.0f64 {
+        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
+    } else {
+        /* Compute the initial gradient in the search direction. */
+        vecdot(&mut dginit, g, s, n);
+        /* Make sure that s points to a descent direction. */
+        if (0i32 as libc::c_double) < dginit {
+            return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+        } else {
+            /* The initial value of the objective function. */
+            finit = *f;
+            dgtest = (*param).ftol * dginit;
+            loop {
+                veccpy(x, xp, n);
+                vecadd(x, s, *stp, n);
+                /* Evaluate the function and gradient values. */
+                *f = (*cd).proc_evaluate.expect("non-null function pointer")(
+                    (*cd).instance,
+                    x,
+                    g,
+                    (*cd).n,
+                    *stp,
+                );
+                count += 1;
+                if *f > finit + *stp * dgtest {
+                    width = dec
+                } else if (*param).linesearch == LBFGS_LINESEARCH_BACKTRACKING_ARMIJO as libc::c_int
+                {
+                    /* Exit with the Armijo condition. */
+                    return count;
+                } else {
+                    /* Check the Wolfe condition. */
+                    vecdot(&mut dg, g, s, n);
+                    if dg < (*param).wolfe * dginit {
+                        width = inc
+                    } else if (*param).linesearch
+                        == LBFGS_LINESEARCH_BACKTRACKING_WOLFE as libc::c_int
+                    {
+                        /* Exit with the regular Wolfe condition. */
+                        return count;
+                    } else if dg > -(*param).wolfe * dginit {
+                        width = dec
+                    } else {
+                        return count;
+                    }
+                }
+                if *stp < (*param).min_step {
+                    /* The step is the minimum value. */
+                    return LBFGSERR_MINIMUMSTEP as libc::c_int;
+                } else if *stp > (*param).max_step {
+                    /* The step is the maximum value. */
+                    return LBFGSERR_MAXIMUMSTEP as libc::c_int;
+                } else if (*param).max_linesearch <= count {
+                    /* Maximum number of iteration. */
+                    return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
+                } else {
+                    *stp *= width
+                }
+            }
+        }
+    };
+}
+
+unsafe extern "C" fn line_search_backtracking_owlqn(
+    mut n: libc::c_int,
+    mut x: *mut lbfgsfloatval_t,
+    mut f: *mut lbfgsfloatval_t,
+    mut g: *mut lbfgsfloatval_t,
+    mut s: *mut lbfgsfloatval_t,
+    mut stp: *mut lbfgsfloatval_t,
+    mut xp: *const lbfgsfloatval_t,
+    mut gp: *const lbfgsfloatval_t,
+    mut wp: *mut lbfgsfloatval_t,
+    mut cd: *mut callback_data_t,
+    mut param: *const lbfgs_parameter_t,
+) -> libc::c_int {
+    let mut i: libc::c_int = 0;
+    let mut count: libc::c_int = 0i32;
+    let mut width: lbfgsfloatval_t = 0.5f64;
+    let mut norm: lbfgsfloatval_t = 0.0f64;
+    let mut finit: lbfgsfloatval_t = *f;
+    let mut dgtest: lbfgsfloatval_t = 0.;
+    /* Check the input parameters for errors. */
+    if *stp <= 0.0f64 {
+        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
+    } else {
+        /* Choose the orthant for the new point. */
+        i = 0i32;
+        while i < n {
+            *wp.offset(i as isize) = if *xp.offset(i as isize) == 0.0f64 {
+                -*gp.offset(i as isize)
+            } else {
+                *xp.offset(i as isize)
+            };
+            i += 1
+        }
+        loop {
+            /* Update the current point. */
+            veccpy(x, xp, n);
+            vecadd(x, s, *stp, n);
+            /* The current point is projected onto the orthant. */
+            owlqn_project(x, wp, (*param).orthantwise_start, (*param).orthantwise_end);
+            /* Evaluate the function and gradient values. */
+            *f = (*cd).proc_evaluate.expect("non-null function pointer")(
+                (*cd).instance,
+                x,
+                g,
+                (*cd).n,
+                *stp,
+            );
+            /* Compute the L1 norm of the variables and add it to the object value. */
+            norm = owlqn_x1norm(x, (*param).orthantwise_start, (*param).orthantwise_end);
+            *f += norm * (*param).orthantwise_c;
+            count += 1;
+            dgtest = 0.0f64;
+            i = 0i32;
+            while i < n {
+                dgtest += (*x.offset(i as isize) - *xp.offset(i as isize)) * *gp.offset(i as isize);
+                i += 1
+            }
+            if *f <= finit + (*param).ftol * dgtest {
+                /* The sufficient decrease condition. */
+                return count;
+            } else if *stp < (*param).min_step {
+                /* The step is the minimum value. */
+                return LBFGSERR_MINIMUMSTEP as libc::c_int;
+            } else if *stp > (*param).max_step {
+                /* The step is the maximum value. */
+                return LBFGSERR_MAXIMUMSTEP as libc::c_int;
+            } else if (*param).max_linesearch <= count {
+                /* Maximum number of iteration. */
+                return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
+            } else {
+                *stp *= width
+            }
+        }
+    };
+}
+// BackTracking:1 ends here
+
+// MoreThuente
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*MoreThuente][MoreThuente:1]]
+unsafe extern "C" fn line_search_morethuente(
+    mut n: libc::c_int,
+    mut x: *mut lbfgsfloatval_t,
+    mut f: *mut lbfgsfloatval_t,
+    mut g: *mut lbfgsfloatval_t,
+    mut s: *mut lbfgsfloatval_t,
+    mut stp: *mut lbfgsfloatval_t,
+    mut xp: *const lbfgsfloatval_t,
+    mut gp: *const lbfgsfloatval_t,
+    mut wa: *mut lbfgsfloatval_t,
+    mut cd: *mut callback_data_t,
+    mut param: *const lbfgs_parameter_t,
+) -> libc::c_int {
+    let mut count: libc::c_int = 0i32;
+    let mut brackt: libc::c_int = 0;
+    let mut stage1: libc::c_int = 0;
+    let mut uinfo: libc::c_int = 0i32;
+    let mut dg: lbfgsfloatval_t = 0.;
+    let mut stx: lbfgsfloatval_t = 0.;
+    let mut fx: lbfgsfloatval_t = 0.;
+    let mut dgx: lbfgsfloatval_t = 0.;
+    let mut sty: lbfgsfloatval_t = 0.;
+    let mut fy: lbfgsfloatval_t = 0.;
+    let mut dgy: lbfgsfloatval_t = 0.;
+    let mut fxm: lbfgsfloatval_t = 0.;
+    let mut dgxm: lbfgsfloatval_t = 0.;
+    let mut fym: lbfgsfloatval_t = 0.;
+    let mut dgym: lbfgsfloatval_t = 0.;
+    let mut fm: lbfgsfloatval_t = 0.;
+    let mut dgm: lbfgsfloatval_t = 0.;
+    let mut finit: lbfgsfloatval_t = 0.;
+    let mut ftest1: lbfgsfloatval_t = 0.;
+    let mut dginit: lbfgsfloatval_t = 0.;
+    let mut dgtest: lbfgsfloatval_t = 0.;
+    let mut width: lbfgsfloatval_t = 0.;
+    let mut prev_width: lbfgsfloatval_t = 0.;
+    let mut stmin: lbfgsfloatval_t = 0.;
+    let mut stmax: lbfgsfloatval_t = 0.;
+
+    /* Check the input parameters for errors. */
+    if *stp <= 0.0f64 {
+        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
+    } else {
+        /* Compute the initial gradient in the search direction. */
+        vecdot(&mut dginit, g, s, n);
+        /* Make sure that s points to a descent direction. */
+        if (0i32 as libc::c_double) < dginit {
+            return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+        } else {
+            /* Initialize local variables. */
+            brackt = 0i32;
+            stage1 = 1i32;
+            finit = *f;
+            dgtest = (*param).ftol * dginit;
+            width = (*param).max_step - (*param).min_step;
+            prev_width = 2.0f64 * width;
+            /*
+                The variables stx, fx, dgx contain the values of the step,
+                function, and directional derivative at the best step.
+                The variables sty, fy, dgy contain the value of the step,
+                function, and derivative at the other endpoint of
+                the interval of uncertainty.
+                The variables stp, f, dg contain the values of the step,
+                function, and derivative at the current step.
+            */
+            sty = 0.0f64;
+            stx = sty;
+            fy = finit;
+            fx = fy;
+            dgy = dginit;
+            dgx = dgy;
+            loop {
+                /*
+                   Set the minimum and maximum steps to correspond to the
+                   present interval of uncertainty.
+                */
+                if 0 != brackt {
+                    stmin = if stx <= sty { stx } else { sty };
+                    stmax = if stx >= sty { stx } else { sty }
+                } else {
+                    stmin = stx;
+                    stmax = *stp + 4.0f64 * (*stp - stx)
+                }
+                /* Clip the step in the range of [stpmin, stpmax]. */
+                if *stp < (*param).min_step {
+                    *stp = (*param).min_step
+                }
+                if (*param).max_step < *stp {
+                    *stp = (*param).max_step
+                }
+                /*
+                   If an unusual termination is to occur then let
+                   stp be the lowest point obtained so far.
+                */
+                if 0 != brackt
+                    && (*stp <= stmin
+                        || stmax <= *stp
+                        || (*param).max_linesearch <= count + 1i32
+                        || uinfo != 0i32)
+                    || 0 != brackt && stmax - stmin <= (*param).xtol * stmax
+                {
+                    *stp = stx
+                }
+                /*
+                   Compute the current value of x:
+                       x <- x + (*stp) * s.
+                */
+                veccpy(x, xp, n);
+                vecadd(x, s, *stp, n);
+                /* Evaluate the function and gradient values. */
+                *f = (*cd).proc_evaluate.expect("non-null function pointer")(
+                    (*cd).instance,
+                    x,
+                    g,
+                    (*cd).n,
+                    *stp,
+                );
+                vecdot(&mut dg, g, s, n);
+                ftest1 = finit + *stp * dgtest;
+                count += 1;
+                /* Test for errors and convergence. */
+                if 0 != brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0i32) {
+                    /* Rounding errors prevent further progress. */
+                    return LBFGSERR_ROUNDING_ERROR as libc::c_int;
+                } else if *stp == (*param).max_step && *f <= ftest1 && dg <= dgtest {
+                    /* The step is the maximum value. */
+                    return LBFGSERR_MAXIMUMSTEP as libc::c_int;
+                } else if *stp == (*param).min_step && (ftest1 < *f || dgtest <= dg) {
+                    /* The step is the minimum value. */
+                    return LBFGSERR_MINIMUMSTEP as libc::c_int;
+                } else if 0 != brackt && stmax - stmin <= (*param).xtol * stmax {
+                    /* Relative width of the interval of uncertainty is at most xtol. */
+                    return LBFGSERR_WIDTHTOOSMALL as libc::c_int;
+                } else if (*param).max_linesearch <= count {
+                    /* Maximum number of iteration. */
+                    return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
+                } else if *f <= ftest1 && fabs(dg) <= (*param).gtol * -dginit {
+                    /* The sufficient decrease condition and the directional derivative condition hold. */
+                    return count;
+                } else {
+                    /*
+                       In the first stage we seek a step for which the modified
+                       function has a nonpositive value and nonnegative derivative.
+                    */
+                    if 0 != stage1
+                        && *f <= ftest1
+                        && if (*param).ftol <= (*param).gtol {
+                            (*param).ftol
+                        } else {
+                            (*param).gtol
+                        } * dginit
+                            <= dg
+                    {
+                        stage1 = 0i32
+                    }
+                    /*
+                       A modified function is used to predict the step only if
+                       we have not obtained a step for which the modified
+                       function has a nonpositive function value and nonnegative
+                       derivative, and if a lower function value has been
+                       obtained but the decrease is not sufficient.
+                    */
+                    if 0 != stage1 && ftest1 < *f && *f <= fx {
+                        /* Define the modified function and derivative values. */
+                        fm = *f - *stp * dgtest;
+                        fxm = fx - stx * dgtest;
+                        fym = fy - sty * dgtest;
+                        dgm = dg - dgtest;
+                        dgxm = dgx - dgtest;
+                        dgym = dgy - dgtest;
+                        /*
+                           Call update_trial_interval() to update the interval of
+                           uncertainty and to compute the new step.
+                        */
+                        uinfo = update_trial_interval(
+                            &mut stx,
+                            &mut fxm,
+                            &mut dgxm,
+                            &mut sty,
+                            &mut fym,
+                            &mut dgym,
+                            stp,
+                            &mut fm,
+                            &mut dgm,
+                            stmin,
+                            stmax,
+                            &mut brackt,
+                        );
+                        /* Reset the function and gradient values for f. */
+                        fx = fxm + stx * dgtest;
+                        fy = fym + sty * dgtest;
+                        dgx = dgxm + dgtest;
+                        dgy = dgym + dgtest
+                    } else {
+                        uinfo = update_trial_interval(
+                            &mut stx,
+                            &mut fx,
+                            &mut dgx,
+                            &mut sty,
+                            &mut fy,
+                            &mut dgy,
+                            stp,
+                            f,
+                            &mut dg,
+                            stmin,
+                            stmax,
+                            &mut brackt,
+                        )
+                    }
+                    /*
+                       Force a sufficient decrease in the interval of uncertainty.
+                    */
+                    if !(0 != brackt) {
+                        continue;
+                    }
+                    if 0.66f64 * prev_width <= fabs(sty - stx) {
+                        *stp = stx + 0.5f64 * (sty - stx)
+                    }
+                    prev_width = width;
+                    width = fabs(sty - stx)
+                }
+            }
+        }
+    };
+}
+unsafe extern "C" fn update_trial_interval(
+    mut x: *mut lbfgsfloatval_t,
+    mut fx: *mut lbfgsfloatval_t,
+    mut dx: *mut lbfgsfloatval_t,
+    mut y: *mut lbfgsfloatval_t,
+    mut fy: *mut lbfgsfloatval_t,
+    mut dy: *mut lbfgsfloatval_t,
+    mut t: *mut lbfgsfloatval_t,
+    mut ft: *mut lbfgsfloatval_t,
+    mut dt: *mut lbfgsfloatval_t,
+    tmin: lbfgsfloatval_t,
+    tmax: lbfgsfloatval_t,
+    mut brackt: *mut libc::c_int,
+) -> libc::c_int {
+    let mut bound: libc::c_int = 0;
+    let mut dsign: libc::c_int = (*dt * (*dx / fabs(*dx)) < 0.0f64) as libc::c_int;
+    /* minimizer of an interpolated cubic. */
+    let mut mc: lbfgsfloatval_t = 0.;
+    /* minimizer of an interpolated quadratic. */
+    let mut mq: lbfgsfloatval_t = 0.;
+    /* new trial value. */
+    let mut newt: lbfgsfloatval_t = 0.;
+    /* for CUBIC_MINIMIZER and QUARD_MINIMIZER. */
+    let mut a: lbfgsfloatval_t = 0.;
+    let mut d: lbfgsfloatval_t = 0.;
+    let mut gamma: lbfgsfloatval_t = 0.;
+    let mut theta: lbfgsfloatval_t = 0.;
+    let mut p: lbfgsfloatval_t = 0.;
+    let mut q: lbfgsfloatval_t = 0.;
+    let mut r: lbfgsfloatval_t = 0.;
+    let mut s: lbfgsfloatval_t = 0.;
+    /* Check the input parameters for errors. */
+    if 0 != *brackt {
+        if *t <= if *x <= *y { *x } else { *y } || if *x >= *y { *x } else { *y } <= *t {
+            /* The trival value t is out of the interval. */
+            return LBFGSERR_OUTOFINTERVAL as libc::c_int;
+        } else if 0.0f64 <= *dx * (*t - *x) {
+            /* The function must decrease from x. */
+            return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+        } else if tmax < tmin {
+            /* Incorrect tmin and tmax specified. */
+            return LBFGSERR_INCORRECT_TMINMAX as libc::c_int;
+        }
+    }
+    /*
+       Trial value selection.
+    */
+    if *fx < *ft {
+        /*
+           Case 1: a higher function value.
+           The minimum is brackt. If the cubic minimizer is closer
+           to x than the quadratic one, the cubic one is taken, else
+           the average of the minimizers is taken.
+        */
+        *brackt = 1i32;
+        bound = 1i32;
+        d = *t - *x;
+        theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
+        p = fabs(theta);
+        q = fabs(*dx);
+        r = fabs(*dt);
+        s = if if p >= q { p } else { q } >= r {
+            if p >= q {
+                p
+            } else {
+                q
+            }
+        } else {
+            r
+        };
+        a = theta / s;
+        gamma = s * sqrt(a * a - *dx / s * (*dt / s));
+        if *t < *x {
+            gamma = -gamma
+        }
+        p = gamma - *dx + theta;
+        q = gamma - *dx + gamma + *dt;
+        r = p / q;
+        mc = *x + r * d;
+        a = *t - *x;
+        mq = *x + *dx / ((*fx - *ft) / a + *dx) / 2i32 as libc::c_double * a;
+        if fabs(mc - *x) < fabs(mq - *x) {
+            newt = mc
+        } else {
+            newt = mc + 0.5f64 * (mq - mc)
+        }
+    } else if 0 != dsign {
+        /*
+           Case 2: a lower function value and derivatives of
+           opposite sign. The minimum is brackt. If the cubic
+           minimizer is closer to x than the quadratic (secant) one,
+           the cubic one is taken, else the quadratic one is taken.
+        */
+        *brackt = 1i32;
+        bound = 0i32;
+        d = *t - *x;
+        theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
+        p = fabs(theta);
+        q = fabs(*dx);
+        r = fabs(*dt);
+        s = if if p >= q { p } else { q } >= r {
+            if p >= q {
+                p
+            } else {
+                q
+            }
+        } else {
+            r
+        };
+        a = theta / s;
+        gamma = s * sqrt(a * a - *dx / s * (*dt / s));
+        if *t < *x {
+            gamma = -gamma
+        }
+        p = gamma - *dx + theta;
+        q = gamma - *dx + gamma + *dt;
+        r = p / q;
+        mc = *x + r * d;
+        a = *x - *t;
+        mq = *t + *dt / (*dt - *dx) * a;
+        if fabs(mc - *t) > fabs(mq - *t) {
+            newt = mc
+        } else {
+            newt = mq
+        }
+    } else if fabs(*dt) < fabs(*dx) {
+        /*
+           Case 3: a lower function value, derivatives of the
+           same sign, and the magnitude of the derivative decreases.
+           The cubic minimizer is only used if the cubic tends to
+           infinity in the direction of the minimizer or if the minimum
+           of the cubic is beyond t. Otherwise the cubic minimizer is
+           defined to be either tmin or tmax. The quadratic (secant)
+           minimizer is also computed and if the minimum is brackt
+           then the the minimizer closest to x is taken, else the one
+           farthest away is taken.
+        */
+        bound = 1i32;
+        d = *t - *x;
+        theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
+        p = fabs(theta);
+        q = fabs(*dx);
+        r = fabs(*dt);
+        s = if if p >= q { p } else { q } >= r {
+            if p >= q {
+                p
+            } else {
+                q
+            }
+        } else {
+            r
+        };
+        a = theta / s;
+        gamma = s * sqrt(if 0i32 as libc::c_double >= a * a - *dx / s * (*dt / s) {
+            0i32 as libc::c_double
+        } else {
+            a * a - *dx / s * (*dt / s)
+        });
+        if *x < *t {
+            gamma = -gamma
+        }
+        p = gamma - *dt + theta;
+        q = gamma - *dt + gamma + *dx;
+        r = p / q;
+        if r < 0.0f64 && gamma != 0.0f64 {
+            mc = *t - r * d
+        } else if a < 0i32 as libc::c_double {
+            mc = tmax
+        } else {
+            mc = tmin
+        }
+        a = *x - *t;
+        mq = *t + *dt / (*dt - *dx) * a;
+        if 0 != *brackt {
+            if fabs(*t - mc) < fabs(*t - mq) {
+                newt = mc
+            } else {
+                newt = mq
+            }
+        } else if fabs(*t - mc) > fabs(*t - mq) {
+            newt = mc
+        } else {
+            newt = mq
+        }
+    } else {
+        /*
+           Case 4: a lower function value, derivatives of the
+           same sign, and the magnitude of the derivative does
+           not decrease. If the minimum is not brackt, the step
+           is either tmin or tmax, else the cubic minimizer is taken.
+        */
+        bound = 0i32;
+        if 0 != *brackt {
+            d = *y - *t;
+            theta = (*ft - *fy) * 3i32 as libc::c_double / d + *dt + *dy;
+            p = fabs(theta);
+            q = fabs(*dt);
+            r = fabs(*dy);
+            s = if if p >= q { p } else { q } >= r {
+                if p >= q {
+                    p
+                } else {
+                    q
+                }
+            } else {
+                r
+            };
+            a = theta / s;
+            gamma = s * sqrt(a * a - *dt / s * (*dy / s));
+            if *y < *t {
+                gamma = -gamma
+            }
+            p = gamma - *dt + theta;
+            q = gamma - *dt + gamma + *dy;
+            r = p / q;
+            newt = *t + r * d
+        } else if *x < *t {
+            newt = tmax
+        } else {
+            newt = tmin
+        }
+    }
+    /*
+       Update the interval of uncertainty. This update does not
+       depend on the new step or the case analysis above.
+
+       - Case a: if f(x) < f(t),
+           x <- x, y <- t.
+       - Case b: if f(t) <= f(x) && f'(t)*f'(x) > 0,
+           x <- t, y <- y.
+       - Case c: if f(t) <= f(x) && f'(t)*f'(x) < 0,
+           x <- t, y <- x.
+    */
+    if *fx < *ft {
+        /* Case a */
+        *y = *t;
+        *fy = *ft;
+        *dy = *dt
+    } else {
+        /* Case c */
+        if 0 != dsign {
+            *y = *x;
+            *fy = *fx;
+            *dy = *dx
+        }
+        /* Cases b and c */
+        *x = *t;
+        *fx = *ft;
+        *dx = *dt
+    }
+    /* Clip the new trial value in [tmin, tmax]. */
+    if tmax < newt {
+        newt = tmax
+    }
+    if newt < tmin {
+        newt = tmin
+    }
+    /*
+       Redefine the new trial value if it is close to the upper bound
+       of the interval.
+    */
+    if 0 != *brackt && 0 != bound {
+        mq = *x + 0.66f64 * (*y - *x);
+        if *x < *y {
+            if mq < newt {
+                newt = mq
+            }
+        } else if newt < mq {
+            newt = mq
+        }
+    }
+    // Return the new trial value.
+    *t = newt;
+    return 0i32;
+}
+// MoreThuente:1 ends here
+
+// vector related
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*vector%20related][vector related:1]]
+/*
+ *      ANSI C implementation of vector operations.
+ *
  * Copyright (c) 2007-2010 Naoaki Okazaki
  * All rights reserved.
  *
@@ -302,43 +1091,133 @@ pub type callback_data_t = tag_callback_data;
  * THE SOFTWARE.
  */
 /* $Id$ */
-/*
-This library is a C port of the FORTRAN implementation of Limited-memory
-Broyden-Fletcher-Goldfarb-Shanno (L-BFGS) method written by Jorge Nocedal.
-The original FORTRAN source code is available at:
-http://www.ece.northwestern.edu/~nocedal/lbfgs.html
+/*LBFGS_IEEE_FLOAT*/
+unsafe extern "C" fn vecalloc(mut size: size_t) -> *mut libc::c_void {
+    let mut memblock: *mut libc::c_void = malloc(size);
+    if !memblock.is_null() {
+        memset(memblock, 0i32, size);
+    }
+    return memblock;
+}
 
-The L-BFGS algorithm is described in:
-    - Jorge Nocedal.
-      Updating Quasi-Newton Matrices with Limited Storage.
-      <i>Mathematics of Computation</i>, Vol. 35, No. 151, pp. 773--782, 1980.
-    - Dong C. Liu and Jorge Nocedal.
-      On the limited memory BFGS method for large scale optimization.
-      <i>Mathematical Programming</i> B, Vol. 45, No. 3, pp. 503-528, 1989.
+unsafe extern "C" fn vecfree(mut memblock: *mut libc::c_void) {
+    free(memblock);
+}
 
-The line search algorithms used in this implementation are described in:
-    - John E. Dennis and Robert B. Schnabel.
-      <i>Numerical Methods for Unconstrained Optimization and Nonlinear
-      Equations</i>, Englewood Cliffs, 1983.
-    - Jorge J. More and David J. Thuente.
-      Line search algorithm with guaranteed sufficient decrease.
-      <i>ACM Transactions on Mathematical Software (TOMS)</i>, Vol. 20, No. 3,
-      pp. 286-307, 1994.
+unsafe extern "C" fn vecadd(
+    mut y: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    c: lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    let mut i: libc::c_int = 0;
+    i = 0i32;
+    while i < n {
+        let ref mut fresh0 = *y.offset(i as isize);
+        *fresh0 += c * *x.offset(i as isize);
+        i += 1
+    }
+}
+unsafe extern "C" fn vecdot(
+    mut s: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    mut y: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    let mut i: libc::c_int = 0;
+    *s = 0.0f64;
+    i = 0i32;
+    while i < n {
+        *s += *x.offset(i as isize) * *y.offset(i as isize);
+        i += 1
+    }
+}
+unsafe extern "C" fn vecscale(mut y: *mut lbfgsfloatval_t, c: lbfgsfloatval_t, n: libc::c_int) {
+    let mut i: libc::c_int = 0;
+    i = 0i32;
+    while i < n {
+        let ref mut fresh1 = *y.offset(i as isize);
+        *fresh1 *= c;
+        i += 1
+    }
+}
+unsafe extern "C" fn vecncpy(
+    mut y: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    let mut i: libc::c_int = 0;
+    i = 0i32;
+    while i < n {
+        *y.offset(i as isize) = -*x.offset(i as isize);
+        i += 1
+    }
+}
+unsafe extern "C" fn vecdiff(
+    mut z: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    mut y: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    let mut i: libc::c_int = 0;
+    i = 0i32;
+    while i < n {
+        *z.offset(i as isize) = *x.offset(i as isize) - *y.offset(i as isize);
+        i += 1
+    }
+}
+unsafe extern "C" fn vec2norm(
+    mut s: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    vecdot(s, x, x, n);
+    *s = sqrt(*s);
+}
+unsafe extern "C" fn veccpy(
+    mut y: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    let mut i: libc::c_int = 0;
+    i = 0i32;
+    while i < n {
+        *y.offset(i as isize) = *x.offset(i as isize);
+        i += 1
+    }
+}
 
-This library also implements Orthant-Wise Limited-memory Quasi-Newton (OWL-QN)
-method presented in:
-    - Galen Andrew and Jianfeng Gao.
-      Scalable training of L1-regularized log-linear models.
-      In <i>Proceedings of the 24th International Conference on Machine
-      Learning (ICML 2007)</i>, pp. 33-40, 2007.
+unsafe extern "C" fn vec2norminv(
+    mut s: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    vec2norm(s, x, n);
+    *s = 1.0f64 / *s;
+}
+unsafe extern "C" fn owlqn_x1norm(
+    mut x: *const lbfgsfloatval_t,
+    start: libc::c_int,
+    n: libc::c_int,
+) -> lbfgsfloatval_t {
+    let mut i: libc::c_int = 0;
+    let mut norm: lbfgsfloatval_t = 0.0f64;
+    i = start;
+    while i < n {
+        norm += fabs(*x.offset(i as isize));
+        i += 1
+    }
+    return norm;
+}
+// vector related:1 ends here
 
-I would like to thank the original author, Jorge Nocedal, who has been
-distributing the effieicnt and explanatory implementation in an open source
-licence.
-*/
+// core
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*core][core:1]]
 /*HAVE_CONFIG_H*/
 /*_MSC_VER*/
 /* No CPU specific optimization. */
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tag_callback_data {
@@ -347,22 +1226,7 @@ pub struct tag_callback_data {
     pub proc_evaluate: lbfgs_evaluate_t,
     pub proc_progress: lbfgs_progress_t,
 }
-/* Forward function declarations. */
-pub type line_search_proc = Option<
-    unsafe extern "C" fn(
-        _: libc::c_int,
-        _: *mut lbfgsfloatval_t,
-        _: *mut lbfgsfloatval_t,
-        _: *mut lbfgsfloatval_t,
-        _: *mut lbfgsfloatval_t,
-        _: *mut lbfgsfloatval_t,
-        _: *const lbfgsfloatval_t,
-        _: *const lbfgsfloatval_t,
-        _: *mut lbfgsfloatval_t,
-        _: *mut callback_data_t,
-        _: *const lbfgs_parameter_t,
-    ) -> libc::c_int,
->;
+
 /*
 A user must implement a function compatible with ::lbfgs_evaluate_t (evaluation
 callback) and pass the pointer to the callback function to lbfgs() arguments.
@@ -928,109 +1792,6 @@ pub unsafe extern "C" fn lbfgs(
         }
     };
 }
-unsafe extern "C" fn vecfree(mut memblock: *mut libc::c_void) {
-    free(memblock);
-}
-static mut _defparam: lbfgs_parameter_t = lbfgs_parameter_t {
-    m: 6i32,
-    epsilon: 0.00001f64,
-    past: 0i32,
-    delta: 0.00001f64,
-    max_iterations: 0i32,
-    linesearch: LBFGS_LINESEARCH_DEFAULT as libc::c_int,
-    max_linesearch: 40i32,
-    min_step: 1e-20f64,
-    max_step: 100000000000000000000.0f64,
-    ftol: 0.0001f64,
-    wolfe: 0.9f64,
-    gtol: 0.9f64,
-    xtol: 1e-16f64,
-    orthantwise_c: 0.0f64,
-    orthantwise_start: 0i32,
-    orthantwise_end: -1i32,
-};
-unsafe extern "C" fn vecadd(
-    mut y: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    c: lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let mut i: libc::c_int = 0;
-    i = 0i32;
-    while i < n {
-        let ref mut fresh0 = *y.offset(i as isize);
-        *fresh0 += c * *x.offset(i as isize);
-        i += 1
-    }
-}
-unsafe extern "C" fn vecdot(
-    mut s: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    mut y: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let mut i: libc::c_int = 0;
-    *s = 0.0f64;
-    i = 0i32;
-    while i < n {
-        *s += *x.offset(i as isize) * *y.offset(i as isize);
-        i += 1
-    }
-}
-unsafe extern "C" fn vecscale(mut y: *mut lbfgsfloatval_t, c: lbfgsfloatval_t, n: libc::c_int) {
-    let mut i: libc::c_int = 0;
-    i = 0i32;
-    while i < n {
-        let ref mut fresh1 = *y.offset(i as isize);
-        *fresh1 *= c;
-        i += 1
-    }
-}
-unsafe extern "C" fn vecncpy(
-    mut y: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let mut i: libc::c_int = 0;
-    i = 0i32;
-    while i < n {
-        *y.offset(i as isize) = -*x.offset(i as isize);
-        i += 1
-    }
-}
-unsafe extern "C" fn vecdiff(
-    mut z: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    mut y: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let mut i: libc::c_int = 0;
-    i = 0i32;
-    while i < n {
-        *z.offset(i as isize) = *x.offset(i as isize) - *y.offset(i as isize);
-        i += 1
-    }
-}
-unsafe extern "C" fn vec2norm(
-    mut s: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    vecdot(s, x, x, n);
-    *s = sqrt(*s);
-}
-unsafe extern "C" fn veccpy(
-    mut y: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let mut i: libc::c_int = 0;
-    i = 0i32;
-    while i < n {
-        *y.offset(i as isize) = *x.offset(i as isize);
-        i += 1
-    }
-}
 unsafe extern "C" fn owlqn_pseudo_gradient(
     mut pg: *mut lbfgsfloatval_t,
     mut x: *const lbfgsfloatval_t,
@@ -1073,750 +1834,7 @@ unsafe extern "C" fn owlqn_pseudo_gradient(
         i += 1
     }
 }
-unsafe extern "C" fn line_search_morethuente(
-    mut n: libc::c_int,
-    mut x: *mut lbfgsfloatval_t,
-    mut f: *mut lbfgsfloatval_t,
-    mut g: *mut lbfgsfloatval_t,
-    mut s: *mut lbfgsfloatval_t,
-    mut stp: *mut lbfgsfloatval_t,
-    mut xp: *const lbfgsfloatval_t,
-    mut gp: *const lbfgsfloatval_t,
-    mut wa: *mut lbfgsfloatval_t,
-    mut cd: *mut callback_data_t,
-    mut param: *const lbfgs_parameter_t,
-) -> libc::c_int {
-    let mut count: libc::c_int = 0i32;
-    let mut brackt: libc::c_int = 0;
-    let mut stage1: libc::c_int = 0;
-    let mut uinfo: libc::c_int = 0i32;
-    let mut dg: lbfgsfloatval_t = 0.;
-    let mut stx: lbfgsfloatval_t = 0.;
-    let mut fx: lbfgsfloatval_t = 0.;
-    let mut dgx: lbfgsfloatval_t = 0.;
-    let mut sty: lbfgsfloatval_t = 0.;
-    let mut fy: lbfgsfloatval_t = 0.;
-    let mut dgy: lbfgsfloatval_t = 0.;
-    let mut fxm: lbfgsfloatval_t = 0.;
-    let mut dgxm: lbfgsfloatval_t = 0.;
-    let mut fym: lbfgsfloatval_t = 0.;
-    let mut dgym: lbfgsfloatval_t = 0.;
-    let mut fm: lbfgsfloatval_t = 0.;
-    let mut dgm: lbfgsfloatval_t = 0.;
-    let mut finit: lbfgsfloatval_t = 0.;
-    let mut ftest1: lbfgsfloatval_t = 0.;
-    let mut dginit: lbfgsfloatval_t = 0.;
-    let mut dgtest: lbfgsfloatval_t = 0.;
-    let mut width: lbfgsfloatval_t = 0.;
-    let mut prev_width: lbfgsfloatval_t = 0.;
-    let mut stmin: lbfgsfloatval_t = 0.;
-    let mut stmax: lbfgsfloatval_t = 0.;
-    /* Check the input parameters for errors. */
-    if *stp <= 0.0f64 {
-        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
-    } else {
-        /* Compute the initial gradient in the search direction. */
-        vecdot(&mut dginit, g, s, n);
-        /* Make sure that s points to a descent direction. */
-        if (0i32 as libc::c_double) < dginit {
-            return LBFGSERR_INCREASEGRADIENT as libc::c_int;
-        } else {
-            /* Initialize local variables. */
-            brackt = 0i32;
-            stage1 = 1i32;
-            finit = *f;
-            dgtest = (*param).ftol * dginit;
-            width = (*param).max_step - (*param).min_step;
-            prev_width = 2.0f64 * width;
-            /*
-                The variables stx, fx, dgx contain the values of the step,
-                function, and directional derivative at the best step.
-                The variables sty, fy, dgy contain the value of the step,
-                function, and derivative at the other endpoint of
-                the interval of uncertainty.
-                The variables stp, f, dg contain the values of the step,
-                function, and derivative at the current step.
-            */
-            sty = 0.0f64;
-            stx = sty;
-            fy = finit;
-            fx = fy;
-            dgy = dginit;
-            dgx = dgy;
-            loop {
-                /*
-                   Set the minimum and maximum steps to correspond to the
-                   present interval of uncertainty.
-                */
-                if 0 != brackt {
-                    stmin = if stx <= sty { stx } else { sty };
-                    stmax = if stx >= sty { stx } else { sty }
-                } else {
-                    stmin = stx;
-                    stmax = *stp + 4.0f64 * (*stp - stx)
-                }
-                /* Clip the step in the range of [stpmin, stpmax]. */
-                if *stp < (*param).min_step {
-                    *stp = (*param).min_step
-                }
-                if (*param).max_step < *stp {
-                    *stp = (*param).max_step
-                }
-                /*
-                   If an unusual termination is to occur then let
-                   stp be the lowest point obtained so far.
-                */
-                if 0 != brackt
-                    && (*stp <= stmin
-                        || stmax <= *stp
-                        || (*param).max_linesearch <= count + 1i32
-                        || uinfo != 0i32)
-                    || 0 != brackt && stmax - stmin <= (*param).xtol * stmax
-                {
-                    *stp = stx
-                }
-                /*
-                   Compute the current value of x:
-                       x <- x + (*stp) * s.
-                */
-                veccpy(x, xp, n);
-                vecadd(x, s, *stp, n);
-                /* Evaluate the function and gradient values. */
-                *f = (*cd).proc_evaluate.expect("non-null function pointer")(
-                    (*cd).instance,
-                    x,
-                    g,
-                    (*cd).n,
-                    *stp,
-                );
-                vecdot(&mut dg, g, s, n);
-                ftest1 = finit + *stp * dgtest;
-                count += 1;
-                /* Test for errors and convergence. */
-                if 0 != brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0i32) {
-                    /* Rounding errors prevent further progress. */
-                    return LBFGSERR_ROUNDING_ERROR as libc::c_int;
-                } else if *stp == (*param).max_step && *f <= ftest1 && dg <= dgtest {
-                    /* The step is the maximum value. */
-                    return LBFGSERR_MAXIMUMSTEP as libc::c_int;
-                } else if *stp == (*param).min_step && (ftest1 < *f || dgtest <= dg) {
-                    /* The step is the minimum value. */
-                    return LBFGSERR_MINIMUMSTEP as libc::c_int;
-                } else if 0 != brackt && stmax - stmin <= (*param).xtol * stmax {
-                    /* Relative width of the interval of uncertainty is at most xtol. */
-                    return LBFGSERR_WIDTHTOOSMALL as libc::c_int;
-                } else if (*param).max_linesearch <= count {
-                    /* Maximum number of iteration. */
-                    return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
-                } else if *f <= ftest1 && fabs(dg) <= (*param).gtol * -dginit {
-                    /* The sufficient decrease condition and the directional derivative condition hold. */
-                    return count;
-                } else {
-                    /*
-                       In the first stage we seek a step for which the modified
-                       function has a nonpositive value and nonnegative derivative.
-                    */
-                    if 0 != stage1
-                        && *f <= ftest1
-                        && if (*param).ftol <= (*param).gtol {
-                            (*param).ftol
-                        } else {
-                            (*param).gtol
-                        } * dginit
-                            <= dg
-                    {
-                        stage1 = 0i32
-                    }
-                    /*
-                       A modified function is used to predict the step only if
-                       we have not obtained a step for which the modified
-                       function has a nonpositive function value and nonnegative
-                       derivative, and if a lower function value has been
-                       obtained but the decrease is not sufficient.
-                    */
-                    if 0 != stage1 && ftest1 < *f && *f <= fx {
-                        /* Define the modified function and derivative values. */
-                        fm = *f - *stp * dgtest;
-                        fxm = fx - stx * dgtest;
-                        fym = fy - sty * dgtest;
-                        dgm = dg - dgtest;
-                        dgxm = dgx - dgtest;
-                        dgym = dgy - dgtest;
-                        /*
-                           Call update_trial_interval() to update the interval of
-                           uncertainty and to compute the new step.
-                        */
-                        uinfo = update_trial_interval(
-                            &mut stx,
-                            &mut fxm,
-                            &mut dgxm,
-                            &mut sty,
-                            &mut fym,
-                            &mut dgym,
-                            stp,
-                            &mut fm,
-                            &mut dgm,
-                            stmin,
-                            stmax,
-                            &mut brackt,
-                        );
-                        /* Reset the function and gradient values for f. */
-                        fx = fxm + stx * dgtest;
-                        fy = fym + sty * dgtest;
-                        dgx = dgxm + dgtest;
-                        dgy = dgym + dgtest
-                    } else {
-                        uinfo = update_trial_interval(
-                            &mut stx,
-                            &mut fx,
-                            &mut dgx,
-                            &mut sty,
-                            &mut fy,
-                            &mut dgy,
-                            stp,
-                            f,
-                            &mut dg,
-                            stmin,
-                            stmax,
-                            &mut brackt,
-                        )
-                    }
-                    /*
-                       Force a sufficient decrease in the interval of uncertainty.
-                    */
-                    if !(0 != brackt) {
-                        continue;
-                    }
-                    if 0.66f64 * prev_width <= fabs(sty - stx) {
-                        *stp = stx + 0.5f64 * (sty - stx)
-                    }
-                    prev_width = width;
-                    width = fabs(sty - stx)
-                }
-            }
-        }
-    };
-}
-unsafe extern "C" fn update_trial_interval(
-    mut x: *mut lbfgsfloatval_t,
-    mut fx: *mut lbfgsfloatval_t,
-    mut dx: *mut lbfgsfloatval_t,
-    mut y: *mut lbfgsfloatval_t,
-    mut fy: *mut lbfgsfloatval_t,
-    mut dy: *mut lbfgsfloatval_t,
-    mut t: *mut lbfgsfloatval_t,
-    mut ft: *mut lbfgsfloatval_t,
-    mut dt: *mut lbfgsfloatval_t,
-    tmin: lbfgsfloatval_t,
-    tmax: lbfgsfloatval_t,
-    mut brackt: *mut libc::c_int,
-) -> libc::c_int {
-    let mut bound: libc::c_int = 0;
-    let mut dsign: libc::c_int = (*dt * (*dx / fabs(*dx)) < 0.0f64) as libc::c_int;
-    /* minimizer of an interpolated cubic. */
-    let mut mc: lbfgsfloatval_t = 0.;
-    /* minimizer of an interpolated quadratic. */
-    let mut mq: lbfgsfloatval_t = 0.;
-    /* new trial value. */
-    let mut newt: lbfgsfloatval_t = 0.;
-    /* for CUBIC_MINIMIZER and QUARD_MINIMIZER. */
-    let mut a: lbfgsfloatval_t = 0.;
-    let mut d: lbfgsfloatval_t = 0.;
-    let mut gamma: lbfgsfloatval_t = 0.;
-    let mut theta: lbfgsfloatval_t = 0.;
-    let mut p: lbfgsfloatval_t = 0.;
-    let mut q: lbfgsfloatval_t = 0.;
-    let mut r: lbfgsfloatval_t = 0.;
-    let mut s: lbfgsfloatval_t = 0.;
-    /* Check the input parameters for errors. */
-    if 0 != *brackt {
-        if *t <= if *x <= *y { *x } else { *y } || if *x >= *y { *x } else { *y } <= *t {
-            /* The trival value t is out of the interval. */
-            return LBFGSERR_OUTOFINTERVAL as libc::c_int;
-        } else if 0.0f64 <= *dx * (*t - *x) {
-            /* The function must decrease from x. */
-            return LBFGSERR_INCREASEGRADIENT as libc::c_int;
-        } else if tmax < tmin {
-            /* Incorrect tmin and tmax specified. */
-            return LBFGSERR_INCORRECT_TMINMAX as libc::c_int;
-        }
-    }
-    /*
-       Trial value selection.
-    */
-    if *fx < *ft {
-        /*
-           Case 1: a higher function value.
-           The minimum is brackt. If the cubic minimizer is closer
-           to x than the quadratic one, the cubic one is taken, else
-           the average of the minimizers is taken.
-        */
-        *brackt = 1i32;
-        bound = 1i32;
-        d = *t - *x;
-        theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
-        p = fabs(theta);
-        q = fabs(*dx);
-        r = fabs(*dt);
-        s = if if p >= q { p } else { q } >= r {
-            if p >= q {
-                p
-            } else {
-                q
-            }
-        } else {
-            r
-        };
-        a = theta / s;
-        gamma = s * sqrt(a * a - *dx / s * (*dt / s));
-        if *t < *x {
-            gamma = -gamma
-        }
-        p = gamma - *dx + theta;
-        q = gamma - *dx + gamma + *dt;
-        r = p / q;
-        mc = *x + r * d;
-        a = *t - *x;
-        mq = *x + *dx / ((*fx - *ft) / a + *dx) / 2i32 as libc::c_double * a;
-        if fabs(mc - *x) < fabs(mq - *x) {
-            newt = mc
-        } else {
-            newt = mc + 0.5f64 * (mq - mc)
-        }
-    } else if 0 != dsign {
-        /*
-           Case 2: a lower function value and derivatives of
-           opposite sign. The minimum is brackt. If the cubic
-           minimizer is closer to x than the quadratic (secant) one,
-           the cubic one is taken, else the quadratic one is taken.
-        */
-        *brackt = 1i32;
-        bound = 0i32;
-        d = *t - *x;
-        theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
-        p = fabs(theta);
-        q = fabs(*dx);
-        r = fabs(*dt);
-        s = if if p >= q { p } else { q } >= r {
-            if p >= q {
-                p
-            } else {
-                q
-            }
-        } else {
-            r
-        };
-        a = theta / s;
-        gamma = s * sqrt(a * a - *dx / s * (*dt / s));
-        if *t < *x {
-            gamma = -gamma
-        }
-        p = gamma - *dx + theta;
-        q = gamma - *dx + gamma + *dt;
-        r = p / q;
-        mc = *x + r * d;
-        a = *x - *t;
-        mq = *t + *dt / (*dt - *dx) * a;
-        if fabs(mc - *t) > fabs(mq - *t) {
-            newt = mc
-        } else {
-            newt = mq
-        }
-    } else if fabs(*dt) < fabs(*dx) {
-        /*
-           Case 3: a lower function value, derivatives of the
-           same sign, and the magnitude of the derivative decreases.
-           The cubic minimizer is only used if the cubic tends to
-           infinity in the direction of the minimizer or if the minimum
-           of the cubic is beyond t. Otherwise the cubic minimizer is
-           defined to be either tmin or tmax. The quadratic (secant)
-           minimizer is also computed and if the minimum is brackt
-           then the the minimizer closest to x is taken, else the one
-           farthest away is taken.
-        */
-        bound = 1i32;
-        d = *t - *x;
-        theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
-        p = fabs(theta);
-        q = fabs(*dx);
-        r = fabs(*dt);
-        s = if if p >= q { p } else { q } >= r {
-            if p >= q {
-                p
-            } else {
-                q
-            }
-        } else {
-            r
-        };
-        a = theta / s;
-        gamma = s * sqrt(if 0i32 as libc::c_double >= a * a - *dx / s * (*dt / s) {
-            0i32 as libc::c_double
-        } else {
-            a * a - *dx / s * (*dt / s)
-        });
-        if *x < *t {
-            gamma = -gamma
-        }
-        p = gamma - *dt + theta;
-        q = gamma - *dt + gamma + *dx;
-        r = p / q;
-        if r < 0.0f64 && gamma != 0.0f64 {
-            mc = *t - r * d
-        } else if a < 0i32 as libc::c_double {
-            mc = tmax
-        } else {
-            mc = tmin
-        }
-        a = *x - *t;
-        mq = *t + *dt / (*dt - *dx) * a;
-        if 0 != *brackt {
-            if fabs(*t - mc) < fabs(*t - mq) {
-                newt = mc
-            } else {
-                newt = mq
-            }
-        } else if fabs(*t - mc) > fabs(*t - mq) {
-            newt = mc
-        } else {
-            newt = mq
-        }
-    } else {
-        /*
-           Case 4: a lower function value, derivatives of the
-           same sign, and the magnitude of the derivative does
-           not decrease. If the minimum is not brackt, the step
-           is either tmin or tmax, else the cubic minimizer is taken.
-        */
-        bound = 0i32;
-        if 0 != *brackt {
-            d = *y - *t;
-            theta = (*ft - *fy) * 3i32 as libc::c_double / d + *dt + *dy;
-            p = fabs(theta);
-            q = fabs(*dt);
-            r = fabs(*dy);
-            s = if if p >= q { p } else { q } >= r {
-                if p >= q {
-                    p
-                } else {
-                    q
-                }
-            } else {
-                r
-            };
-            a = theta / s;
-            gamma = s * sqrt(a * a - *dt / s * (*dy / s));
-            if *y < *t {
-                gamma = -gamma
-            }
-            p = gamma - *dt + theta;
-            q = gamma - *dt + gamma + *dy;
-            r = p / q;
-            newt = *t + r * d
-        } else if *x < *t {
-            newt = tmax
-        } else {
-            newt = tmin
-        }
-    }
-    /*
-       Update the interval of uncertainty. This update does not
-       depend on the new step or the case analysis above.
 
-       - Case a: if f(x) < f(t),
-           x <- x, y <- t.
-       - Case b: if f(t) <= f(x) && f'(t)*f'(x) > 0,
-           x <- t, y <- y.
-       - Case c: if f(t) <= f(x) && f'(t)*f'(x) < 0,
-           x <- t, y <- x.
-    */
-    if *fx < *ft {
-        /* Case a */
-        *y = *t;
-        *fy = *ft;
-        *dy = *dt
-    } else {
-        /* Case c */
-        if 0 != dsign {
-            *y = *x;
-            *fy = *fx;
-            *dy = *dx
-        }
-        /* Cases b and c */
-        *x = *t;
-        *fx = *ft;
-        *dx = *dt
-    }
-    /* Clip the new trial value in [tmin, tmax]. */
-    if tmax < newt {
-        newt = tmax
-    }
-    if newt < tmin {
-        newt = tmin
-    }
-    /*
-       Redefine the new trial value if it is close to the upper bound
-       of the interval.
-    */
-    if 0 != *brackt && 0 != bound {
-        mq = *x + 0.66f64 * (*y - *x);
-        if *x < *y {
-            if mq < newt {
-                newt = mq
-            }
-        } else if newt < mq {
-            newt = mq
-        }
-    }
-    /* Return the new trial value. */
-    *t = newt;
-    return 0i32;
-}
-unsafe extern "C" fn vec2norminv(
-    mut s: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    vec2norm(s, x, n);
-    *s = 1.0f64 / *s;
-}
-unsafe extern "C" fn owlqn_x1norm(
-    mut x: *const lbfgsfloatval_t,
-    start: libc::c_int,
-    n: libc::c_int,
-) -> lbfgsfloatval_t {
-    let mut i: libc::c_int = 0;
-    let mut norm: lbfgsfloatval_t = 0.0f64;
-    i = start;
-    while i < n {
-        norm += fabs(*x.offset(i as isize));
-        i += 1
-    }
-    return norm;
-}
-/*
- *      ANSI C implementation of vector operations.
- *
- * Copyright (c) 2007-2010 Naoaki Okazaki
- * All rights reserved.
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- */
-/* $Id$ */
-/*LBFGS_IEEE_FLOAT*/
-unsafe extern "C" fn vecalloc(mut size: size_t) -> *mut libc::c_void {
-    let mut memblock: *mut libc::c_void = malloc(size);
-    if !memblock.is_null() {
-        memset(memblock, 0i32, size);
-    }
-    return memblock;
-}
-unsafe extern "C" fn line_search_backtracking(
-    mut n: libc::c_int,
-    mut x: *mut lbfgsfloatval_t,
-    mut f: *mut lbfgsfloatval_t,
-    mut g: *mut lbfgsfloatval_t,
-    mut s: *mut lbfgsfloatval_t,
-    mut stp: *mut lbfgsfloatval_t,
-    mut xp: *const lbfgsfloatval_t,
-    mut gp: *const lbfgsfloatval_t,
-    mut wp: *mut lbfgsfloatval_t,
-    mut cd: *mut callback_data_t,
-    mut param: *const lbfgs_parameter_t,
-) -> libc::c_int {
-    let mut count: libc::c_int = 0i32;
-    let mut width: lbfgsfloatval_t = 0.;
-    let mut dg: lbfgsfloatval_t = 0.;
-    let mut finit: lbfgsfloatval_t = 0.;
-    let mut dginit: lbfgsfloatval_t = 0.0f64;
-    let mut dgtest: lbfgsfloatval_t = 0.;
-    let dec: lbfgsfloatval_t = 0.5f64;
-    let inc: lbfgsfloatval_t = 2.1f64;
-    /* Check the input parameters for errors. */
-    if *stp <= 0.0f64 {
-        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
-    } else {
-        /* Compute the initial gradient in the search direction. */
-        vecdot(&mut dginit, g, s, n);
-        /* Make sure that s points to a descent direction. */
-        if (0i32 as libc::c_double) < dginit {
-            return LBFGSERR_INCREASEGRADIENT as libc::c_int;
-        } else {
-            /* The initial value of the objective function. */
-            finit = *f;
-            dgtest = (*param).ftol * dginit;
-            loop {
-                veccpy(x, xp, n);
-                vecadd(x, s, *stp, n);
-                /* Evaluate the function and gradient values. */
-                *f = (*cd).proc_evaluate.expect("non-null function pointer")(
-                    (*cd).instance,
-                    x,
-                    g,
-                    (*cd).n,
-                    *stp,
-                );
-                count += 1;
-                if *f > finit + *stp * dgtest {
-                    width = dec
-                } else if (*param).linesearch == LBFGS_LINESEARCH_BACKTRACKING_ARMIJO as libc::c_int
-                {
-                    /* Exit with the Armijo condition. */
-                    return count;
-                } else {
-                    /* Check the Wolfe condition. */
-                    vecdot(&mut dg, g, s, n);
-                    if dg < (*param).wolfe * dginit {
-                        width = inc
-                    } else if (*param).linesearch
-                        == LBFGS_LINESEARCH_BACKTRACKING_WOLFE as libc::c_int
-                    {
-                        /* Exit with the regular Wolfe condition. */
-                        return count;
-                    } else if dg > -(*param).wolfe * dginit {
-                        width = dec
-                    } else {
-                        return count;
-                    }
-                }
-                if *stp < (*param).min_step {
-                    /* The step is the minimum value. */
-                    return LBFGSERR_MINIMUMSTEP as libc::c_int;
-                } else if *stp > (*param).max_step {
-                    /* The step is the maximum value. */
-                    return LBFGSERR_MAXIMUMSTEP as libc::c_int;
-                } else if (*param).max_linesearch <= count {
-                    /* Maximum number of iteration. */
-                    return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
-                } else {
-                    *stp *= width
-                }
-            }
-        }
-    };
-}
-unsafe extern "C" fn line_search_backtracking_owlqn(
-    mut n: libc::c_int,
-    mut x: *mut lbfgsfloatval_t,
-    mut f: *mut lbfgsfloatval_t,
-    mut g: *mut lbfgsfloatval_t,
-    mut s: *mut lbfgsfloatval_t,
-    mut stp: *mut lbfgsfloatval_t,
-    mut xp: *const lbfgsfloatval_t,
-    mut gp: *const lbfgsfloatval_t,
-    mut wp: *mut lbfgsfloatval_t,
-    mut cd: *mut callback_data_t,
-    mut param: *const lbfgs_parameter_t,
-) -> libc::c_int {
-    let mut i: libc::c_int = 0;
-    let mut count: libc::c_int = 0i32;
-    let mut width: lbfgsfloatval_t = 0.5f64;
-    let mut norm: lbfgsfloatval_t = 0.0f64;
-    let mut finit: lbfgsfloatval_t = *f;
-    let mut dgtest: lbfgsfloatval_t = 0.;
-    /* Check the input parameters for errors. */
-    if *stp <= 0.0f64 {
-        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
-    } else {
-        /* Choose the orthant for the new point. */
-        i = 0i32;
-        while i < n {
-            *wp.offset(i as isize) = if *xp.offset(i as isize) == 0.0f64 {
-                -*gp.offset(i as isize)
-            } else {
-                *xp.offset(i as isize)
-            };
-            i += 1
-        }
-        loop {
-            /* Update the current point. */
-            veccpy(x, xp, n);
-            vecadd(x, s, *stp, n);
-            /* The current point is projected onto the orthant. */
-            owlqn_project(x, wp, (*param).orthantwise_start, (*param).orthantwise_end);
-            /* Evaluate the function and gradient values. */
-            *f = (*cd).proc_evaluate.expect("non-null function pointer")(
-                (*cd).instance,
-                x,
-                g,
-                (*cd).n,
-                *stp,
-            );
-            /* Compute the L1 norm of the variables and add it to the object value. */
-            norm = owlqn_x1norm(x, (*param).orthantwise_start, (*param).orthantwise_end);
-            *f += norm * (*param).orthantwise_c;
-            count += 1;
-            dgtest = 0.0f64;
-            i = 0i32;
-            while i < n {
-                dgtest += (*x.offset(i as isize) - *xp.offset(i as isize)) * *gp.offset(i as isize);
-                i += 1
-            }
-            if *f <= finit + (*param).ftol * dgtest {
-                /* The sufficient decrease condition. */
-                return count;
-            } else if *stp < (*param).min_step {
-                /* The step is the minimum value. */
-                return LBFGSERR_MINIMUMSTEP as libc::c_int;
-            } else if *stp > (*param).max_step {
-                /* The step is the maximum value. */
-                return LBFGSERR_MAXIMUMSTEP as libc::c_int;
-            } else if (*param).max_linesearch <= count {
-                /* Maximum number of iteration. */
-                return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
-            } else {
-                *stp *= width
-            }
-        }
-    };
-}
-unsafe extern "C" fn owlqn_project(
-    mut d: *mut lbfgsfloatval_t,
-    mut sign: *const lbfgsfloatval_t,
-    start: libc::c_int,
-    end: libc::c_int,
-) {
-    let mut i: libc::c_int = 0;
-    i = start;
-    while i < end {
-        if *d.offset(i as isize) * *sign.offset(i as isize) <= 0i32 as libc::c_double {
-            *d.offset(i as isize) = 0i32 as lbfgsfloatval_t
-        }
-        i += 1
-    }
-}
-/* *
- * Initialize L-BFGS parameters to the default values.
- *
- *  Call this function to fill a parameter structure with the default values
- *  and overwrite parameter values if necessary.
- *
- *  @param  param       The pointer to the parameter structure.
- */
-#[no_mangle]
-pub unsafe extern "C" fn lbfgs_parameter_init(mut param: *mut lbfgs_parameter_t) {
-    memcpy(
-        param as *mut libc::c_void,
-        &_defparam as *const lbfgs_parameter_t as *const libc::c_void,
-        ::std::mem::size_of::<lbfgs_parameter_t>() as libc::c_ulong,
-    );
-}
 /* *
  * Allocate an array for variables.
  *
@@ -1836,6 +1854,7 @@ pub unsafe extern "C" fn lbfgs_malloc(mut n: libc::c_int) -> *mut lbfgsfloatval_
             .wrapping_mul(n as libc::c_ulong),
     ) as *mut lbfgsfloatval_t;
 }
+
 /* *
  * Free an array of variables.
  *
@@ -1846,4 +1865,22 @@ pub unsafe extern "C" fn lbfgs_malloc(mut n: libc::c_int) -> *mut lbfgsfloatval_
 pub unsafe extern "C" fn lbfgs_free(mut x: *mut lbfgsfloatval_t) {
     vecfree(x as *mut libc::c_void);
 }
-// lbfgs.rs:1 ends here
+
+unsafe extern "C" fn owlqn_project(
+
+
+    mut d: *mut lbfgsfloatval_t,
+    mut sign: *const lbfgsfloatval_t,
+    start: libc::c_int,
+    end: libc::c_int,
+) {
+    let mut i: libc::c_int = 0;
+    i = start;
+    while i < end {
+        if *d.offset(i as isize) * *sign.offset(i as isize) <= 0i32 as libc::c_double {
+            *d.offset(i as isize) = 0i32 as lbfgsfloatval_t
+        }
+        i += 1
+    }
+}
+// core:1 ends here
