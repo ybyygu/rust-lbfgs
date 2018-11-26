@@ -9,8 +9,5 @@ authors = ["Wenping Guo <ybyygu@gmail.com>"]
 
 [dependencies]
 quicli = "*"
-
-[build-dependencies]
-cc = "*"
-bindgen = "0.42"
+libc = "*"
 # cargo:1 ends here
