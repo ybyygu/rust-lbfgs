@@ -12,37 +12,6 @@ use quicli::prelude::*;
 
 /// See http://www.chokkan.org/software/liblbfgs/structlbfgs__parameter__t.html for documentation.
 pub type LBFGSParameter = lbfgs_parameter_t;
-
-impl Default for LBFGSParameter {
-    /// default LBFGS parameter
-    fn default() -> Self {
-        // LBFGSParameter {
-        //     m: 6,
-        //     epsilon: 1e-5,
-        //     past: 0,
-        //     delta: 1e-5,
-        //     max_iterations: 0,
-        //     linesearch: 0,
-        //     max_linesearch: 40,
-        //     min_step: 1e-20,
-        //     max_step: 1e20,
-        //     ftol: 1e-4,
-        //     wolfe: 0.9,
-        //     gtol: 0.9,
-        //     xtol: 1.0e-16,
-        //     orthantwise_c: 0.0,
-        //     orthantwise_start: 0,
-        //     orthantwise_end: -1,
-        // }
-
-        let mut param: lbfgs_parameter_t;
-        unsafe {
-            param = ::std::mem::uninitialized();
-            lbfgs_parameter_init(&mut param);
-        }
-        param
-    }
-}
 // base:1 ends here
 
 // lbfgs
@@ -119,7 +88,7 @@ where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
                   Some(evaluate_wrapper::<F, G>),
                   Some(progress_wrapper::<F, G>),
                   instance,
-                  &mut self.param
+                  &self.param
             )
         };
 

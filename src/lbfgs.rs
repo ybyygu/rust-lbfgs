@@ -79,6 +79,15 @@ extern "C" {
 
 pub type size_t = libc::c_ulong;
 
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tag_callback_data {
+    pub n: libc::c_int,
+    pub instance: *mut libc::c_void,
+    pub proc_evaluate: lbfgs_evaluate_t,
+    pub proc_progress: lbfgs_progress_t,
+}
+
 pub type lbfgsfloatval_t = libc::c_double;
 
 /* *
@@ -284,7 +293,7 @@ pub type callback_data_t = tag_callback_data;
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*parameter][parameter:1]]
 /// L-BFGS optimization parameters.
 ///
-/// Call lbfgs_parameter_init() function to initialize parameters to the
+/// Call lbfgs_parameter_t::default() function to initialize parameters to the
 /// default values.
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
@@ -446,36 +455,31 @@ pub struct lbfgs_parameter_t {
     pub orthantwise_end: libc::c_int,
 }
 
-static mut _defparam: lbfgs_parameter_t = lbfgs_parameter_t {
-    m: 6i32,
-    epsilon: 0.00001f64,
-    past: 0i32,
-    delta: 0.00001f64,
-    max_iterations: 0i32,
-    linesearch: LBFGS_LINESEARCH_DEFAULT as libc::c_int,
-    max_linesearch: 40i32,
-    min_step: 1e-20f64,
-    max_step: 100000000000000000000.0f64,
-    ftol: 0.0001f64,
-    wolfe: 0.9f64,
-    gtol: 0.9f64,
-    xtol: 1e-16f64,
-    orthantwise_c: 0.0f64,
-    orthantwise_start: 0i32,
-    orthantwise_end: -1i32,
-};
-
-// Initialize L-BFGS parameters to the default values.
-// Call this function to fill a parameter structure with the default values
-// and overwrite parameter values if necessary.
-// @param  param       The pointer to the parameter structure.
-#[no_mangle]
-pub unsafe extern "C" fn lbfgs_parameter_init(mut param: *mut lbfgs_parameter_t) {
-    memcpy(
-        param as *mut libc::c_void,
-        &_defparam as *const lbfgs_parameter_t as *const libc::c_void,
-        ::std::mem::size_of::<lbfgs_parameter_t>() as libc::c_ulong,
-    );
+impl Default for lbfgs_parameter_t {
+    /// Initialize L-BFGS parameters to the default values.
+    ///
+    /// Call this function to fill a parameter structure with the default values
+    /// and overwrite parameter values if necessary.
+    fn default() -> Self {
+        lbfgs_parameter_t {
+            m: 6,
+            epsilon: 1e-5,
+            past: 0,
+            delta: 1e-5,
+            max_iterations: 0,
+            linesearch: LBFGS_LINESEARCH_DEFAULT as libc::c_int,
+            max_linesearch: 40,
+            min_step: 1e-20,
+            max_step: 1e20,
+            ftol: 1e-4,
+            wolfe: 0.9,
+            gtol: 0.9,
+            xtol: 1.0e-16,
+            orthantwise_c: 0.0,
+            orthantwise_start: 0,
+            orthantwise_end: -1,
+        }
+    }
 }
 // parameter:1 ends here
 
@@ -505,7 +509,7 @@ pub type line_search_proc = Option<
         // callback struct
         cd: *mut callback_data_t,
         // LBFGS parameter
-        param: *const lbfgs_parameter_t,
+        param: &lbfgs_parameter_t,
     ) -> libc::c_int,
 >;
 
@@ -520,7 +524,7 @@ unsafe extern "C" fn line_search_backtracking(
     mut gp: *const lbfgsfloatval_t,
     mut wp: *mut lbfgsfloatval_t,
     mut cd: *mut callback_data_t,
-    mut param: *const lbfgs_parameter_t,
+    param: &lbfgs_parameter_t,
 ) -> libc::c_int {
     let mut width: lbfgsfloatval_t = 0.;
     let mut dg: lbfgsfloatval_t = 0.;
@@ -545,7 +549,7 @@ unsafe extern "C" fn line_search_backtracking(
 
     // The initial value of the objective function.
     finit = *f;
-    dgtest = (*param).ftol * dginit;
+    dgtest = param.ftol * dginit;
 
     let mut count: libc::c_int = 0i32;
     loop {
@@ -562,30 +566,30 @@ unsafe extern "C" fn line_search_backtracking(
         count += 1;
         if *f > finit + *stp * dgtest {
             width = dec
-        } else if (*param).linesearch == LBFGS_LINESEARCH_BACKTRACKING_ARMIJO as libc::c_int {
+        } else if param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_ARMIJO as libc::c_int {
             // Exit with the Armijo condition.
             return count;
         } else {
             /* Check the Wolfe condition. */
             vecdot(&mut dg, g, s, n);
-            if dg < (*param).wolfe * dginit {
+            if dg < param.wolfe * dginit {
                 width = inc
-            } else if (*param).linesearch == LBFGS_LINESEARCH_BACKTRACKING_WOLFE as libc::c_int {
+            } else if param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_WOLFE as libc::c_int {
                 // Exit with the regular Wolfe condition.
                 return count;
-            } else if dg > -(*param).wolfe * dginit {
+            } else if dg > - param.wolfe * dginit {
                 width = dec
             } else {
                 return count;
             }
         }
-        if *stp < (*param).min_step {
+        if *stp < param.min_step {
             /* The step is the minimum value. */
             return LBFGSERR_MINIMUMSTEP as libc::c_int;
-        } else if *stp > (*param).max_step {
+        } else if *stp > param.max_step {
             /* The step is the maximum value. */
             return LBFGSERR_MAXIMUMSTEP as libc::c_int;
-        } else if (*param).max_linesearch <= count {
+        } else if param.max_linesearch <= count {
             /* Maximum number of iteration. */
             return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
         } else {
@@ -605,7 +609,7 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
     mut gp: *const lbfgsfloatval_t,
     mut wp: *mut lbfgsfloatval_t,
     mut cd: *mut callback_data_t,
-    mut param: *const lbfgs_parameter_t,
+    param: &lbfgs_parameter_t,
 ) -> libc::c_int {
     let mut i: libc::c_int = 0;
     let mut count: libc::c_int = 0i32;
@@ -635,7 +639,7 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
         veccpy(x, xp, n);
         vecadd(x, s, *stp, n);
         /* The current point is projected onto the orthant. */
-        owlqn_project(x, wp, (*param).orthantwise_start, (*param).orthantwise_end);
+        owlqn_project(x, wp, param.orthantwise_start, param.orthantwise_end);
         /* Evaluate the function and gradient values. */
         *f = (*cd).proc_evaluate.expect("non-null function pointer")(
             (*cd).instance,
@@ -645,8 +649,8 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
             *stp,
         );
         /* Compute the L1 norm of the variables and add it to the object value. */
-        norm = owlqn_x1norm(x, (*param).orthantwise_start, (*param).orthantwise_end);
-        *f += norm * (*param).orthantwise_c;
+        norm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
+        *f += norm * param.orthantwise_c;
         count += 1;
         dgtest = 0.0f64;
         i = 0i32;
@@ -654,16 +658,16 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
             dgtest += (*x.offset(i as isize) - *xp.offset(i as isize)) * *gp.offset(i as isize);
             i += 1
         }
-        if *f <= finit + (*param).ftol * dgtest {
+        if *f <= finit + param.ftol * dgtest {
             /* The sufficient decrease condition. */
             return count;
-        } else if *stp < (*param).min_step {
+        } else if *stp < param.min_step {
             /* The step is the minimum value. */
             return LBFGSERR_MINIMUMSTEP as libc::c_int;
-        } else if *stp > (*param).max_step {
+        } else if *stp > param.max_step {
             /* The step is the maximum value. */
             return LBFGSERR_MAXIMUMSTEP as libc::c_int;
-        } else if (*param).max_linesearch <= count {
+        } else if param.max_linesearch <= count {
             /* Maximum number of iteration. */
             return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
         } else {
@@ -687,7 +691,7 @@ unsafe extern "C" fn line_search_morethuente(
     mut gp: *const lbfgsfloatval_t,
     mut wa: *mut lbfgsfloatval_t,
     mut cd: *mut callback_data_t,
-    mut param: *const lbfgs_parameter_t,
+    param: &lbfgs_parameter_t,
 ) -> libc::c_int {
     let mut count: libc::c_int = 0i32;
     let mut brackt: libc::c_int = 0;
@@ -730,8 +734,8 @@ unsafe extern "C" fn line_search_morethuente(
     brackt = 0i32;
     stage1 = 1i32;
     finit = *f;
-    dgtest = (*param).ftol * dginit;
-    width = (*param).max_step - (*param).min_step;
+    dgtest = param.ftol * dginit;
+    width = param.max_step - param.min_step;
     prev_width = 2.0f64 * width;
 
     // The variables stx, fx, dgx contain the values of the step,
@@ -762,11 +766,11 @@ unsafe extern "C" fn line_search_morethuente(
         }
 
         // Clip the step in the range of [stpmin, stpmax].
-        if *stp < (*param).min_step {
-            *stp = (*param).min_step
+        if *stp < param.min_step {
+            *stp = param.min_step
         }
-        if (*param).max_step < *stp {
-            *stp = (*param).max_step
+        if param.max_step < *stp {
+            *stp = param.max_step
         }
 
         // If an unusual termination is to occur then let
@@ -774,9 +778,9 @@ unsafe extern "C" fn line_search_morethuente(
         if 0 != brackt
             && (*stp <= stmin
                 || stmax <= *stp
-                || (*param).max_linesearch <= count + 1i32
+                || param.max_linesearch <= count + 1i32
                 || uinfo != 0i32)
-            || 0 != brackt && stmax - stmin <= (*param).xtol * stmax
+            || 0 != brackt && stmax - stmin <= param.xtol * stmax
         {
             *stp = stx
         }
@@ -802,28 +806,28 @@ unsafe extern "C" fn line_search_morethuente(
         if 0 != brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0i32) {
             /* Rounding errors prevent further progress. */
             return LBFGSERR_ROUNDING_ERROR as libc::c_int;
-        } else if *stp == (*param).max_step && *f <= ftest1 && dg <= dgtest {
+        } else if *stp == param.max_step && *f <= ftest1 && dg <= dgtest {
             /* The step is the maximum value. */
             return LBFGSERR_MAXIMUMSTEP as libc::c_int;
-        } else if *stp == (*param).min_step && (ftest1 < *f || dgtest <= dg) {
+        } else if *stp == param.min_step && (ftest1 < *f || dgtest <= dg) {
             /* The step is the minimum value. */
             return LBFGSERR_MINIMUMSTEP as libc::c_int;
-        } else if 0 != brackt && stmax - stmin <= (*param).xtol * stmax {
+        } else if 0 != brackt && stmax - stmin <= param.xtol * stmax {
             /* Relative width of the interval of uncertainty is at most xtol. */
             return LBFGSERR_WIDTHTOOSMALL as libc::c_int;
-        } else if (*param).max_linesearch <= count {
+        } else if param.max_linesearch <= count {
             /* Maximum number of iteration. */
             return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
-        } else if *f <= ftest1 && dg.abs() <= (*param).gtol * -dginit {
+        } else if *f <= ftest1 && dg.abs() <= param.gtol * -dginit {
             /* The sufficient decrease condition and the directional derivative condition hold. */
             return count;
         } else {
             // In the first stage we seek a step for which the modified
             // function has a nonpositive value and nonnegative derivative.
-            if 0 != stage1 && *f <= ftest1 && if (*param).ftol <= (*param).gtol {
-                (*param).ftol
+            if 0 != stage1 && *f <= ftest1 && if param.ftol <= param.gtol {
+                param.ftol
             } else {
-                (*param).gtol
+                param.gtol
             } * dginit <= dg
             {
                 stage1 = 0i32
@@ -1332,75 +1336,9 @@ unsafe extern "C" fn owlqn_x1norm(
 }
 // vector operations:1 ends here
 
-// core
+// src
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*core][core:1]]
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tag_callback_data {
-    pub n: libc::c_int,
-    pub instance: *mut libc::c_void,
-    pub proc_evaluate: lbfgs_evaluate_t,
-    pub proc_progress: lbfgs_progress_t,
-}
-
-/*
-A user must implement a function compatible with ::lbfgs_evaluate_t (evaluation
-callback) and pass the pointer to the callback function to lbfgs() arguments.
-Similarly, a user can implement a function compatible with ::lbfgs_progress_t
-(progress callback) to obtain the current progress (e.g., variables, function
-value, ||G||, etc) and to cancel the iteration process if necessary.
-Implementation of a progress callback is optional: a user can pass \c NULL if
-progress notification is not necessary.
-
-In addition, a user must preserve two requirements:
-    - The number of variables must be multiples of 16 (this is not 4).
-    - The memory block of variable array ::x must be aligned to 16.
-
-This algorithm terminates an optimization
-when:
-
-    ||G|| < \epsilon \cdot \max(1, ||x||) .
-
-In this formula, ||.|| denotes the Euclidean norm.
-*/
-/* *
- * Start a L-BFGS optimization.
- *
- *  @param  n           The number of variables.
- *  @param  x           The array of variables. A client program can set
- *                      default values for the optimization and receive the
- *                      optimization result through this array. This array
- *                      must be allocated by ::lbfgs_malloc function
- *                      for libLBFGS built with SSE/SSE2 optimization routine
- *                      enabled. The library built without SSE/SSE2
- *                      optimization does not have such a requirement.
- *  @param  ptr_fx      The pointer to the variable that receives the final
- *                      value of the objective function for the variables.
- *                      This argument can be set to \c NULL if the final
- *                      value of the objective function is unnecessary.
- *  @param  proc_evaluate   The callback function to provide function and
- *                          gradient evaluations given a current values of
- *                          variables. A client program must implement a
- *                          callback function compatible with \ref
- *                          lbfgs_evaluate_t and pass the pointer to the
- *                          callback function.
- *  @param  proc_progress   The callback function to receive the progress
- *                          (the number of iterations, the current value of
- *                          the objective function) of the minimization
- *                          process. This argument can be set to \c NULL if
- *                          a progress report is unnecessary.
- *  @param  instance    A user data for the client program. The callback
- *                      functions will receive the value of this argument.
- *  @param  param       The pointer to a structure representing parameters for
- *                      L-BFGS optimization. A client program can set this
- *                      parameter to \c NULL to use the default parameters.
- *                      Call lbfgs_parameter_init() function to fill a
- *                      structure with the default values.
- *  @retval int         The status code. This function returns zero if the
- *                      minimization process terminates without an error. A
- *                      non-zero value indicates an error.
- */
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
 #[no_mangle]
 pub unsafe extern "C" fn lbfgs(
     mut n: libc::c_int,
@@ -1409,8 +1347,9 @@ pub unsafe extern "C" fn lbfgs(
     mut proc_evaluate: lbfgs_evaluate_t,
     mut proc_progress: lbfgs_progress_t,
     mut instance: *mut libc::c_void,
-    mut _param: *mut lbfgs_parameter_t,
+    param: &lbfgs_parameter_t,
 ) -> libc::c_int {
+    let mut param = param.clone();
     let mut current_block: u64;
     let mut ret: libc::c_int = 0;
     let mut i: libc::c_int = 0;
@@ -1420,12 +1359,7 @@ pub unsafe extern "C" fn lbfgs(
     let mut end: libc::c_int = 0;
     let mut bound: libc::c_int = 0;
     let mut step: lbfgsfloatval_t = 0.;
-    /* Constant parameters and their default values. */
-    let mut param: lbfgs_parameter_t = if !_param.is_null() {
-        *_param
-    } else {
-        _defparam
-    };
+
     let m: libc::c_int = param.m;
     let mut xp: *mut lbfgsfloatval_t = 0 as *mut lbfgsfloatval_t;
     let mut g: *mut lbfgsfloatval_t = 0 as *mut lbfgsfloatval_t;
@@ -1681,13 +1615,13 @@ pub unsafe extern "C" fn lbfgs(
                                                     ls = linesearch
                                                         .expect("non-null function pointer")(
                                                         n, x, &mut fx, g, d, &mut step, xp, gp, w,
-                                                        &mut cd, &mut param,
+                                                        &mut cd, &param,
                                                     )
                                                 } else {
                                                     ls = linesearch
                                                         .expect("non-null function pointer")(
                                                         n, x, &mut fx, g, d, &mut step, xp, pg, w,
-                                                        &mut cd, &mut param,
+                                                        &mut cd, &param,
                                                     );
                                                     owlqn_pseudo_gradient(
                                                         pg,
@@ -1997,4 +1931,4 @@ unsafe extern "C" fn owlqn_project(
         i += 1
     }
 }
-// core:1 ends here
+// src:1 ends here
