@@ -62,6 +62,8 @@
 // base
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
+use quicli::prelude::*;
+
 use libc;
 
 extern "C" {
@@ -204,31 +206,7 @@ pub const LBFGS_LINESEARCH_BACKTRACKING_ARMIJO: unnamed_0 = 1;
 pub const LBFGS_LINESEARCH_MORETHUENTE: unnamed_0 = 0;
 /* * The default algorithm (MoreThuente method). */
 pub const LBFGS_LINESEARCH_DEFAULT: unnamed_0 = 0;
-/* *
- * L-BFGS optimization parameters.
- *  Call lbfgs_parameter_init() function to initialize parameters to the
- *  default values.
- */
-#[derive(Copy, Clone, Debug)]
-#[repr(C)]
-pub struct lbfgs_parameter_t {
-    pub m: libc::c_int,
-    pub epsilon: lbfgsfloatval_t,
-    pub past: libc::c_int,
-    pub delta: lbfgsfloatval_t,
-    pub max_iterations: libc::c_int,
-    pub linesearch: libc::c_int,
-    pub max_linesearch: libc::c_int,
-    pub min_step: lbfgsfloatval_t,
-    pub max_step: lbfgsfloatval_t,
-    pub ftol: lbfgsfloatval_t,
-    pub wolfe: lbfgsfloatval_t,
-    pub gtol: lbfgsfloatval_t,
-    pub xtol: lbfgsfloatval_t,
-    pub orthantwise_c: lbfgsfloatval_t,
-    pub orthantwise_start: libc::c_int,
-    pub orthantwise_end: libc::c_int,
-}
+
 /* *
  * Callback interface to provide objective function and gradient evaluations.
  *
@@ -304,6 +282,170 @@ pub type callback_data_t = tag_callback_data;
 // parameter
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*parameter][parameter:1]]
+/// L-BFGS optimization parameters.
+///
+/// Call lbfgs_parameter_init() function to initialize parameters to the
+/// default values.
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+pub struct lbfgs_parameter_t {
+    /// The number of corrections to approximate the inverse hessian matrix.
+    ///
+    /// The L-BFGS routine stores the computation results of previous \ref m
+    /// iterations to approximate the inverse hessian matrix of the current
+    /// iteration. This parameter controls the size of the limited memories
+    /// (corrections). The default value is \c 6. Values less than \c 3 are not
+    /// recommended. Large values will result in excessive computing time.
+    pub m: libc::c_int,
+
+    /// Epsilon for convergence test.
+    ///
+    /// This parameter determines the accuracy with which the solution is to be
+    /// found. A minimization terminates when
+    ///
+    ///     ||g|| < epsilon * max(1, ||x||),
+    ///
+    /// where ||.|| denotes the Euclidean (L2) norm. The default value is \c
+    /// 1e-5.
+    pub epsilon: lbfgsfloatval_t,
+
+    /// Distance for delta-based convergence test.
+    ///
+    /// This parameter determines the distance, in iterations, to compute the
+    /// rate of decrease of the objective function. If the value of this
+    /// parameter is zero, the library does not perform the delta-based
+    /// convergence test.
+    ///
+    /// The default value is 0.
+    pub past: libc::c_int,
+
+    /// Delta for convergence test.
+    ///
+    /// This parameter determines the minimum rate of decrease of the objective
+    /// function. The library stops iterations when the following condition is
+    /// met: (f' - f) / f < delta, where f' is the objective value of \ref past
+    /// iterations ago, and f is the objective value of the current iteration.
+    /// The default value is 0.
+    ///
+    pub delta: lbfgsfloatval_t,
+
+    /// The maximum number of iterations.
+    ///
+    ///  The lbfgs() function terminates an optimization process with
+    ///  ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
+    ///  exceedes this parameter. Setting this parameter to zero continues an
+    ///  optimization process until a convergence or error.
+    ///
+    /// The default value is 0.
+    pub max_iterations: libc::c_int,
+
+    /// The line search algorithm.
+    ///
+    ///  This parameter specifies a line search algorithm to be used by the
+    ///  L-BFGS routine.
+    ///
+    pub linesearch: libc::c_int,
+
+    ///
+    /// The maximum number of iterations.
+    ///
+    /// The lbfgs() function terminates an optimization process with
+    /// ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
+    /// exceedes this parameter. Setting this parameter to zero continues an
+    /// optimization process until a convergence or error.
+    ///
+    /// The default value is 0.
+    pub max_linesearch: libc::c_int,
+
+    /// The minimum step of the line search routine.
+    ///
+    /// The default value is \c 1e-20. This value need not be modified unless
+    /// the exponents are too large for the machine being used, or unless the
+    /// problem is extremely badly scaled (in which case the exponents should be
+    /// increased).
+    pub min_step: lbfgsfloatval_t,
+
+    /// The maximum step of the line search.
+    ///
+    ///  The default value is \c 1e+20. This value need not be modified unless
+    ///  the exponents are too large for the machine being used, or unless the
+    ///  problem is extremely badly scaled (in which case the exponents should
+    ///  be increased).
+    pub max_step: lbfgsfloatval_t,
+
+    /// A parameter to control the accuracy of the line search routine.
+    ///
+    ///  The default value is \c 1e-4. This parameter should be greater
+    ///  than zero and smaller than \c 0.5.
+    pub ftol: lbfgsfloatval_t,
+
+    /// A coefficient for the Wolfe condition.
+    ///
+    ///  This parameter is valid only when the backtracking line-search
+    ///  algorithm is used with the Wolfe condition,
+    ///  ::LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE or
+    ///  ::LBFGS_LINESEARCH_BACKTRACKING_WOLFE .
+    ///  The default value is \c 0.9. This parameter should be greater
+    ///  the \ref ftol parameter and smaller than \c 1.0.
+    pub wolfe: lbfgsfloatval_t,
+
+    /// A parameter to control the accuracy of the line search routine.
+    ///
+    ///  The default value is \c 0.9. If the function and gradient
+    ///  evaluations are inexpensive with respect to the cost of the
+    ///  iteration (which is sometimes the case when solving very large
+    ///  problems) it may be advantageous to set this parameter to a small
+    ///  value. A typical small value is \c 0.1. This parameter shuold be
+    ///  greater than the \ref ftol parameter (\c 1e-4) and smaller than
+    ///  \c 1.0.
+    pub gtol: lbfgsfloatval_t,
+
+    /// The machine precision for floating-point values.
+    ///
+    ///  This parameter must be a positive value set by a client program to
+    ///  estimate the machine precision. The line search routine will terminate
+    ///  with the status code (::LBFGSERR_ROUNDING_ERROR) if the relative width
+    ///  of the interval of uncertainty is less than this parameter.
+    pub xtol: lbfgsfloatval_t,
+
+    /// Coeefficient for the L1 norm of variables.
+    ///
+    ///  This parameter should be set to zero for standard minimization
+    ///  problems. Setting this parameter to a positive value activates
+    ///  Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) method, which
+    ///  minimizes the objective function F(x) combined with the L1 norm |x|
+    ///  of the variables, {F(x) + C |x|}. This parameter is the coeefficient
+    ///  for the |x|, i.e., C. As the L1 norm |x| is not differentiable at
+    ///  zero, the library modifies function and gradient evaluations from
+    ///  a client program suitably; a client program thus have only to return
+    ///  the function value F(x) and gradients G(x) as usual. The default value
+    ///  is zero.
+    pub orthantwise_c: lbfgsfloatval_t,
+
+    /// Start index for computing L1 norm of the variables.
+    ///
+    /// This parameter is valid only for OWL-QN method
+    /// (i.e., \ref orthantwise_c != 0). This parameter b (0 <= b < N)
+    /// specifies the index number from which the library computes the
+    /// L1 norm of the variables x,
+    ///
+    ///     |x| := |x_{b}| + |x_{b+1}| + ... + |x_{N}| .
+    ///
+    /// In other words, variables x_1, ..., x_{b-1} are not used for
+    /// computing the L1 norm. Setting b (0 < b < N), one can protect
+    /// variables, x_1, ..., x_{b-1} (e.g., a bias term of logistic
+    /// regression) from being regularized. The default value is zero.
+    pub orthantwise_start: libc::c_int,
+
+    /// End index for computing L1 norm of the variables.
+    ///
+    /// This parameter is valid only for OWL-QN method
+    /// (i.e., \ref orthantwise_c != 0). This parameter e (0 < e <= N)
+    /// specifies the index number at which the library stops computing the
+    /// L1 norm of the variables x,
+    pub orthantwise_end: libc::c_int,
+}
+
 static mut _defparam: lbfgs_parameter_t = lbfgs_parameter_t {
     m: 6i32,
     epsilon: 0.00001f64,
@@ -323,14 +465,10 @@ static mut _defparam: lbfgs_parameter_t = lbfgs_parameter_t {
     orthantwise_end: -1i32,
 };
 
-/* *
- * Initialize L-BFGS parameters to the default values.
- *
- *  Call this function to fill a parameter structure with the default values
- *  and overwrite parameter values if necessary.
- *
- *  @param  param       The pointer to the parameter structure.
- */
+// Initialize L-BFGS parameters to the default values.
+// Call this function to fill a parameter structure with the default values
+// and overwrite parameter values if necessary.
+// @param  param       The pointer to the parameter structure.
 #[no_mangle]
 pub unsafe extern "C" fn lbfgs_parameter_init(mut param: *mut lbfgs_parameter_t) {
     memcpy(
@@ -535,11 +673,11 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
 }
 // BackTracking:1 ends here
 
-// line search morethuente
+// src
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*line%20search%20morethuente][line search morethuente:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
 unsafe extern "C" fn line_search_morethuente(
-    mut n: libc::c_int,
+    n: libc::c_int,
     mut x: *mut lbfgsfloatval_t,
     mut f: *mut lbfgsfloatval_t,
     mut g: *mut lbfgsfloatval_t,
@@ -758,11 +896,11 @@ unsafe extern "C" fn line_search_morethuente(
         }
     }
 }
-// line search morethuente:1 ends here
+// src:1 ends here
 
-// update trial interval
+// src
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*update%20trial%20interval][update trial interval:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
 unsafe extern "C" fn update_trial_interval(
     mut x: *mut lbfgsfloatval_t,
     mut fx: *mut lbfgsfloatval_t,
@@ -1036,7 +1174,7 @@ unsafe extern "C" fn update_trial_interval(
     *t = newt;
     return 0i32;
 }
-// update trial interval:1 ends here
+// src:1 ends here
 
 // vector operations
 
@@ -1562,6 +1700,7 @@ pub unsafe extern "C" fn lbfgs(
                                                     );
                                                 }
                                                 if ls < 0i32 {
+                                                    error!("line search failed, revert to the previous point!");
                                                     /* Revert to the previous point. */
                                                     veccpy(x, xp, n);
                                                     veccpy(g, gp, n);

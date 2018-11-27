@@ -2,6 +2,7 @@
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
 #![allow(nonstandard_style)]
+
 pub mod lbfgs;
 use crate::lbfgs::*;
 
