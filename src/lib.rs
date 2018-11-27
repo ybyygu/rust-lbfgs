@@ -79,11 +79,9 @@ where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
         let instance = self as *const _ as *mut c_void;
 
         // call external lbfgs function
-        let n = arr_x.len();
         let mut fx = 0.0;
         let ret = unsafe {
-            lbfgs(n as c_int,
-                  arr_x.as_mut_ptr(),
+            lbfgs(arr_x,
                   &mut fx,
                   Some(evaluate_wrapper::<F, G>),
                   Some(progress_wrapper::<F, G>),

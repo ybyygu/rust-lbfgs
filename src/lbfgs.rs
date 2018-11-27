@@ -1341,15 +1341,19 @@ unsafe extern "C" fn owlqn_x1norm(
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
 #[no_mangle]
 pub unsafe extern "C" fn lbfgs(
-    mut n: libc::c_int,
-    mut x: *mut lbfgsfloatval_t,
-    mut ptr_fx: *mut lbfgsfloatval_t,
+    arr_x: &mut [f64],
+    ptr_fx: &mut lbfgsfloatval_t,
     mut proc_evaluate: lbfgs_evaluate_t,
     mut proc_progress: lbfgs_progress_t,
     mut instance: *mut libc::c_void,
     param: &lbfgs_parameter_t,
 ) -> libc::c_int {
+    let n = arr_x.len() as i32;
+    let mut x = arr_x.as_mut_ptr();
+
+    // FIXME: make param immutable
     let mut param = param.clone();
+
     let mut current_block: u64;
     let mut ret: libc::c_int = 0;
     let mut i: libc::c_int = 0;
@@ -1814,10 +1818,9 @@ pub unsafe extern "C" fn lbfgs(
                         }
                     }
                 }
-                /* Return the final value of the objective function. */
-                if !ptr_fx.is_null() {
-                    *ptr_fx = fx
-                }
+
+                // Return the final value of the objective function.
+                *ptr_fx = fx;
 
                 vecfree(pf as *mut libc::c_void);
                 /* Free memory blocks used by this function. */
