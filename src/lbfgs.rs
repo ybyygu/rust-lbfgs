@@ -902,9 +902,363 @@ unsafe extern "C" fn line_search_morethuente(
 }
 // src:1 ends here
 
-// src
+// new
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+/// The subroutine mcstep is taken from the work of Jorge Nocedal. this is a
+/// variant of More' and Thuente's routine.
+///
+/// A struct represents input variables of original mcstep function.
+///
+/// Documentation is adopted from the original matlab code.
+///
+struct Mcstep {
+    /// stx, fx, and dx are variables which specify the step, the function, and
+    /// the derivative at the best step obtained so far. The derivative must be
+    /// negative in the direction of the step, that is, dx and stp-stx must have
+    /// opposite signs. On output these parameters are updated appropriately.
+
+    /// the step at the best step obtained so far
+    stx: f64,
+    /// the function at the best step obtained so far
+    fx: f64,
+    /// the derivative at the best step obtained so far
+    dx: f64,
+
+    /// sty, fy, and dy are variables which specify the step, the function, and
+    /// the derivative at the other endpoint of the interval of uncertainty. On
+    /// output these parameters are updated appropriately.
+
+    /// the step at the other endpoint of the interval of uncertainty.
+    sty: f64,
+    /// the function at the other endpoint of the interval of uncertainty.
+    fy: f64,
+    /// the derivative at the other endpoint of the interval of uncertainty.
+    dy: f64,
+
+    /// stp, fp, and dp are variables which specify the step, the function, and
+    /// the derivative at the current step. If bracket is set true then on input
+    /// stp must be between stx and sty. On output stp is set to the new step.
+    ///
+    /// specifies the step at the current step
+    stp: f64,
+    /// Specifies the function at the current step
+    fp: f64,
+    /// Specifies the derivative at the current step
+    dp: f64,
+
+    /// Specifies lower bound for the step
+    stmin: f64,
+
+    /// Specifies upper bound for the step
+    stmax: f64,
+
+    /// Specifies if a minimizer has been bracketed. If the minimizer has not
+    /// been bracketed then on input bracket must be set false. If the minimizer
+    /// is bracketed then on output bracket is set true.
+    bracket: bool,
+}
+
+impl Mcstep {
+    /// Update a safeguarded trial value and interval for line search.
+    ///
+    /// This function assumes that the derivative at the point of x in the
+    /// direction of the step. If the bracket is set to true, the minimizer has
+    /// been bracketed in an interval of uncertainty with endpoints between x
+    /// and y.
+    ///
+    /// # Return
+    /// - Status value. Zero indicates a normal termination.
+    ///
+    fn update_trial_interval(&mut self) -> i32 {
+        /// translate to local variables used in liblbfgs
+        let x = &mut self.stx;
+        let fx = &mut self.fx;
+        let dx = &mut self.dx;
+
+        let y = &mut self.sty;
+        let fy = &mut self.fy;
+        let dy = &mut self.dy;
+
+        let t = &mut self.stp;
+        let ft = &mut self.fp;
+        let dt = &mut self.dp;
+
+        let tmax = &mut self.stmax;
+        let tmin = &mut self.stmin;
+        let brackt = &mut self.bracket;
+
+        let mut bound = 0;
+        let mut dsign = (*dt * (*dx / (*dx).abs()) < 0.0) as libc::c_int;
+
+        // minimizer of an interpolated cubic.
+        let mut mc = 0.;
+        // minimizer of an interpolated quadratic.
+        let mut mq = 0.;
+        // new trial value.
+        let mut newt = 0.;
+
+        // for CUBIC_MINIMIZER and QUARD_MINIMIZER.
+        let mut a = 0.;
+        let mut d = 0.;
+        let mut gamma = 0.;
+        let mut theta = 0.;
+
+        // Check the input parameters for errors.
+        if *brackt {
+            if *t <= if *x <= *y { *x } else { *y } || if *x >= *y { *x } else { *y } <= *t {
+                /* The trival value t is out of the interval. */
+                return LBFGSERR_OUTOFINTERVAL as libc::c_int;
+            } else if 0.0 <= *dx * (*t - *x) {
+                /* The function must decrease from x. */
+                return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+            } else if tmax < tmin {
+                /* Incorrect tmin and tmax specified. */
+                return LBFGSERR_INCORRECT_TMINMAX as libc::c_int;
+            }
+        }
+
+        // Trial value selection.
+        let mut p = 0.;
+        let mut q = 0.;
+        let mut r = 0.;
+        let mut s = 0.;
+
+        let fx = &mut self.fx;
+        let ft = &mut self.fp;
+        if *fx < *ft {
+            // Case 1: a higher function value.
+            // The minimum is brackt. If the cubic minimizer is closer
+            // to x than the quadratic one, the cubic one is taken, else
+            // the average of the minimizers is taken.
+            *brackt = true;
+            bound = 1;
+            d = *t - *x;
+            theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
+            p = theta.abs();
+            q = (*dx).abs();
+            r = (*dt).abs();
+            s = if if p >= q { p } else { q } >= r {
+                if p >= q {
+                    p
+                } else {
+                    q
+                }
+            } else {
+                r
+            };
+            a = theta / s;
+            gamma = s * (a * a - *dx / s * (*dt / s)).sqrt();
+            if *t < *x {
+                gamma = -gamma
+            }
+            p = gamma - *dx + theta;
+            q = gamma - *dx + gamma + *dt;
+            r = p / q;
+            mc = *x + r * d;
+            a = *t - *x;
+            mq = *x + *dx / ((*fx - *ft) / a + *dx) / 2i32 as libc::c_double * a;
+            if (mc - *x).abs() < (mq - *x).abs() {
+                newt = mc
+            } else {
+                newt = mc + 0.5f64 * (mq - mc)
+            }
+        } else if 0 != dsign {
+            // Case 2: a lower function value and derivatives of
+            // opposite sign. The minimum is brackt. If the cubic
+            // minimizer is closer to x than the quadratic (secant) one,
+            // the cubic one is taken, else the quadratic one is taken.
+
+            *brackt = true;
+            bound = 0i32;
+            d = *t - *x;
+            theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
+            p = theta.abs();
+            q = (*dx).abs();
+            r = (*dt).abs();
+            s = if if p >= q { p } else { q } >= r {
+                if p >= q {
+                    p
+                } else {
+                    q
+                }
+            } else {
+                r
+            };
+            a = theta / s;
+            gamma = s * (a * a - *dx / s * (*dt / s)).sqrt();
+            if *t < *x {
+                gamma = -gamma
+            }
+            p = gamma - *dx + theta;
+            q = gamma - *dx + gamma + *dt;
+            r = p / q;
+            mc = *x + r * d;
+            a = *x - *t;
+            mq = *t + *dt / (*dt - *dx) * a;
+            if (mc - *t).abs() > (mq - *t).abs() {
+                newt = mc
+            } else {
+                newt = mq
+            }
+        } else if (*dt).abs() < (*dx).abs() {
+            // Case 3: a lower function value, derivatives of the
+            // same sign, and the magnitude of the derivative decreases.
+            // The cubic minimizer is only used if the cubic tends to
+            // infinity in the direction of the minimizer or if the minimum
+            // of the cubic is beyond t. Otherwise the cubic minimizer is
+            // defined to be either tmin or tmax. The quadratic (secant)
+            // minimizer is also computed and if the minimum is brackt
+            // then the the minimizer closest to x is taken, else the one
+            // farthest away is taken.
+
+            bound = 1i32;
+            d = *t - *x;
+            theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
+            p = theta.abs();
+            q = (*dx).abs();
+            r = (*dt).abs();
+            s = if if p >= q { p } else { q } >= r {
+                if p >= q {
+                    p
+                } else {
+                    q
+                }
+            } else {
+                r
+            };
+
+            a = theta / s;
+            gamma = s * (if 0i32 as libc::c_double >= a * a - *dx / s * (*dt / s) {
+                0i32 as libc::c_double
+            } else {
+                a * a - *dx / s * (*dt / s)
+            }).sqrt();
+
+            if *x < *t {
+                gamma = -gamma
+            }
+            p = gamma - *dt + theta;
+            q = gamma - *dt + gamma + *dx;
+            r = p / q;
+            if r < 0.0 && gamma != 0.0 {
+                mc = *t - r * d
+            } else if a < 0 as f64 {
+                mc = *tmax
+            } else {
+                mc = *tmin
+            }
+            a = *x - *t;
+            mq = *t + *dt / (*dt - *dx) * a;
+            if *brackt {
+                if (*t - mc).abs() < (*t - mq).abs() {
+                    newt = mc
+                } else {
+                    newt = mq
+                }
+            } else if (*t - mc).abs() > (*t - mq).abs() {
+                newt = mc
+            } else {
+                newt = mq
+            }
+        } else {
+            // Case 4: a lower function value, derivatives of the
+            // same sign, and the magnitude of the derivative does
+            // not decrease. If the minimum is not brackt, the step
+            // is either tmin or tmax, else the cubic minimizer is taken.
+
+            bound = 0;
+            if *brackt {
+                d = *y - *t;
+
+                theta = (*ft - *fy) * 3i32 as libc::c_double / d + *dt + *dy;
+                p = theta.abs();
+                q = (*dt).abs();
+                r = (*dy).abs();
+
+                s = if if p >= q { p } else { q } >= r {
+                    if p >= q {
+                        p
+                    } else {
+                        q
+                    }
+                } else {
+                    r
+                };
+
+                a = theta / s;
+                gamma = s * (a * a - *dt / s * (*dy / s)).sqrt();
+                if *y < *t {
+                    gamma = -gamma
+                }
+                p = gamma - *dt + theta;
+                q = gamma - *dt + gamma + *dy;
+                r = p / q;
+                newt = *t + r * d
+            } else if *x < *t {
+                newt = *tmax
+            } else {
+                newt = *tmin
+            }
+        }
+
+        // Update the interval of uncertainty. This update does not
+        // depend on the new step or the case analysis above.
+        // - Case a: if f(x) < f(t),
+        //    x <- x, y <- t.
+        // - Case b: if f(t) <= f(x) && f'(t)*f'(x) > 0,
+        //   x <- t, y <- y.
+        // - Case c: if f(t) <= f(x) && f'(t)*f'(x) < 0,
+        //   x <- t, y <- x.
+        if *fx < *ft {
+            /* Case a */
+            *y = *t;
+            *fy = *ft;
+            *dy = *dt
+        } else {
+            /* Case c */
+            if 0 != dsign {
+                *y = *x;
+                *fy = *fx;
+                *dy = *dx
+            }
+            /* Cases b and c */
+            *x = *t;
+            *fx = *ft;
+            *dx = *dt
+        }
+
+        // Clip the new trial value in [tmin, tmax].
+        if *tmax < newt {
+            newt = *tmax
+        }
+        if newt < *tmin {
+            newt = *tmin
+        }
+
+        // Redefine the new trial value if it is close to the upper bound of the
+        // interval.
+        if *brackt && 0 != bound {
+            mq = *x + 0.66f64 * (*y - *x);
+            if *x < *y {
+                if mq < newt {
+                    newt = mq
+                }
+            } else if newt < mq {
+                newt = mq
+            }
+        }
+
+        // Return the new trial value.
+        *t = newt;
+        return 0;
+    }
+}
+// new:1 ends here
+
+// old
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 unsafe extern "C" fn update_trial_interval(
     mut x: *mut lbfgsfloatval_t,
     mut fx: *mut lbfgsfloatval_t,
@@ -959,8 +1313,8 @@ unsafe extern "C" fn update_trial_interval(
         // The minimum is brackt. If the cubic minimizer is closer
         // to x than the quadratic one, the cubic one is taken, else
         // the average of the minimizers is taken.
-        *brackt = 1i32;
-        bound = 1i32;
+        *brackt = 1;
+        bound = 1;
         d = *t - *x;
         theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
         p = theta.abs();
@@ -1178,7 +1532,7 @@ unsafe extern "C" fn update_trial_interval(
     *t = newt;
     return 0i32;
 }
-// src:1 ends here
+// old:1 ends here
 
 // vector operations
 
@@ -1497,6 +1851,7 @@ pub unsafe extern "C" fn lbfgs(
             current_block = 14763689060501151050;
         }
 
+        info!("start lbfgs loop...");
         match current_block {
             13422061289108735151 => {}
             _ => {
