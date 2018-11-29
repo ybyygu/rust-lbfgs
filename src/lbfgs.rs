@@ -483,9 +483,9 @@ impl Default for lbfgs_parameter_t {
 }
 // parameter:1 ends here
 
-// BackTracking
+// Common
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*BackTracking][BackTracking:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*Common][Common:1]]
 pub type line_search_proc = Option<
     unsafe extern "C" fn(
         // The number of variables.
@@ -512,174 +512,136 @@ pub type line_search_proc = Option<
         param: &lbfgs_parameter_t,
     ) -> libc::c_int,
 >;
+// Common:1 ends here
 
-unsafe extern "C" fn line_search_backtracking(
-    n: libc::c_int,
-    mut x: *mut lbfgsfloatval_t,
-    mut f: *mut lbfgsfloatval_t,
-    mut g: *mut lbfgsfloatval_t,
-    mut s: *mut lbfgsfloatval_t,
-    mut stp: *mut lbfgsfloatval_t,
-    mut xp: *const lbfgsfloatval_t,
-    mut gp: *const lbfgsfloatval_t,
-    mut wp: *mut lbfgsfloatval_t,
-    mut cd: *mut callback_data_t,
-    param: &lbfgs_parameter_t,
-) -> libc::c_int {
-    let mut width: lbfgsfloatval_t = 0.;
-    let mut dg: lbfgsfloatval_t = 0.;
-    let mut finit: lbfgsfloatval_t = 0.;
-    let mut dginit: lbfgsfloatval_t = 0.0f64;
-    let mut dgtest: lbfgsfloatval_t = 0.;
-    let dec: lbfgsfloatval_t = 0.5f64;
-    let inc: lbfgsfloatval_t = 2.1f64;
+// Original documentation by J. Nocera (lbfgs.f)
+//                 subroutine mcsrch
 
-    // Check the input parameters for errors.
-    if *stp <= 0.0f64 {
-        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
-    }
+// A slight modification of the subroutine CSRCH of More' and Thuente.
+// The changes are to allow reverse communication, and do not affect
+// the performance of the routine.
 
-    // Compute the initial gradient in the search direction.
-    vecdot(&mut dginit, g, s, n);
+// The purpose of mcsrch is to find a step which satisfies
+// a sufficient decrease condition and a curvature condition.
 
-    // Make sure that s points to a descent direction.
-    if (0i32 as libc::c_double) < dginit {
-        return LBFGSERR_INCREASEGRADIENT as libc::c_int;
-    }
+// At each stage the subroutine updates an interval of
+// uncertainty with endpoints stx and sty. the interval of
+// uncertainty is initially chosen so that it contains a
+// minimizer of the modified function
 
-    // The initial value of the objective function.
-    finit = *f;
-    dgtest = param.ftol * dginit;
+//      f(x+stp*s) - f(x) - ftol*stp*(gradf(x)'s).
 
-    let mut count: libc::c_int = 0i32;
-    loop {
-        veccpy(x, xp, n);
-        vecadd(x, s, *stp, n);
-        // Evaluate the function and gradient values.
-        *f = (*cd).proc_evaluate.expect("non-null function pointer")(
-            (*cd).instance,
-            x,
-            g,
-            (*cd).n,
-            *stp,
-        );
-        count += 1;
-        if *f > finit + *stp * dgtest {
-            width = dec
-        } else if param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_ARMIJO as libc::c_int {
-            // Exit with the Armijo condition.
-            return count;
-        } else {
-            /* Check the Wolfe condition. */
-            vecdot(&mut dg, g, s, n);
-            if dg < param.wolfe * dginit {
-                width = inc
-            } else if param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_WOLFE as libc::c_int {
-                // Exit with the regular Wolfe condition.
-                return count;
-            } else if dg > - param.wolfe * dginit {
-                width = dec
-            } else {
-                return count;
-            }
-        }
-        if *stp < param.min_step {
-            /* The step is the minimum value. */
-            return LBFGSERR_MINIMUMSTEP as libc::c_int;
-        } else if *stp > param.max_step {
-            /* The step is the maximum value. */
-            return LBFGSERR_MAXIMUMSTEP as libc::c_int;
-        } else if param.max_linesearch <= count {
-            /* Maximum number of iteration. */
-            return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
-        } else {
-            *stp *= width
-        }
-    }
-}
+// If a step is obtained for which the modified function
+// has a nonpositive function value and nonnegative derivative,
+// then the interval of uncertainty is chosen so that it
+// contains a minimizer of f(x+stp*s).
 
-unsafe extern "C" fn line_search_backtracking_owlqn(
-    n: libc::c_int,
-    mut x: *mut lbfgsfloatval_t,
-    mut f: *mut lbfgsfloatval_t,
-    mut g: *mut lbfgsfloatval_t,
-    mut s: *mut lbfgsfloatval_t,
-    mut stp: *mut lbfgsfloatval_t,
-    mut xp: *const lbfgsfloatval_t,
-    mut gp: *const lbfgsfloatval_t,
-    mut wp: *mut lbfgsfloatval_t,
-    mut cd: *mut callback_data_t,
-    param: &lbfgs_parameter_t,
-) -> libc::c_int {
-    let mut i: libc::c_int = 0;
-    let mut count: libc::c_int = 0i32;
-    let mut width: lbfgsfloatval_t = 0.5f64;
-    let mut norm: lbfgsfloatval_t = 0.0f64;
-    let mut finit: lbfgsfloatval_t = *f;
-    let mut dgtest: lbfgsfloatval_t = 0.;
+// The algorithm is designed to find a step which satisfies
+// the sufficient decrease condition
 
-    // Check the input parameters for errors.
-    if *stp <= 0.0f64 {
-        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
-    }
+//       f(x+stp*s) <= f(x) + ftol*stp*(gradf(x)'s),
 
-    // Choose the orthant for the new point.
-    i = 0i32;
-    while i < n {
-        *wp.offset(i as isize) = if *xp.offset(i as isize) == 0.0f64 {
-            -*gp.offset(i as isize)
-        } else {
-            *xp.offset(i as isize)
-        };
-        i += 1
-    }
+// and the curvature condition
 
-    loop {
-        // Update the current point.
-        veccpy(x, xp, n);
-        vecadd(x, s, *stp, n);
-        /* The current point is projected onto the orthant. */
-        owlqn_project(x, wp, param.orthantwise_start, param.orthantwise_end);
-        /* Evaluate the function and gradient values. */
-        *f = (*cd).proc_evaluate.expect("non-null function pointer")(
-            (*cd).instance,
-            x,
-            g,
-            (*cd).n,
-            *stp,
-        );
-        /* Compute the L1 norm of the variables and add it to the object value. */
-        norm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
-        *f += norm * param.orthantwise_c;
-        count += 1;
-        dgtest = 0.0f64;
-        i = 0i32;
-        while i < n {
-            dgtest += (*x.offset(i as isize) - *xp.offset(i as isize)) * *gp.offset(i as isize);
-            i += 1
-        }
-        if *f <= finit + param.ftol * dgtest {
-            /* The sufficient decrease condition. */
-            return count;
-        } else if *stp < param.min_step {
-            /* The step is the minimum value. */
-            return LBFGSERR_MINIMUMSTEP as libc::c_int;
-        } else if *stp > param.max_step {
-            /* The step is the maximum value. */
-            return LBFGSERR_MAXIMUMSTEP as libc::c_int;
-        } else if param.max_linesearch <= count {
-            /* Maximum number of iteration. */
-            return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
-        } else {
-            *stp *= width
-        }
-    }
-}
-// BackTracking:1 ends here
+//       abs(gradf(x+stp*s)'s)) <= gtol*abs(gradf(x)'s).
 
-// src
+// If ftol is less than gtol and if, for example, the function
+// is bounded below, then there is always a step which satisfies
+// both conditions. if no step can be found which satisfies both
+// conditions, then the algorithm usually stops when rounding
+// errors prevent further progress. in this case stp only
+// satisfies the sufficient decrease condition.
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
+// The subroutine statement is
+
+//    subroutine mcsrch(n,x,f,g,s,stp,ftol,xtol, maxfev,info,nfev,wa)
+// where
+
+//   n is a positive integer input variable set to the number
+//     of variables.
+
+//   x is an array of length n. on input it must contain the
+//     base point for the line search. on output it contains
+//     x + stp*s.
+
+//   f is a variable. on input it must contain the value of f
+//     at x. on output it contains the value of f at x + stp*s.
+
+//   g is an array of length n. on input it must contain the
+//     gradient of f at x. on output it contains the gradient
+//     of f at x + stp*s.
+
+//   s is an input array of length n which specifies the
+//     search direction.
+
+//   stp is a nonnegative variable. on input stp contains an
+//     initial estimate of a satisfactory step. on output
+//     stp contains the final estimate.
+
+//   ftol and gtol are nonnegative input variables. (in this reverse
+//     communication implementation gtol is defined in a common
+//     statement.) termination occurs when the sufficient decrease
+//     condition and the directional derivative condition are
+//     satisfied.
+
+//   xtol is a nonnegative input variable. termination occurs
+//     when the relative width of the interval of uncertainty
+//     is at most xtol.
+
+//   stpmin and stpmax are nonnegative input variables which
+//     specify lower and upper bounds for the step. (In this reverse
+//     communication implementatin they are defined in a common
+//     statement).
+
+//   maxfev is a positive integer input variable. termination
+//     occurs when the number of calls to fcn is at least
+//     maxfev by the end of an iteration.
+
+//   info is an integer output variable set as follows:
+
+//     info = 0  improper input parameters.
+
+//     info =-1  a return is made to compute the function and gradient.
+
+//     info = 1  the sufficient decrease condition and the
+//               directional derivative condition hold.
+
+//     info = 2  relative width of the interval of uncertainty
+//               is at most xtol.
+
+//     info = 3  number of calls to fcn has reached maxfev.
+
+//     info = 4  the step is at the lower bound stpmin.
+
+//     info = 5  the step is at the upper bound stpmax.
+
+//     info = 6  rounding errors prevent further progress.
+//               there may not be a step which satisfies the
+//               sufficient decrease and curvature conditions.
+//               tolerances may be too small.
+
+//   nfev is an integer output variable set to the number of
+//     calls to fcn.
+
+//   wa is a work array of length n.
+
+// subprograms called
+
+//   mcstep
+
+//   fortran-supplied...abs,max,min
+
+// ARgonne National Laboratory. Minpack Project. June 1983
+// Jorge J. More', David J. Thuente
+
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*Original%20documentation%20by%20J.%20Nocera%20(lbfgs.f)][Original documentation by J. Nocera (lbfgs.f):1]]
+
+// Original documentation by J. Nocera (lbfgs.f):1 ends here
+
+// lbfgs.c
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs.c][lbfgs.c:1]]
 unsafe extern "C" fn line_search_morethuente(
     n: libc::c_int,
     mut x: *mut lbfgsfloatval_t,
@@ -900,15 +862,13 @@ unsafe extern "C" fn line_search_morethuente(
         }
     }
 }
-// src:1 ends here
+// lbfgs.c:1 ends here
 
-// new
+// core
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
-/// The subroutine mcstep is taken from the work of Jorge Nocedal. this is a
-/// variant of More' and Thuente's routine.
-///
-/// A struct represents input variables of original mcstep function.
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*core][core:1]]
+/// Represents the original MCSTEP subroutine by J. Nocera, which is a variant
+/// of More' and Thuente's routine.
 ///
 /// Documentation is adopted from the original matlab code.
 ///
@@ -921,9 +881,9 @@ struct Mcstep {
     /// the step at the best step obtained so far
     stx: f64,
     /// the function at the best step obtained so far
-    fx: f64,
+    fx : f64,
     /// the derivative at the best step obtained so far
-    dx: f64,
+    dx : f64,
 
     /// sty, fy, and dy are variables which specify the step, the function, and
     /// the derivative at the other endpoint of the interval of uncertainty. On
@@ -932,9 +892,9 @@ struct Mcstep {
     /// the step at the other endpoint of the interval of uncertainty.
     sty: f64,
     /// the function at the other endpoint of the interval of uncertainty.
-    fy: f64,
+    fy : f64,
     /// the derivative at the other endpoint of the interval of uncertainty.
-    dy: f64,
+    dy : f64,
 
     /// stp, fp, and dp are variables which specify the step, the function, and
     /// the derivative at the current step. If bracket is set true then on input
@@ -943,9 +903,9 @@ struct Mcstep {
     /// specifies the step at the current step
     stp: f64,
     /// Specifies the function at the current step
-    fp: f64,
+    fp : f64,
     /// Specifies the derivative at the current step
-    dp: f64,
+    dp : f64,
 
     /// Specifies lower bound for the step
     stmin: f64,
@@ -989,8 +949,8 @@ impl Mcstep {
         let brackt = &mut self.bracket;
 
         let mut bound = 0;
+        // fsigndiff
         let mut dsign = (*dt * (*dx / (*dx).abs()) < 0.0) as libc::c_int;
-
         // minimizer of an interpolated cubic.
         let mut mc = 0.;
         // minimizer of an interpolated quadratic.
@@ -998,16 +958,10 @@ impl Mcstep {
         // new trial value.
         let mut newt = 0.;
 
-        // for CUBIC_MINIMIZER and QUARD_MINIMIZER.
-        let mut a = 0.;
-        let mut d = 0.;
-        let mut gamma = 0.;
-        let mut theta = 0.;
-
         // Check the input parameters for errors.
         if *brackt {
-            if *t <= if *x <= *y { *x } else { *y } || if *x >= *y { *x } else { *y } <= *t {
-                /* The trival value t is out of the interval. */
+            if *t <= x.min(*y) || x.max(*y) <= *t {
+                // The trival value t is out of the interval.
                 return LBFGSERR_OUTOFINTERVAL as libc::c_int;
             } else if 0.0 <= *dx * (*t - *x) {
                 /* The function must decrease from x. */
@@ -1023,9 +977,6 @@ impl Mcstep {
         let mut q = 0.;
         let mut r = 0.;
         let mut s = 0.;
-
-        let fx = &mut self.fx;
-        let ft = &mut self.fp;
         if *fx < *ft {
             // Case 1: a higher function value.
             // The minimum is brackt. If the cubic minimizer is closer
@@ -1033,69 +984,22 @@ impl Mcstep {
             // the average of the minimizers is taken.
             *brackt = true;
             bound = 1;
-            d = *t - *x;
-            theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
-            p = theta.abs();
-            q = (*dx).abs();
-            r = (*dt).abs();
-            s = if if p >= q { p } else { q } >= r {
-                if p >= q {
-                    p
-                } else {
-                    q
-                }
-            } else {
-                r
-            };
-            a = theta / s;
-            gamma = s * (a * a - *dx / s * (*dt / s)).sqrt();
-            if *t < *x {
-                gamma = -gamma
-            }
-            p = gamma - *dx + theta;
-            q = gamma - *dx + gamma + *dt;
-            r = p / q;
-            mc = *x + r * d;
-            a = *t - *x;
-            mq = *x + *dx / ((*fx - *ft) / a + *dx) / 2i32 as libc::c_double * a;
+            cubic_minimizer(&mut mc, *x, *fx, *dx, *t, *ft, *dt);
+            quard_minimizer(&mut mq, *x, *fx, *dx, *t, *ft);
             if (mc - *x).abs() < (mq - *x).abs() {
                 newt = mc
             } else {
-                newt = mc + 0.5f64 * (mq - mc)
+                newt = mc + 0.5 * (mq - mc)
             }
         } else if 0 != dsign {
             // Case 2: a lower function value and derivatives of
             // opposite sign. The minimum is brackt. If the cubic
             // minimizer is closer to x than the quadratic (secant) one,
             // the cubic one is taken, else the quadratic one is taken.
-
             *brackt = true;
-            bound = 0i32;
-            d = *t - *x;
-            theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
-            p = theta.abs();
-            q = (*dx).abs();
-            r = (*dt).abs();
-            s = if if p >= q { p } else { q } >= r {
-                if p >= q {
-                    p
-                } else {
-                    q
-                }
-            } else {
-                r
-            };
-            a = theta / s;
-            gamma = s * (a * a - *dx / s * (*dt / s)).sqrt();
-            if *t < *x {
-                gamma = -gamma
-            }
-            p = gamma - *dx + theta;
-            q = gamma - *dx + gamma + *dt;
-            r = p / q;
-            mc = *x + r * d;
-            a = *x - *t;
-            mq = *t + *dt / (*dt - *dx) * a;
+            bound = 0;
+            cubic_minimizer(&mut mc, *x, *fx, *dx, *t, *ft, *dt);
+            quard_minimizer2(&mut mq, *x, *dx, *t, *dt);
             if (mc - *t).abs() > (mq - *t).abs() {
                 newt = mc
             } else {
@@ -1111,45 +1015,9 @@ impl Mcstep {
             // minimizer is also computed and if the minimum is brackt
             // then the the minimizer closest to x is taken, else the one
             // farthest away is taken.
-
-            bound = 1i32;
-            d = *t - *x;
-            theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
-            p = theta.abs();
-            q = (*dx).abs();
-            r = (*dt).abs();
-            s = if if p >= q { p } else { q } >= r {
-                if p >= q {
-                    p
-                } else {
-                    q
-                }
-            } else {
-                r
-            };
-
-            a = theta / s;
-            gamma = s * (if 0i32 as libc::c_double >= a * a - *dx / s * (*dt / s) {
-                0i32 as libc::c_double
-            } else {
-                a * a - *dx / s * (*dt / s)
-            }).sqrt();
-
-            if *x < *t {
-                gamma = -gamma
-            }
-            p = gamma - *dt + theta;
-            q = gamma - *dt + gamma + *dx;
-            r = p / q;
-            if r < 0.0 && gamma != 0.0 {
-                mc = *t - r * d
-            } else if a < 0 as f64 {
-                mc = *tmax
-            } else {
-                mc = *tmin
-            }
-            a = *x - *t;
-            mq = *t + *dt / (*dt - *dx) * a;
+            bound = 1;
+            cubic_minimizer2(&mut mc, *x, *fx, *dx, *t, *ft, *dt, *tmin, *tmax);
+            quard_minimizer2(&mut mq, *x, *dx, *t, *dt);
             if *brackt {
                 if (*t - mc).abs() < (*t - mq).abs() {
                     newt = mc
@@ -1169,32 +1037,7 @@ impl Mcstep {
 
             bound = 0;
             if *brackt {
-                d = *y - *t;
-
-                theta = (*ft - *fy) * 3i32 as libc::c_double / d + *dt + *dy;
-                p = theta.abs();
-                q = (*dt).abs();
-                r = (*dy).abs();
-
-                s = if if p >= q { p } else { q } >= r {
-                    if p >= q {
-                        p
-                    } else {
-                        q
-                    }
-                } else {
-                    r
-                };
-
-                a = theta / s;
-                gamma = s * (a * a - *dt / s * (*dy / s)).sqrt();
-                if *y < *t {
-                    gamma = -gamma
-                }
-                p = gamma - *dt + theta;
-                q = gamma - *dt + gamma + *dy;
-                r = p / q;
-                newt = *t + r * d
+                cubic_minimizer(&mut newt, *t, *ft, *dt, *y, *fy, *dy);
             } else if *x < *t {
                 newt = *tmax
             } else {
@@ -1239,7 +1082,7 @@ impl Mcstep {
         // Redefine the new trial value if it is close to the upper bound of the
         // interval.
         if *brackt && 0 != bound {
-            mq = *x + 0.66f64 * (*y - *x);
+            mq = *x + 0.66 * (*y - *x);
             if *x < *y {
                 if mq < newt {
                     newt = mq
@@ -1254,7 +1097,119 @@ impl Mcstep {
         return 0;
     }
 }
-// new:1 ends here
+// core:1 ends here
+
+// interpolation
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*interpolation][interpolation:1]]
+/// Find a minimizer of an interpolated cubic function.
+///
+/// # Arguments
+///  * `cm`: The minimizer of the interpolated cubic.
+///  * `u` : The value of one point, u.
+///  * `fu`: The value of f(u).
+///  * `du`: The value of f'(u).
+///  * `v` : The value of another point, v.
+///  * `fv`: The value of f(v).
+///  * `dv`:  The value of f'(v).
+#[inline]
+fn cubic_minimizer(cm: &mut f64, u: f64, fu: f64, du: f64, v: f64, fv: f64, dv: f64) {
+    let d = v - u;
+    let theta = (fu - fv) * 3.0 / d + du + dv;
+
+    let mut p = theta.abs();
+    let mut q = du.abs();
+    let mut r = dv.abs();
+    let s = (p.max(q)).max(r); // max3(p, q, r)
+    let a = theta / s;
+    let mut gamma = s * (a * a - du / s * (dv / s)).sqrt();
+    if v < u {
+        gamma = -gamma
+    }
+    p = gamma - du + theta;
+    q = gamma - du + gamma + dv;
+    r = p / q;
+    *cm = u + r * d;
+}
+
+/// Find a minimizer of an interpolated cubic function.
+///
+/// # Arguments
+///  * cm  :   The minimizer of the interpolated cubic.
+///  * u   :   The value of one point, u.
+///  * fu  :   The value of f(u).
+///  * du  :   The value of f'(u).
+///  * v   :   The value of another point, v.
+///  * fv  :   The value of f(v).
+///  * dv  :   The value of f'(v).
+///  * xmin:   The minimum value.
+///  * xmax:   The maximum value.
+#[inline]
+fn cubic_minimizer2(
+    cm   : &mut f64,
+    u    : f64,
+    fu   : f64,
+    du   : f64,
+    v    : f64,
+    fv   : f64,
+    dv   : f64,
+    xmin : f64,
+    xmax : f64,
+) {
+    let d = v - u;
+    let theta = (fu - fv) * 3.0 / d + du + dv;
+    let mut p = theta.abs();
+    let mut q = du.abs();
+    let mut r = dv.abs();
+    // s = max3(p, q, r);
+    let s = (p.max(q)).max(r); // max3(p, q, r)
+    let a = theta / s;
+
+    let mut gamma = s * (0f64.max(a * a - du / s * (dv / s)).sqrt());
+    if u < v {
+        gamma = -gamma
+    }
+    p = gamma - dv + theta;
+    q = gamma - dv + gamma + du;
+    r = p / q;
+    if r < 0.0 && gamma != 0.0 {
+        *cm = v - r * d;
+    } else if a < 0 as f64 {
+        *cm = xmax;
+    } else {
+        *cm = xmin;
+    }
+}
+
+/// Find a minimizer of an interpolated quadratic function.
+///
+/// # Arguments
+/// * qm : The minimizer of the interpolated quadratic.
+/// * u  : The value of one point, u.
+/// * fu : The value of f(u).
+/// * du : The value of f'(u).
+/// * v  : The value of another point, v.
+/// * fv : The value of f(v).
+#[inline]
+fn quard_minimizer(qm: &mut f64, u: f64, fu: f64, du: f64, v: f64, fv: f64) {
+    let a = v - u;
+    *qm = u + du / ((fu - fv) / a + du) / 2.0 * a;
+}
+
+/// Find a minimizer of an interpolated quadratic function.
+///
+/// # Arguments
+/// * `qm` :    The minimizer of the interpolated quadratic.
+/// * `u`  :    The value of one point, u.
+/// * `du` :    The value of f'(u).
+/// * `v`  :    The value of another point, v.
+/// * `dv` :    The value of f'(v).
+#[inline]
+fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
+    let a = u - v;
+    *qm = v + dv / (dv - du) * a;
+}
+// interpolation:1 ends here
 
 // old
 
@@ -1281,12 +1236,6 @@ unsafe extern "C" fn update_trial_interval(
     let mut mq = 0.;
     // new trial value.
     let mut newt = 0.;
-
-    // for CUBIC_MINIMIZER and QUARD_MINIMIZER.
-    let mut a = 0.;
-    let mut d = 0.;
-    let mut gamma = 0.;
-    let mut theta = 0.;
 
     // Check the input parameters for errors.
     if 0 != *brackt {
@@ -1315,31 +1264,8 @@ unsafe extern "C" fn update_trial_interval(
         // the average of the minimizers is taken.
         *brackt = 1;
         bound = 1;
-        d = *t - *x;
-        theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
-        p = theta.abs();
-        q = (*dx).abs();
-        r = (*dt).abs();
-        s = if if p >= q { p } else { q } >= r {
-            if p >= q {
-                p
-            } else {
-                q
-            }
-        } else {
-            r
-        };
-        a = theta / s;
-        gamma = s * (a * a - *dx / s * (*dt / s)).sqrt();
-        if *t < *x {
-            gamma = -gamma
-        }
-        p = gamma - *dx + theta;
-        q = gamma - *dx + gamma + *dt;
-        r = p / q;
-        mc = *x + r * d;
-        a = *t - *x;
-        mq = *x + *dx / ((*fx - *ft) / a + *dx) / 2i32 as libc::c_double * a;
+        cubic_minimizer(&mut mc, *x, *fx, *dx, *t, *ft, *dt);
+        quard_minimizer(&mut mq, *x, *fx, *dx, *t, *ft);
         if (mc - *x).abs() < (mq - *x).abs() {
             newt = mc
         } else {
@@ -1350,33 +1276,10 @@ unsafe extern "C" fn update_trial_interval(
         // opposite sign. The minimum is brackt. If the cubic
         // minimizer is closer to x than the quadratic (secant) one,
         // the cubic one is taken, else the quadratic one is taken.
-        *brackt = 1i32;
-        bound = 0i32;
-        d = *t - *x;
-        theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
-        p = theta.abs();
-        q = (*dx).abs();
-        r = (*dt).abs();
-        s = if if p >= q { p } else { q } >= r {
-            if p >= q {
-                p
-            } else {
-                q
-            }
-        } else {
-            r
-        };
-        a = theta / s;
-        gamma = s * (a * a - *dx / s * (*dt / s)).sqrt();
-        if *t < *x {
-            gamma = -gamma
-        }
-        p = gamma - *dx + theta;
-        q = gamma - *dx + gamma + *dt;
-        r = p / q;
-        mc = *x + r * d;
-        a = *x - *t;
-        mq = *t + *dt / (*dt - *dx) * a;
+        *brackt = 1;
+        bound = 0;
+        cubic_minimizer(&mut mc, *x, *fx, *dx, *t, *ft, *dt);
+        quard_minimizer2(&mut mq, *x, *dx, *t, *dt);
         if (mc - *t).abs() > (mq - *t).abs() {
             newt = mc
         } else {
@@ -1392,44 +1295,11 @@ unsafe extern "C" fn update_trial_interval(
         // minimizer is also computed and if the minimum is brackt
         // then the the minimizer closest to x is taken, else the one
         // farthest away is taken.
-        bound = 1i32;
-        d = *t - *x;
-        theta = (*fx - *ft) * 3i32 as libc::c_double / d + *dx + *dt;
-        p = theta.abs();
-        q = (*dx).abs();
-        r = (*dt).abs();
-        s = if if p >= q { p } else { q } >= r {
-            if p >= q {
-                p
-            } else {
-                q
-            }
-        } else {
-            r
-        };
-
-        a = theta / s;
-        gamma = s * (if 0i32 as libc::c_double >= a * a - *dx / s * (*dt / s) {
-            0i32 as libc::c_double
-        } else {
-            a * a - *dx / s * (*dt / s)
-        }).sqrt();
-
-        if *x < *t {
-            gamma = -gamma
-        }
-        p = gamma - *dt + theta;
-        q = gamma - *dt + gamma + *dx;
-        r = p / q;
-        if r < 0.0f64 && gamma != 0.0f64 {
-            mc = *t - r * d
-        } else if a < 0i32 as libc::c_double {
-            mc = tmax
-        } else {
-            mc = tmin
-        }
-        a = *x - *t;
-        mq = *t + *dt / (*dt - *dx) * a;
+        bound = 1;
+        cubic_minimizer2(&mut mc, *x, *fx, *dx, *t, *ft, *dt, tmin, tmax);
+        quard_minimizer2(&mut mq, *x, *dx, *t, *dt);
+        // a = *x - *t;
+        // mq = *t + *dt / (*dt - *dx) * a;
         if 0 != *brackt {
             if (*t - mc).abs() < (*t - mq).abs() {
                 newt = mc
@@ -1448,32 +1318,7 @@ unsafe extern "C" fn update_trial_interval(
         // is either tmin or tmax, else the cubic minimizer is taken.
         bound = 0i32;
         if 0 != *brackt {
-            d = *y - *t;
-
-            theta = (*ft - *fy) * 3i32 as libc::c_double / d + *dt + *dy;
-            p = theta.abs();
-            q = (*dt).abs();
-            r = (*dy).abs();
-
-            s = if if p >= q { p } else { q } >= r {
-                if p >= q {
-                    p
-                } else {
-                    q
-                }
-            } else {
-                r
-            };
-
-            a = theta / s;
-            gamma = s * (a * a - *dt / s * (*dy / s)).sqrt();
-            if *y < *t {
-                gamma = -gamma
-            }
-            p = gamma - *dt + theta;
-            q = gamma - *dt + gamma + *dy;
-            r = p / q;
-            newt = *t + r * d
+            cubic_minimizer(&mut newt, *t, *ft, *dt, *y, *fy, *dy);
         } else if *x < *t {
             newt = tmax
         } else {
@@ -1530,23 +1375,314 @@ unsafe extern "C" fn update_trial_interval(
     }
     // Return the new trial value.
     *t = newt;
-    return 0i32;
+    return 0;
 }
 // old:1 ends here
+
+// BackTracking
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*BackTracking][BackTracking:1]]
+unsafe extern "C" fn line_search_backtracking(
+    n: libc::c_int,
+    mut x: *mut lbfgsfloatval_t,
+    mut f: *mut lbfgsfloatval_t,
+    mut g: *mut lbfgsfloatval_t,
+    mut s: *mut lbfgsfloatval_t,
+    mut stp: *mut lbfgsfloatval_t,
+    mut xp: *const lbfgsfloatval_t,
+    mut gp: *const lbfgsfloatval_t,
+    mut wp: *mut lbfgsfloatval_t,
+    mut cd: *mut callback_data_t,
+    param: &lbfgs_parameter_t,
+) -> libc::c_int {
+    let mut width: lbfgsfloatval_t = 0.;
+    let mut dg: lbfgsfloatval_t = 0.;
+    let mut finit: lbfgsfloatval_t = 0.;
+    let mut dginit: lbfgsfloatval_t = 0.0f64;
+    let mut dgtest: lbfgsfloatval_t = 0.;
+    let dec: lbfgsfloatval_t = 0.5f64;
+    let inc: lbfgsfloatval_t = 2.1f64;
+
+    // Check the input parameters for errors.
+    if *stp <= 0.0f64 {
+        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
+    }
+
+    // Compute the initial gradient in the search direction.
+    vecdot(&mut dginit, g, s, n);
+
+    // Make sure that s points to a descent direction.
+    if (0i32 as libc::c_double) < dginit {
+        return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+    }
+
+    // The initial value of the objective function.
+    finit = *f;
+    dgtest = param.ftol * dginit;
+
+    let mut count: libc::c_int = 0i32;
+    loop {
+        veccpy(x, xp, n);
+        vecadd(x, s, *stp, n);
+        // Evaluate the function and gradient values.
+        *f = (*cd).proc_evaluate.expect("non-null function pointer")(
+            (*cd).instance,
+            x,
+            g,
+            (*cd).n,
+            *stp,
+        );
+        count += 1;
+        if *f > finit + *stp * dgtest {
+            width = dec
+        } else if param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_ARMIJO as libc::c_int {
+            // Exit with the Armijo condition.
+            return count;
+        } else {
+            /* Check the Wolfe condition. */
+            vecdot(&mut dg, g, s, n);
+            if dg < param.wolfe * dginit {
+                width = inc
+            } else if param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_WOLFE as libc::c_int {
+                // Exit with the regular Wolfe condition.
+                return count;
+            } else if dg > - param.wolfe * dginit {
+                width = dec
+            } else {
+                return count;
+            }
+        }
+        if *stp < param.min_step {
+            /* The step is the minimum value. */
+            return LBFGSERR_MINIMUMSTEP as libc::c_int;
+        } else if *stp > param.max_step {
+            /* The step is the maximum value. */
+            return LBFGSERR_MAXIMUMSTEP as libc::c_int;
+        } else if param.max_linesearch <= count {
+            /* Maximum number of iteration. */
+            return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
+        } else {
+            *stp *= width
+        }
+    }
+}
+
+unsafe extern "C" fn line_search_backtracking_owlqn(
+    n: libc::c_int,
+    mut x: *mut lbfgsfloatval_t,
+    mut f: *mut lbfgsfloatval_t,
+    mut g: *mut lbfgsfloatval_t,
+    mut s: *mut lbfgsfloatval_t,
+    mut stp: *mut lbfgsfloatval_t,
+    mut xp: *const lbfgsfloatval_t,
+    mut gp: *const lbfgsfloatval_t,
+    mut wp: *mut lbfgsfloatval_t,
+    mut cd: *mut callback_data_t,
+    param: &lbfgs_parameter_t,
+) -> libc::c_int {
+    let mut i: libc::c_int = 0;
+    let mut count: libc::c_int = 0i32;
+    let mut width: lbfgsfloatval_t = 0.5f64;
+    let mut norm: lbfgsfloatval_t = 0.0f64;
+    let mut finit: lbfgsfloatval_t = *f;
+    let mut dgtest: lbfgsfloatval_t = 0.;
+
+    // Check the input parameters for errors.
+    if *stp <= 0.0f64 {
+        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
+    }
+
+    // Choose the orthant for the new point.
+    i = 0i32;
+    while i < n {
+        *wp.offset(i as isize) = if *xp.offset(i as isize) == 0.0f64 {
+            -*gp.offset(i as isize)
+        } else {
+            *xp.offset(i as isize)
+        };
+        i += 1
+    }
+
+    loop {
+        // Update the current point.
+        veccpy(x, xp, n);
+        vecadd(x, s, *stp, n);
+        /* The current point is projected onto the orthant. */
+        owlqn_project(x, wp, param.orthantwise_start, param.orthantwise_end);
+        /* Evaluate the function and gradient values. */
+        *f = (*cd).proc_evaluate.expect("non-null function pointer")(
+            (*cd).instance,
+            x,
+            g,
+            (*cd).n,
+            *stp,
+        );
+        /* Compute the L1 norm of the variables and add it to the object value. */
+        norm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
+        *f += norm * param.orthantwise_c;
+        count += 1;
+        dgtest = 0.0f64;
+        i = 0i32;
+        while i < n {
+            dgtest += (*x.offset(i as isize) - *xp.offset(i as isize)) * *gp.offset(i as isize);
+            i += 1
+        }
+        if *f <= finit + param.ftol * dgtest {
+            /* The sufficient decrease condition. */
+            return count;
+        } else if *stp < param.min_step {
+            /* The step is the minimum value. */
+            return LBFGSERR_MINIMUMSTEP as libc::c_int;
+        } else if *stp > param.max_step {
+            /* The step is the maximum value. */
+            return LBFGSERR_MAXIMUMSTEP as libc::c_int;
+        } else if param.max_linesearch <= count {
+            /* Maximum number of iteration. */
+            return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
+        } else {
+            *stp *= width
+        }
+    }
+}
+// BackTracking:1 ends here
 
 // vector operations
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*vector%20operations][vector operations:1]]
-unsafe extern "C" fn vecalloc(mut size: size_t) -> *mut libc::c_void {
-    let mut memblock: *mut libc::c_void = malloc(size);
-    if !memblock.is_null() {
-        memset(memblock, 0i32, size);
-    }
-    return memblock;
+/// Abstracting lbfgs required math operations
+pub trait LbfgsMath<T> {
+    /// y += c*x
+    fn vecadd(&mut self, x: &[T], c: T);
+
+    /// vector dot product
+    /// s = x.dot(y)
+    fn vecdot(&self, other: &[T]) -> f64;
+
+    /// y = z
+    fn veccpy(&mut self, x: &[T]);
+
+    /// y = -x
+    fn vecncpy(&mut self, x: &[T]);
+
+    /// z = x - y
+    fn vecdiff(&mut self, x: &[T], y: &[T]);
+
+    /// y *= c
+    fn vecscale(&mut self, c: T);
+
+    /// ||x||
+    fn vec2norm(&self) -> T;
+
+    /// 1 / ||x||
+    fn vec2norminv(&self) -> T;
+
+    /// norm = sum(..., |x|, ...)
+    fn owlqn_x1norm(&self, start: usize) -> T;
 }
 
-unsafe extern "C" fn vecfree(mut memblock: *mut libc::c_void) {
-    free(memblock);
+impl LbfgsMath<f64> for [f64] {
+    /// y += c*x
+    fn vecadd(&mut self, x: &[f64], c: f64) {
+        for (y, x) in self.iter_mut().zip(x) {
+            *y += c * x;
+        }
+    }
+
+    /// s = y.dot(x)
+    fn vecdot(&self, other: &[f64]) -> f64 {
+        self.iter().zip(other).map(|(x, y)| x * y).sum()
+    }
+
+    /// y *= c
+    fn vecscale(&mut self, c: f64) {
+        for y in self.iter_mut() {
+            *y *= c;
+        }
+    }
+
+    /// y = x
+    fn veccpy(&mut self, x: &[f64]) {
+        for (v, x) in self.iter_mut().zip(x) {
+            *v = *x;
+        }
+    }
+
+    /// y = -x
+    fn vecncpy(&mut self, x: &[f64]) {
+        for (v, x) in self.iter_mut().zip(x) {
+            *v = -x;
+        }
+    }
+
+    /// z = x - y
+    fn vecdiff(&mut self, x: &[f64], y: &[f64]) {
+        for ((z, x), y) in self.iter_mut().zip(x).zip(y) {
+            *z = x - y;
+        }
+    }
+
+    /// ||x||
+    fn vec2norm(&self) -> f64 {
+        let n2 = self.vecdot(&self);
+        n2.sqrt()
+    }
+
+    /// 1/||x||
+    fn vec2norminv(&self) -> f64 {
+        1.0 / self.vec2norm()
+    }
+
+    fn owlqn_x1norm(&self, start: usize) -> f64 {
+        self.iter().skip(start).map(|v| v.abs()).sum()
+    }
+}
+
+#[test]
+fn test_lbfgs_math() {
+    // vector scaled add
+    let x = [1.0, 1.0, 1.0];
+    let c = 2.;
+
+    let mut y = [1.0, 2.0, 3.0];
+    y.vecadd(&x, c);
+
+    assert_eq!(3.0, y[0]);
+    assert_eq!(4.0, y[1]);
+    assert_eq!(5.0, y[2]);
+
+    // vector dot
+    let v = y.vecdot(&x);
+    assert_eq!(12.0, v);
+
+    // vector scale
+    y.vecscale(2.0);
+    assert_eq!(6.0, y[0]);
+    assert_eq!(8.0, y[1]);
+    assert_eq!(10.0, y[2]);
+
+    // vector diff
+    let mut z = y.clone();
+    z.vecdiff(&x, &y);
+    assert_eq!(-5.0, z[0]);
+    assert_eq!(-7.0, z[1]);
+    assert_eq!(-9.0, z[2]);
+
+    // vector copy
+    y.veccpy(&x);
+
+    // y = -x
+    y.vecncpy(&x);
+    assert_eq!(-1.0, y[0]);
+    assert_eq!(-1.0, y[1]);
+    assert_eq!(-1.0, y[2]);
+
+    // let x = z.as_ptr();
+    // unsafe {
+    //     let v = owlqn_x1norm(x, 0, 3);
+    //     println!("{:#?}", v);
+    // }
+    let v = z.owlqn_x1norm(1);
+    assert_eq!(v, 16.0);
 }
 
 // x(k+1) = x(k) + alpha_k * d_k
@@ -1563,22 +1699,7 @@ unsafe extern "C" fn vecadd(
     let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
     let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
 
-    vecadd_(&mut arr_y, &arr_x, c);
-}
-
-/// x(k+1) = x(k) + alpha_k * d_k
-/// y += c*x
-/// # Parameters
-/// - arr_y: target array
-/// - arr_x: initial array
-/// - c    : scale factor for arr_x
-fn vecadd_(arr_y: &mut [f64], arr_x: &[f64], c: f64) {
-    let n = arr_y.len();
-    assert_eq!(n, arr_x.len());
-
-    for i in 0..n {
-        arr_y[i] += c * arr_x[i];
-    }
+    arr_y.vecadd(&arr_x, c);
 }
 
 unsafe extern "C" fn vecdot(
@@ -1592,13 +1713,7 @@ unsafe extern "C" fn vecdot(
     let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
     let arr_y = unsafe { ::std::slice::from_raw_parts(y, n) };
 
-    *s = vecdot_(&arr_x, &arr_y);
-}
-
-/// s = x.dot(y)
-#[inline]
-fn vecdot_(arr_x: &[f64], arr_y: &[f64]) -> f64 {
-    arr_x.iter().zip(arr_y).map(|(x, y)| x * y).sum()
+    *s = arr_x.vecdot(arr_y);
 }
 
 /// y *= c
@@ -1606,26 +1721,20 @@ unsafe extern "C" fn vecscale(mut y: *mut lbfgsfloatval_t, c: lbfgsfloatval_t, n
     // convert pointer to native data type
     let n = n as usize;
     let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
-    vecscale_(&mut arr_y, c);
+    arr_y.vecscale(c);
 }
 
-fn vecscale_(y: &mut [f64], c: f64) {
-    for v in y.iter_mut() {
-        *v *= c;
-    }
-}
-
+/// y = -x
 unsafe extern "C" fn vecncpy(
     mut y: *mut lbfgsfloatval_t,
     mut x: *const lbfgsfloatval_t,
     n: libc::c_int,
 ) {
-    let mut i: libc::c_int = 0;
-    i = 0i32;
-    while i < n {
-        *y.offset(i as isize) = -*x.offset(i as isize);
-        i += 1
-    }
+    let n = n as usize;
+    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
+    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
+
+    arr_y.vecncpy(&arr_x);
 }
 
 /// z = x - y
@@ -1635,14 +1744,16 @@ unsafe extern "C" fn vecdiff(
     mut y: *const lbfgsfloatval_t,
     n: libc::c_int,
 ) {
-    let mut i: libc::c_int = 0;
-    i = 0i32;
-    while i < n {
-        *z.offset(i as isize) = *x.offset(i as isize) - *y.offset(i as isize);
-        i += 1
-    }
+    let n = n as usize;
+
+    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
+    let arr_y = unsafe { ::std::slice::from_raw_parts(y, n) };
+    let mut arr_z = unsafe { ::std::slice::from_raw_parts_mut(z, n) };
+
+    arr_z.vecdiff(&arr_x, &arr_y);
 }
 
+/// s = ||x||
 unsafe extern "C" fn vec2norm(
     mut s: *mut lbfgsfloatval_t,
     mut x: *const lbfgsfloatval_t,
@@ -1652,17 +1763,18 @@ unsafe extern "C" fn vec2norm(
     *s = (*s).sqrt();
 }
 
+/// y = x
 unsafe extern "C" fn veccpy(
     mut y: *mut lbfgsfloatval_t,
     mut x: *const lbfgsfloatval_t,
     n: libc::c_int,
 ) {
-    let mut i: libc::c_int = 0;
-    i = 0i32;
-    while i < n {
-        *y.offset(i as isize) = *x.offset(i as isize);
-        i += 1
-    }
+    let n = n as usize;
+
+    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
+    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
+
+    arr_y.veccpy(&arr_x);
 }
 
 unsafe extern "C" fn vec2norminv(
@@ -1671,22 +1783,39 @@ unsafe extern "C" fn vec2norminv(
     n: libc::c_int,
 ) {
     vec2norm(s, x, n);
-    *s = 1.0f64 / *s;
+    *s = 1.0 / *s;
 }
 
+/// norm = sum(|x|, ...)
 unsafe extern "C" fn owlqn_x1norm(
     mut x: *const lbfgsfloatval_t,
     start: libc::c_int,
     n: libc::c_int,
 ) -> lbfgsfloatval_t {
-    let mut i: libc::c_int = 0;
-    let mut norm: lbfgsfloatval_t = 0.0f64;
-    i = start;
-    while i < n {
-        norm += (*x.offset(i as isize)).abs();
-        i += 1
+    // let mut i: libc::c_int = 0;
+    // let mut norm: lbfgsfloatval_t = 0.0f64;
+    // i = start;
+    // while i < n {
+    //     norm += (*x.offset(i as isize)).abs();
+    //     i += 1
+    // }
+    // return norm;
+
+    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n as usize) };
+    arr_x.owlqn_x1norm(start as usize)
+}
+
+// TODO: clean up
+unsafe extern "C" fn vecalloc(mut size: size_t) -> *mut libc::c_void {
+    let mut memblock: *mut libc::c_void = malloc(size);
+    if !memblock.is_null() {
+        memset(memblock, 0i32, size);
     }
-    return norm;
+    return memblock;
+}
+
+unsafe extern "C" fn vecfree(mut memblock: *mut libc::c_void) {
+    free(memblock);
 }
 // vector operations:1 ends here
 
