@@ -8,6 +8,7 @@ C codes.
 
 # Motivation
 
--   Bring LBFGS to Rust community.
+-   Bring native LBFGS implementation to Rust community.
 -   Learn how a great optimization algorithm is implemented in real world.
+-   Learn how to &ldquo;replace the jet engine while still flying&rdquo; [URL](http://jensimmons.com/post/jan-4-2017/replacing-jet-engine-while-still-flying)
 
