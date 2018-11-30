@@ -504,7 +504,7 @@ pub type line_search_proc = Option<
         xp: *const lbfgsfloatval_t,
         // Gradient vector of previous step
         gp: *const lbfgsfloatval_t,
-        // ??
+        // work array?
         wp: *mut lbfgsfloatval_t,
         // callback struct
         cd: *mut callback_data_t,
@@ -638,6 +638,305 @@ pub type line_search_proc = Option<
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*Original%20documentation%20by%20J.%20Nocera%20(lbfgs.f)][Original documentation by J. Nocera (lbfgs.f):1]]
 
 // Original documentation by J. Nocera (lbfgs.f):1 ends here
+
+// src
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
+struct LineSearchOption {
+    /// ftol and gtol are nonnegative input variables. (in this reverse
+    /// communication implementation gtol is defined in a common statement.)
+    ///
+    /// Termination occurs when the sufficient decrease condition and the
+    /// directional derivative condition are satisfied.
+    ftol: f64,
+    gtol: f64,
+
+    /// xtol is a nonnegative input variable. termination occurs when the
+    /// relative width of the interval of uncertainty is at most xtol.
+    xtol: f64,
+
+    max_step: f64,
+
+    min_step: f64,
+
+    max_linesearch: usize,
+}
+
+// TODO: better defaults
+impl Default for LineSearchOption {
+    fn default() -> Self {
+        LineSearchOption {
+            ftol: 1e-4,
+            gtol: 1e-4,
+            xtol: 1e-4,
+            max_step: 1.0,
+            min_step: 1e-3,
+            max_linesearch: 20,
+        }
+    }
+}
+
+/// A struct represents MCSRCH subroutine in original lbfgs.f by J. Nocera
+struct Mcsrch<'a> {
+    /// x is an array of length n. on input it must contain the base point for
+    /// the line search. on output it contains x + stp*s.
+    x: &'a mut [f64],
+
+    /// f is a variable. on input it must contain the value of f at x. on
+    /// output it contains the value of f at x + stp*s.
+    f: f64,
+
+    /// g is an array of length n. on input it must contain the gradient of f at
+    /// x. on output it contains the gradient of f at x + stp*s.
+    g: &'a mut [f64],
+
+    /// s is an input array of length n which specifies the search direction.
+    s: &'a [f64],
+
+    /// stp is a nonnegative variable. on input stp contains an initial estimate
+    /// of a satisfactory step. on output stp contains the final estimate.
+    stp: f64,
+
+    param: LineSearchOption,
+}
+
+impl<'a> Mcsrch<'a> {
+    /// # Arguments
+    ///
+    /// - direction: search direction array
+    fn new(direction: &[f64]) -> Self {
+        unimplemented!()
+    }
+
+    fn validate(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Find a step which satisfies a sufficient decrease condition and a
+    /// curvature condition (strong wolfe conditions).
+    ///
+    /// # Arguments
+    ///
+    /// * cd    : a closure to evaluate the function and gradient values.
+    /// * xp    : an array of input variables in previous step
+    /// * param : line search options
+    ///
+    /// # Example
+    ///
+    /// - TODO
+    ///
+    fn find<F>(&mut self, mut cd: F, xp: &[f64]) -> Result<usize>
+    where
+        F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    {
+        // Check the input parameters for errors.
+        if !self.stp.is_sign_positive() {
+            // return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
+            bail!("LBFGSERR_INVALIDPARAMETERS");
+        }
+
+        // Compute the initial gradient in the search direction.
+        let s = &self.s;
+        let g = &mut self.g;
+        // vecdot(&mut dginit, g, s, n);
+        let mut dginit = (*g).vecdot(*s);
+
+        // Make sure that s points to a descent direction.
+        if 0.0 < dginit {
+            // return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+            bail!("LBFGSERR_INCREASEGRADIENT");
+        }
+
+        // Initialize local variables.
+        let param = &self.param;
+        let mut brackt = false;
+        let mut stage1 = 1;
+        let f = &mut self.f;
+        let finit = *f;
+        let dgtest = param.ftol * dginit;
+        let mut width = param.max_step - param.min_step;
+        let mut prev_width = 2.0 * width;
+
+        // The variables stx, fx, dgx contain the values of the step,
+        // function, and directional derivative at the best step.
+        // The variables sty, fy, dgy contain the value of the step,
+        // function, and derivative at the other endpoint of
+        // the interval of uncertainty.
+        // The variables stp, f, dg contain the values of the step,
+        // function, and derivative at the current step.
+        let mut stx = 0f64;
+        let mut sty = 0f64;
+        let mut fx = finit;
+        let mut fy = finit;
+        let mut dgx = dginit;
+        let mut dgy = dginit;
+        let mut dg = 0f64;
+
+        let mut stmin = 0.;
+        let mut stmax = 0.;
+        let mut uinfo = 0;
+        let mut count = 0;
+
+        let mut fxm = 0.;
+        let mut dgxm = 0.;
+        let mut fym = 0.;
+        let mut dgym = 0.;
+        let mut ftest1 = 0.;
+        let mut fm = 0.;
+        let mut dgm = 0.;
+
+        let x = &mut self.x; // input variables
+        let f = &mut self.f; // function value
+        let stp = &mut self.stp; // step length
+        loop {
+            // Set the minimum and maximum steps to correspond to the
+            // present interval of uncertainty.
+            if brackt {
+                stmin = stx.min(sty);
+                stmax = stx.max(sty);
+            } else {
+                stmin = stx;
+                stmax = *stp + 4.0 * (*stp - stx)
+            }
+
+            // Clip the step in the range of [stpmin, stpmax].
+            if *stp < param.min_step {
+                *stp = param.min_step
+            }
+            if param.max_step < *stp {
+                *stp = param.max_step
+            }
+
+            // If an unusual termination is to occur then let
+            // stp be the lowest point obtained so far.
+            if brackt
+                && (*stp <= stmin
+                    || stmax <= *stp
+                    || param.max_linesearch <= count + 1
+                    || uinfo != 0)
+                || brackt && stmax - stmin <= param.xtol * stmax
+            {
+                *stp = stx
+            }
+
+            // Compute the current value of x: x <- x + (*stp) * s.
+            // veccpy(x, xp, n);
+            (*x).veccpy(&xp);
+            // vecadd(x, s, *stp, n);
+            (*x).vecadd(&s, *stp);
+
+            // Evaluate the function and gradient values.
+            // *f = cd(x, g, *stp)?;
+            *f = cd(x, g)?;
+
+            // vecdot(&mut dg, g, s, n);
+            dg = g.vecdot(s);
+
+            ftest1 = finit + *stp * dgtest;
+            count += 1;
+
+            // Test for errors and convergence.
+            if brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0) {
+                /* Rounding errors prevent further progress. */
+                // return LBFGSERR_ROUNDING_ERROR as libc::c_int;
+                bail!("LBFGSERR_ROUNDING_ERROR");
+            } else if *stp == param.max_step && *f <= ftest1 && dg <= dgtest {
+                /* The step is the maximum value. */
+                // return LBFGSERR_MAXIMUMSTEP as libc::c_int;
+                bail!("LBFGSERR_MAXIMUMSTEP");
+            } else if *stp == param.min_step && (ftest1 < *f || dgtest <= dg) {
+                /* The step is the minimum value. */
+                // return LBFGSERR_MINIMUMSTEP as libc::c_int;
+                bail!("LBFGSERR_MINIMUMSTEP");
+            } else if brackt && stmax - stmin <= param.xtol * stmax {
+                /* Relative width of the interval of uncertainty is at most xtol. */
+                // return LBFGSERR_WIDTHTOOSMALL as libc::c_int;
+                bail!("LBFGSERR_WIDTHTOOSMALL");
+            } else if param.max_linesearch <= count {
+                // Maximum number of iteration.
+                // return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
+                bail!("LBFGSERR_MAXIMUMLINESEARCH");
+            } else if *f <= ftest1 && dg.abs() <= param.gtol * -dginit {
+                // The sufficient decrease condition and the directional derivative condition hold.
+                return Ok(count);
+            } else {
+                // In the first stage we seek a step for which the modified
+                // function has a nonpositive value and nonnegative derivative.
+                if 0 != stage1 && *f <= ftest1 && param.ftol.min(param.gtol) * dginit <= dg {
+                    stage1 = 0
+                }
+
+                // A modified function is used to predict the step only if
+                // we have not obtained a step for which the modified
+                // function has a nonpositive function value and nonnegative
+                // derivative, and if a lower function value has been
+                // obtained but the decrease is not sufficient.
+                if 0 != stage1 && ftest1 < *f && *f <= fx {
+                    // Define the modified function and derivative values.
+                    fm = *f - *stp * dgtest;
+                    fxm = fx - stx * dgtest;
+                    fym = fy - sty * dgtest;
+                    dgm = dg - dgtest;
+                    dgxm = dgx - dgtest;
+                    dgym = dgy - dgtest;
+
+                    // Call update_trial_interval() to update the interval of
+                    // uncertainty and to compute the new step.
+                    uinfo = mcstep::update_trial_interval(
+                        &mut stx,
+                        &mut fxm,
+                        &mut dgxm,
+                        &mut sty,
+                        &mut fym,
+                        &mut dgym,
+                        stp,
+                        fm,
+                        dgm,
+                        stmin,
+                        stmax,
+                        &mut brackt,
+                    )?;
+
+                    // Reset the function and gradient values for f.
+                    fx = fxm + stx * dgtest;
+                    fy = fym + sty * dgtest;
+                    dgx = dgxm + dgtest;
+                    dgy = dgym + dgtest
+                } else {
+                    uinfo = mcstep::update_trial_interval(
+                        &mut stx,
+                        &mut fx,
+                        &mut dgx,
+                        &mut sty,
+                        &mut fy,
+                        &mut dgy,
+                        stp,
+                        *f,
+                        dg,
+                        stmin,
+                        stmax,
+                        &mut brackt,
+                    )?;
+                }
+
+                // Force a sufficient decrease in the interval of uncertainty.
+                if ! brackt {
+                    continue;
+                }
+
+                if 0.66 * prev_width <= (sty - stx).abs() {
+                    *stp = stx + 0.5 * (sty - stx)
+                }
+
+                prev_width = width;
+                width = (sty - stx).abs()
+            }
+        }
+
+        bail!("bad");
+    }
+}
+// src:1 ends here
 
 // lbfgs.c
 
@@ -819,8 +1118,8 @@ unsafe extern "C" fn line_search_morethuente(
                     &mut fym,
                     &mut dgym,
                     stp,
-                    &mut fm,
-                    &mut dgm,
+                    &fm,
+                    &dgm,
                     stmin,
                     stmax,
                     &mut brackt,
@@ -841,7 +1140,7 @@ unsafe extern "C" fn line_search_morethuente(
                     &mut dgy,
                     stp,
                     f,
-                    &mut dg,
+                    &dg,
                     stmin,
                     stmax,
                     &mut brackt,
@@ -864,62 +1163,31 @@ unsafe extern "C" fn line_search_morethuente(
 }
 // lbfgs.c:1 ends here
 
-// core
+// new
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*core][core:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
 /// Represents the original MCSTEP subroutine by J. Nocera, which is a variant
 /// of More' and Thuente's routine.
 ///
-/// Documentation is adopted from the original matlab code.
+/// The purpose of mcstep is to compute a safeguarded step for a linesearch and
+/// to update an interval of uncertainty for a minimizer of the function.
 ///
-struct Mcstep {
-    /// stx, fx, and dx are variables which specify the step, the function, and
-    /// the derivative at the best step obtained so far. The derivative must be
-    /// negative in the direction of the step, that is, dx and stp-stx must have
-    /// opposite signs. On output these parameters are updated appropriately.
+/// Documentation is adopted from the original Fortran codes.
+mod mcstep {
+    // dependencies
+    use super::{
+        cubic_minimizer,
+        cubic_minimizer2,
+        quard_minimizer,
+        quard_minimizer2,
+    };
 
-    /// the step at the best step obtained so far
-    stx: f64,
-    /// the function at the best step obtained so far
-    fx : f64,
-    /// the derivative at the best step obtained so far
-    dx : f64,
+    use quicli::prelude::{
+        bail,
+        Result
+    };
 
-    /// sty, fy, and dy are variables which specify the step, the function, and
-    /// the derivative at the other endpoint of the interval of uncertainty. On
-    /// output these parameters are updated appropriately.
-
-    /// the step at the other endpoint of the interval of uncertainty.
-    sty: f64,
-    /// the function at the other endpoint of the interval of uncertainty.
-    fy : f64,
-    /// the derivative at the other endpoint of the interval of uncertainty.
-    dy : f64,
-
-    /// stp, fp, and dp are variables which specify the step, the function, and
-    /// the derivative at the current step. If bracket is set true then on input
-    /// stp must be between stx and sty. On output stp is set to the new step.
     ///
-    /// specifies the step at the current step
-    stp: f64,
-    /// Specifies the function at the current step
-    fp : f64,
-    /// Specifies the derivative at the current step
-    dp : f64,
-
-    /// Specifies lower bound for the step
-    stmin: f64,
-
-    /// Specifies upper bound for the step
-    stmax: f64,
-
-    /// Specifies if a minimizer has been bracketed. If the minimizer has not
-    /// been bracketed then on input bracket must be set false. If the minimizer
-    /// is bracketed then on output bracket is set true.
-    bracket: bool,
-}
-
-impl Mcstep {
     /// Update a safeguarded trial value and interval for line search.
     ///
     /// This function assumes that the derivative at the point of x in the
@@ -927,30 +1195,47 @@ impl Mcstep {
     /// been bracketed in an interval of uncertainty with endpoints between x
     /// and y.
     ///
+    /// # Arguments
+    ///
+    /// * x, fx, and dx: variables which specify the step, the function, and the
+    /// derivative at the best step obtained so far. The derivative must be
+    /// negative in the direction of the step, that is, dx and t-x must have
+    /// opposite signs. On output these parameters are updated appropriately.
+    ///
+    /// * y, fy, and dy: variables which specify the step, the function, and
+    /// the derivative at the other endpoint of the interval of uncertainty. On
+    /// output these parameters are updated appropriately.
+    ///
+    /// * t, ft, and dt: variables which specify the step, the function, and the
+    /// derivative at the current step. If bracket is set true then on input t
+    /// must be between x and y. On output t is set to the new step.
+    ///
+    /// * tmin, tmax: lower and upper bounds for the step.
+    ///
+    /// * `brackt`: Specifies if a minimizer has been bracketed. If the
+    /// minimizer has not been bracketed then on input brackt must be set false.
+    /// If the minimizer is bracketed then on output `brackt` is set true.
+    ///
     /// # Return
     /// - Status value. Zero indicates a normal termination.
     ///
-    fn update_trial_interval(&mut self) -> i32 {
-        /// translate to local variables used in liblbfgs
-        let x = &mut self.stx;
-        let fx = &mut self.fx;
-        let dx = &mut self.dx;
-
-        let y = &mut self.sty;
-        let fy = &mut self.fy;
-        let dy = &mut self.dy;
-
-        let t = &mut self.stp;
-        let ft = &mut self.fp;
-        let dt = &mut self.dp;
-
-        let tmax = &mut self.stmax;
-        let tmin = &mut self.stmin;
-        let brackt = &mut self.bracket;
-
+    pub(crate) fn update_trial_interval(
+        x: &mut f64,
+        fx: &mut f64,
+        dx: &mut f64,
+        y: &mut f64,
+        fy: &mut f64,
+        dy: &mut f64,
+        t: &mut f64,
+        ft: f64,
+        dt: f64,
+        tmin: f64,
+        tmax: f64,
+        brackt: &mut bool,
+    ) -> Result<i32> {
         let mut bound = 0;
         // fsigndiff
-        let mut dsign = (*dt * (*dx / (*dx).abs()) < 0.0) as libc::c_int;
+        let mut dsign = (dt * (*dx / (*dx).abs()) < 0.0) as libc::c_int;
         // minimizer of an interpolated cubic.
         let mut mc = 0.;
         // minimizer of an interpolated quadratic.
@@ -962,13 +1247,16 @@ impl Mcstep {
         if *brackt {
             if *t <= x.min(*y) || x.max(*y) <= *t {
                 // The trival value t is out of the interval.
-                return LBFGSERR_OUTOFINTERVAL as libc::c_int;
+                // return LBFGSERR_OUTOFINTERVAL as libc::c_int;
+                bail!("LBFGSERR_OUTOFINTERVAL");
             } else if 0.0 <= *dx * (*t - *x) {
                 /* The function must decrease from x. */
-                return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+                // return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+                bail!("LBFGSERR_INCREASEGRADIENT");
             } else if tmax < tmin {
                 /* Incorrect tmin and tmax specified. */
-                return LBFGSERR_INCORRECT_TMINMAX as libc::c_int;
+                // return LBFGSERR_INCORRECT_TMINMAX as libc::c_int;
+                bail!("LBFGSERR_INCORRECT_TMINMAX");
             }
         }
 
@@ -977,15 +1265,15 @@ impl Mcstep {
         let mut q = 0.;
         let mut r = 0.;
         let mut s = 0.;
-        if *fx < *ft {
+        if *fx < ft {
             // Case 1: a higher function value.
             // The minimum is brackt. If the cubic minimizer is closer
             // to x than the quadratic one, the cubic one is taken, else
             // the average of the minimizers is taken.
             *brackt = true;
             bound = 1;
-            cubic_minimizer(&mut mc, *x, *fx, *dx, *t, *ft, *dt);
-            quard_minimizer(&mut mq, *x, *fx, *dx, *t, *ft);
+            cubic_minimizer(&mut mc, *x, *fx, *dx, *t, ft, dt);
+            quard_minimizer(&mut mq, *x, *fx, *dx, *t, ft);
             if (mc - *x).abs() < (mq - *x).abs() {
                 newt = mc
             } else {
@@ -998,14 +1286,14 @@ impl Mcstep {
             // the cubic one is taken, else the quadratic one is taken.
             *brackt = true;
             bound = 0;
-            cubic_minimizer(&mut mc, *x, *fx, *dx, *t, *ft, *dt);
-            quard_minimizer2(&mut mq, *x, *dx, *t, *dt);
+            cubic_minimizer(&mut mc, *x, *fx, *dx, *t, ft, dt);
+            quard_minimizer2(&mut mq, *x, *dx, *t, dt);
             if (mc - *t).abs() > (mq - *t).abs() {
                 newt = mc
             } else {
                 newt = mq
             }
-        } else if (*dt).abs() < (*dx).abs() {
+        } else if dt.abs() < (*dx).abs() {
             // Case 3: a lower function value, derivatives of the
             // same sign, and the magnitude of the derivative decreases.
             // The cubic minimizer is only used if the cubic tends to
@@ -1016,8 +1304,8 @@ impl Mcstep {
             // then the the minimizer closest to x is taken, else the one
             // farthest away is taken.
             bound = 1;
-            cubic_minimizer2(&mut mc, *x, *fx, *dx, *t, *ft, *dt, *tmin, *tmax);
-            quard_minimizer2(&mut mq, *x, *dx, *t, *dt);
+            cubic_minimizer2(&mut mc, *x, *fx, *dx, *t, ft, dt, tmin, tmax);
+            quard_minimizer2(&mut mq, *x, *dx, *t, dt);
             if *brackt {
                 if (*t - mc).abs() < (*t - mq).abs() {
                     newt = mc
@@ -1037,11 +1325,11 @@ impl Mcstep {
 
             bound = 0;
             if *brackt {
-                cubic_minimizer(&mut newt, *t, *ft, *dt, *y, *fy, *dy);
+                cubic_minimizer(&mut newt, *t, ft, dt, *y, *fy, *dy);
             } else if *x < *t {
-                newt = *tmax
+                newt = tmax
             } else {
-                newt = *tmin
+                newt = tmin
             }
         }
 
@@ -1053,11 +1341,11 @@ impl Mcstep {
         //   x <- t, y <- y.
         // - Case c: if f(t) <= f(x) && f'(t)*f'(x) < 0,
         //   x <- t, y <- x.
-        if *fx < *ft {
+        if *fx < ft {
             /* Case a */
             *y = *t;
-            *fy = *ft;
-            *dy = *dt
+            *fy = ft;
+            *dy = dt
         } else {
             /* Case c */
             if 0 != dsign {
@@ -1067,16 +1355,16 @@ impl Mcstep {
             }
             /* Cases b and c */
             *x = *t;
-            *fx = *ft;
-            *dx = *dt
+            *fx = ft;
+            *dx = dt
         }
 
         // Clip the new trial value in [tmin, tmax].
-        if *tmax < newt {
-            newt = *tmax
+        if tmax < newt {
+            newt = tmax
         }
-        if newt < *tmin {
-            newt = *tmin
+        if newt < tmin {
+            newt = tmin
         }
 
         // Redefine the new trial value if it is close to the upper bound of the
@@ -1094,10 +1382,11 @@ impl Mcstep {
 
         // Return the new trial value.
         *t = newt;
-        return 0;
+
+        Ok(0)
     }
 }
-// core:1 ends here
+// new:1 ends here
 
 // interpolation
 
@@ -1211,22 +1500,22 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
 }
 // interpolation:1 ends here
 
-// old
+// unsafe
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*unsafe][unsafe:1]]
 unsafe extern "C" fn update_trial_interval(
-    mut x: *mut lbfgsfloatval_t,
-    mut fx: *mut lbfgsfloatval_t,
-    mut dx: *mut lbfgsfloatval_t,
-    mut y: *mut lbfgsfloatval_t,
-    mut fy: *mut lbfgsfloatval_t,
-    mut dy: *mut lbfgsfloatval_t,
-    mut t: *mut lbfgsfloatval_t,
-    mut ft: *mut lbfgsfloatval_t,
-    mut dt: *mut lbfgsfloatval_t,
+    x: *mut lbfgsfloatval_t,
+    fx: *mut lbfgsfloatval_t,
+    dx: *mut lbfgsfloatval_t,
+    y: *mut lbfgsfloatval_t,
+    fy: *mut lbfgsfloatval_t,
+    dy: *mut lbfgsfloatval_t,
+    t: *mut lbfgsfloatval_t,
+    ft: *const lbfgsfloatval_t,
+    dt: *const lbfgsfloatval_t,
     tmin: lbfgsfloatval_t,
     tmax: lbfgsfloatval_t,
-    mut brackt: *mut libc::c_int,
+    brackt: *mut libc::c_int,
 ) -> libc::c_int {
     let mut bound: libc::c_int = 0;
     let mut dsign: libc::c_int = (*dt * (*dx / (*dx).abs()) < 0.0f64) as libc::c_int;
@@ -1377,7 +1666,7 @@ unsafe extern "C" fn update_trial_interval(
     *t = newt;
     return 0;
 }
-// old:1 ends here
+// unsafe:1 ends here
 
 // BackTracking
 
