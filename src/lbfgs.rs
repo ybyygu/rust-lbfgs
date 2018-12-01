@@ -388,16 +388,6 @@ pub struct lbfgs_parameter_t {
     ///  than zero and smaller than \c 0.5.
     pub ftol: lbfgsfloatval_t,
 
-    /// A coefficient for the Wolfe condition.
-    ///
-    ///  This parameter is valid only when the backtracking line-search
-    ///  algorithm is used with the Wolfe condition,
-    ///  ::LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE or
-    ///  ::LBFGS_LINESEARCH_BACKTRACKING_WOLFE .
-    ///  The default value is \c 0.9. This parameter should be greater
-    ///  the \ref ftol parameter and smaller than \c 1.0.
-    pub wolfe: lbfgsfloatval_t,
-
     /// A parameter to control the accuracy of the line search routine.
     ///
     ///  The default value is \c 0.9. If the function and gradient
@@ -416,6 +406,16 @@ pub struct lbfgs_parameter_t {
     ///  with the status code (::LBFGSERR_ROUNDING_ERROR) if the relative width
     ///  of the interval of uncertainty is less than this parameter.
     pub xtol: lbfgsfloatval_t,
+
+    /// A coefficient for the Wolfe condition.
+    ///
+    ///  This parameter is valid only when the backtracking line-search
+    ///  algorithm is used with the Wolfe condition,
+    ///  ::LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE or
+    ///  ::LBFGS_LINESEARCH_BACKTRACKING_WOLFE. The default value is \c 0.9.
+    ///  This parameter should be greater the \ref ftol parameter and smaller
+    ///  than \c 1.0.
+    pub wolfe: lbfgsfloatval_t,
 
     /// Coeefficient for the L1 norm of variables.
     ///
@@ -688,10 +688,10 @@ pub type line_search_proc = Option<
 /// decrease condition and a curvature condition.
 mod mcsrch {
     // dependencies
-    use quicli::prelude::{Result, bail};
     use super::mcstep;
     use super::LbfgsMath;
     use super::LinesearchOption;
+    use quicli::prelude::{bail, Result};
 
     /// A struct represents MCSRCH subroutine in original lbfgs.f by J. Nocera
     struct Mcsrch<'a> {
@@ -725,10 +725,6 @@ mod mcsrch {
             unimplemented!()
         }
 
-        fn validate(&self) -> Result<()> {
-            Ok(())
-        }
-
         /// Find a step which satisfies a sufficient decrease condition and a
         /// curvature condition (strong wolfe conditions).
         ///
@@ -748,8 +744,7 @@ mod mcsrch {
         {
             // Check the input parameters for errors.
             if !self.stp.is_sign_positive() {
-                // return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
-                bail!("LBFGSERR_INVALIDPARAMETERS");
+                bail!("A logic error (negative line-search step) occurred.");
             }
 
             // Compute the initial gradient in the search direction.
@@ -760,8 +755,7 @@ mod mcsrch {
 
             // Make sure that s points to a descent direction.
             if 0.0 < dginit {
-                // return LBFGSERR_INCREASEGRADIENT as libc::c_int;
-                bail!("LBFGSERR_INCREASEGRADIENT");
+                bail!("The current search direction increases the objective function value!");
             }
 
             // Initialize local variables.
@@ -857,90 +851,93 @@ mod mcsrch {
                     /* Rounding errors prevent further progress. */
                     // return LBFGSERR_ROUNDING_ERROR as libc::c_int;
                     bail!("LBFGSERR_ROUNDING_ERROR");
-                } else if *stp == param.max_step && *f <= ftest1 && dg <= dgtest {
+                }
+                if *stp == param.max_step && *f <= ftest1 && dg <= dgtest {
                     /* The step is the maximum value. */
                     // return LBFGSERR_MAXIMUMSTEP as libc::c_int;
                     bail!("LBFGSERR_MAXIMUMSTEP");
-                } else if *stp == param.min_step && (ftest1 < *f || dgtest <= dg) {
+                }
+                if *stp == param.min_step && (ftest1 < *f || dgtest <= dg) {
                     /* The step is the minimum value. */
                     // return LBFGSERR_MINIMUMSTEP as libc::c_int;
                     bail!("LBFGSERR_MINIMUMSTEP");
-                } else if brackt && stmax - stmin <= param.xtol * stmax {
+                }
+                if brackt && stmax - stmin <= param.xtol * stmax {
                     /* Relative width of the interval of uncertainty is at most xtol. */
                     // return LBFGSERR_WIDTHTOOSMALL as libc::c_int;
                     bail!("LBFGSERR_WIDTHTOOSMALL");
-                } else if param.max_linesearch <= count {
+                }
+                if param.max_linesearch <= count {
                     // Maximum number of iteration.
                     // return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
                     bail!("LBFGSERR_MAXIMUMLINESEARCH");
-                } else if *f <= ftest1 && dg.abs() <= param.gtol * -dginit {
+                }
+                if *f <= ftest1 && dg.abs() <= param.gtol * -dginit {
                     // The sufficient decrease condition and the directional derivative condition hold.
                     return Ok(count);
+                }
+
+                // In the first stage we seek a step for which the modified
+                // function has a nonpositive value and nonnegative derivative.
+                if 0 != stage1 && *f <= ftest1 && param.ftol.min(param.gtol) * dginit <= dg {
+                    stage1 = 0
+                }
+
+                // A modified function is used to predict the step only if
+                // we have not obtained a step for which the modified
+                // function has a nonpositive function value and nonnegative
+                // derivative, and if a lower function value has been
+                // obtained but the decrease is not sufficient.
+                if 0 != stage1 && ftest1 < *f && *f <= fx {
+                    // Define the modified function and derivative values.
+                    fm = *f - *stp * dgtest;
+                    fxm = fx - stx * dgtest;
+                    fym = fy - sty * dgtest;
+                    dgm = dg - dgtest;
+                    dgxm = dgx - dgtest;
+                    dgym = dgy - dgtest;
+
+                    // Call update_trial_interval() to update the interval of
+                    // uncertainty and to compute the new step.
+                    uinfo = mcstep::update_trial_interval(
+                        &mut stx,
+                        &mut fxm,
+                        &mut dgxm,
+                        &mut sty,
+                        &mut fym,
+                        &mut dgym,
+                        stp,
+                        fm,
+                        dgm,
+                        stmin,
+                        stmax,
+                        &mut brackt,
+                    )?;
+
+                    // Reset the function and gradient values for f.
+                    fx = fxm + stx * dgtest;
+                    fy = fym + sty * dgtest;
+                    dgx = dgxm + dgtest;
+                    dgy = dgym + dgtest
                 } else {
-                    // In the first stage we seek a step for which the modified
-                    // function has a nonpositive value and nonnegative derivative.
-                    if 0 != stage1 && *f <= ftest1 && param.ftol.min(param.gtol) * dginit <= dg {
-                        stage1 = 0
-                    }
+                    uinfo = mcstep::update_trial_interval(
+                        &mut stx,
+                        &mut fx,
+                        &mut dgx,
+                        &mut sty,
+                        &mut fy,
+                        &mut dgy,
+                        stp,
+                        *f,
+                        dg,
+                        stmin,
+                        stmax,
+                        &mut brackt,
+                    )?;
+                }
 
-                    // A modified function is used to predict the step only if
-                    // we have not obtained a step for which the modified
-                    // function has a nonpositive function value and nonnegative
-                    // derivative, and if a lower function value has been
-                    // obtained but the decrease is not sufficient.
-                    if 0 != stage1 && ftest1 < *f && *f <= fx {
-                        // Define the modified function and derivative values.
-                        fm = *f - *stp * dgtest;
-                        fxm = fx - stx * dgtest;
-                        fym = fy - sty * dgtest;
-                        dgm = dg - dgtest;
-                        dgxm = dgx - dgtest;
-                        dgym = dgy - dgtest;
-
-                        // Call update_trial_interval() to update the interval of
-                        // uncertainty and to compute the new step.
-                        uinfo = mcstep::update_trial_interval(
-                            &mut stx,
-                            &mut fxm,
-                            &mut dgxm,
-                            &mut sty,
-                            &mut fym,
-                            &mut dgym,
-                            stp,
-                            fm,
-                            dgm,
-                            stmin,
-                            stmax,
-                            &mut brackt,
-                        )?;
-
-                        // Reset the function and gradient values for f.
-                        fx = fxm + stx * dgtest;
-                        fy = fym + sty * dgtest;
-                        dgx = dgxm + dgtest;
-                        dgy = dgym + dgtest
-                    } else {
-                        uinfo = mcstep::update_trial_interval(
-                            &mut stx,
-                            &mut fx,
-                            &mut dgx,
-                            &mut sty,
-                            &mut fy,
-                            &mut dgy,
-                            stp,
-                            *f,
-                            dg,
-                            stmin,
-                            stmax,
-                            &mut brackt,
-                        )?;
-                    }
-
-                    // Force a sufficient decrease in the interval of uncertainty.
-                    if !brackt {
-                        continue;
-                    }
-
+                // Force a sufficient decrease in the interval of uncertainty.
+                if brackt {
                     if 0.66 * prev_width <= (sty - stx).abs() {
                         *stp = stx + 0.5 * (sty - stx)
                     }
@@ -950,7 +947,7 @@ mod mcsrch {
                 }
             }
 
-            bail!("bad");
+            bail!("Logic error!");
         }
     }
 }
@@ -972,50 +969,29 @@ unsafe extern "C" fn line_search_morethuente(
     mut cd: *mut callback_data_t,
     param: &lbfgs_parameter_t,
 ) -> libc::c_int {
-    let mut count: libc::c_int = 0i32;
-    let mut brackt: libc::c_int = 0;
-    let mut stage1: libc::c_int = 0;
-    let mut uinfo: libc::c_int = 0i32;
-    let mut dg: lbfgsfloatval_t = 0.;
-    let mut stx: lbfgsfloatval_t = 0.;
-    let mut fx: lbfgsfloatval_t = 0.;
-    let mut dgx: lbfgsfloatval_t = 0.;
-    let mut sty: lbfgsfloatval_t = 0.;
-    let mut fy: lbfgsfloatval_t = 0.;
-    let mut dgy: lbfgsfloatval_t = 0.;
-    let mut fxm: lbfgsfloatval_t = 0.;
-    let mut dgxm: lbfgsfloatval_t = 0.;
-    let mut fym: lbfgsfloatval_t = 0.;
-    let mut dgym: lbfgsfloatval_t = 0.;
-    let mut fm: lbfgsfloatval_t = 0.;
-    let mut dgm: lbfgsfloatval_t = 0.;
-    let mut finit: lbfgsfloatval_t = 0.;
-    let mut ftest1: lbfgsfloatval_t = 0.;
-    let mut dginit: lbfgsfloatval_t = 0.;
-    let mut dgtest: lbfgsfloatval_t = 0.;
-    let mut width: lbfgsfloatval_t = 0.;
-    let mut prev_width: lbfgsfloatval_t = 0.;
-
     // Check the input parameters for errors.
-    if *stp <= 0.0f64 {
+    if *stp <= 0.0 {
         return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
     }
 
     // Compute the initial gradient in the search direction.
+    let mut dginit = 0.0;
     vecdot(&mut dginit, g, s, n);
 
     // Make sure that s points to a descent direction.
-    if (0i32 as libc::c_double) < dginit {
+    if 0.0 < dginit {
         return LBFGSERR_INCREASEGRADIENT as libc::c_int;
     }
 
     // Initialize local variables.
-    brackt = 0i32;
-    stage1 = 1i32;
-    finit = *f;
-    dgtest = param.ftol * dginit;
-    width = param.max_step - param.min_step;
-    prev_width = 2.0f64 * width;
+    let mut brackt = false;
+    let mut stage1 = 1;
+    let mut uinfo  = 0;
+
+    let mut finit = *f;
+    let dgtest = param.ftol * dginit;
+    let mut width = param.max_step - param.min_step;
+    let mut prev_width = 2.0f64 * width;
 
     // The variables stx, fx, dgx contain the values of the step,
     // function, and directional derivative at the best step.
@@ -1024,19 +1000,20 @@ unsafe extern "C" fn line_search_morethuente(
     // the interval of uncertainty.
     // The variables stp, f, dg contain the values of the step,
     // function, and derivative at the current step.
-    sty = 0.0f64;
-    stx = sty;
-    fy = finit;
-    fx = fy;
-    dgy = dginit;
-    dgx = dgy;
+    let mut stx = 0.0;
+    let mut sty = 0.0;
+    let mut fx = finit;
+    let mut fy = finit;
+    let mut dgy = dginit;
+    let mut dgx = dgy;
 
+    let mut count = 0;
     let mut stmin = 0.;
     let mut stmax = 0.;
     loop {
         // Set the minimum and maximum steps to correspond to the
         // present interval of uncertainty.
-        if 0 != brackt {
+        if brackt {
             stmin = if stx <= sty { stx } else { sty };
             stmax = if stx >= sty { stx } else { sty }
         } else {
@@ -1054,12 +1031,11 @@ unsafe extern "C" fn line_search_morethuente(
 
         // If an unusual termination is to occur then let
         // stp be the lowest point obtained so far.
-        if 0 != brackt
+        if brackt
             && (*stp <= stmin
                 || stmax <= *stp
                 || param.max_linesearch <= count + 1i32
-                || uinfo != 0i32)
-            || 0 != brackt && stmax - stmin <= param.xtol * stmax
+                || uinfo != 0i32) || brackt && stmax - stmin <= param.xtol * stmax
         {
             *stp = stx
         }
@@ -1077,12 +1053,13 @@ unsafe extern "C" fn line_search_morethuente(
             *stp,
         );
 
+        let mut dg = 0.;
         vecdot(&mut dg, g, s, n);
-        ftest1 = finit + *stp * dgtest;
+        let ftest1 = finit + *stp * dgtest;
         count += 1;
 
         // Test for errors and convergence.
-        if 0 != brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0i32) {
+        if brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0i32) {
             /* Rounding errors prevent further progress. */
             return LBFGSERR_ROUNDING_ERROR as libc::c_int;
         } else if *stp == param.max_step && *f <= ftest1 && dg <= dgtest {
@@ -1091,7 +1068,7 @@ unsafe extern "C" fn line_search_morethuente(
         } else if *stp == param.min_step && (ftest1 < *f || dgtest <= dg) {
             /* The step is the minimum value. */
             return LBFGSERR_MINIMUMSTEP as libc::c_int;
-        } else if 0 != brackt && stmax - stmin <= param.xtol * stmax {
+        } else if brackt && stmax - stmin <= param.xtol * stmax {
             /* Relative width of the interval of uncertainty is at most xtol. */
             return LBFGSERR_WIDTHTOOSMALL as libc::c_int;
         } else if param.max_linesearch <= count {
@@ -1103,13 +1080,9 @@ unsafe extern "C" fn line_search_morethuente(
         } else {
             // In the first stage we seek a step for which the modified
             // function has a nonpositive value and nonnegative derivative.
-            if 0 != stage1 && *f <= ftest1 && if param.ftol <= param.gtol {
-                param.ftol
-            } else {
-                param.gtol
-            } * dginit <= dg
+            if 0 != stage1 && *f <= ftest1 && param.ftol.min(param.gtol) * dginit <= dg
             {
-                stage1 = 0i32
+                stage1 = 0;
             }
 
             // A modified function is used to predict the step only if
@@ -1119,29 +1092,29 @@ unsafe extern "C" fn line_search_morethuente(
             // obtained but the decrease is not sufficient.
             if 0 != stage1 && ftest1 < *f && *f <= fx {
                 // Define the modified function and derivative values.
-                fm = *f - *stp * dgtest;
-                fxm = fx - stx * dgtest;
-                fym = fy - sty * dgtest;
-                dgm = dg - dgtest;
-                dgxm = dgx - dgtest;
-                dgym = dgy - dgtest;
+                let fm = *f - *stp * dgtest;
+                let mut fxm = fx - stx * dgtest;
+                let mut fym = fy - sty * dgtest;
+                let dgm = dg - dgtest;
+                let mut dgxm = dgx - dgtest;
+                let mut dgym = dgy - dgtest;
 
                 // Call update_trial_interval() to update the interval of
                 // uncertainty and to compute the new step.
-                uinfo = update_trial_interval(
+                uinfo = mcstep::update_trial_interval(
                     &mut stx,
                     &mut fxm,
                     &mut dgxm,
                     &mut sty,
                     &mut fym,
                     &mut dgym,
-                    stp,
-                    &fm,
-                    &dgm,
+                    &mut *stp,
+                    fm,
+                    dgm,
                     stmin,
                     stmax,
                     &mut brackt,
-                );
+                ).expect("FIXME");
 
                 // Reset the function and gradient values for f.
                 fx = fxm + stx * dgtest;
@@ -1149,24 +1122,24 @@ unsafe extern "C" fn line_search_morethuente(
                 dgx = dgxm + dgtest;
                 dgy = dgym + dgtest
             } else {
-                uinfo = update_trial_interval(
+                uinfo = mcstep::update_trial_interval(
                     &mut stx,
                     &mut fx,
                     &mut dgx,
                     &mut sty,
                     &mut fy,
                     &mut dgy,
-                    stp,
-                    f,
-                    &dg,
+                    &mut *stp,
+                    *f,
+                    dg,
                     stmin,
                     stmax,
                     &mut brackt,
-                )
+                ).expect("FIXME")
             }
 
             // Force a sufficient decrease in the interval of uncertainty.
-            if !(0 != brackt) {
+            if !(brackt) {
                 continue;
             }
 
@@ -2164,13 +2137,13 @@ pub unsafe extern "C" fn lbfgs(
     let mut pf: *mut lbfgsfloatval_t = 0 as *mut lbfgsfloatval_t;
     let mut lm: *mut iteration_data_t = 0 as *mut iteration_data_t;
     let mut it: *mut iteration_data_t = 0 as *mut iteration_data_t;
-    let mut ys: lbfgsfloatval_t = 0.;
-    let mut yy: lbfgsfloatval_t = 0.;
-    let mut xnorm: lbfgsfloatval_t = 0.;
-    let mut gnorm: lbfgsfloatval_t = 0.;
-    let mut beta: lbfgsfloatval_t = 0.;
-    let mut fx: lbfgsfloatval_t = 0.0f64;
-    let mut rate: lbfgsfloatval_t = 0.0f64;
+    let mut ys = 0.;
+    let mut yy = 0.;
+    let mut xnorm = 0.;
+    let mut gnorm = 0.;
+    let mut beta = 0.;
+    let mut fx = 0.0;
+    let mut rate = 0.0;
     let mut linesearch: line_search_proc = Some(line_search_morethuente);
 
     // Construct a callback data.
@@ -2347,7 +2320,8 @@ pub unsafe extern "C" fn lbfgs(
                             );
                             if 0.0 != param.orthantwise_c {
                                 // Compute the L1 norm of the variable and add it to the object value.
-                                xnorm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
+                                xnorm =
+                                    owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
                                 fx += xnorm * param.orthantwise_c;
                                 owlqn_pseudo_gradient(
                                     pg,
@@ -2415,156 +2389,153 @@ pub unsafe extern "C" fn lbfgs(
                                         param.orthantwise_end,
                                     );
                                 }
-                                if ls < 0i32 {
+                                if ls < 0 {
                                     error!("line search failed, revert to the previous point!");
                                     /* Revert to the previous point. */
                                     veccpy(x, xp, n);
                                     veccpy(g, gp, n);
                                     ret = ls;
                                     break;
+                                }
+                                /* Compute x and g norms. */
+                                vec2norm(&mut xnorm, x, n);
+                                if param.orthantwise_c == 0.0f64 {
+                                    vec2norm(&mut gnorm, g, n);
                                 } else {
-                                    /* Compute x and g norms. */
-                                    vec2norm(&mut xnorm, x, n);
-                                    if param.orthantwise_c == 0.0f64 {
-                                        vec2norm(&mut gnorm, g, n);
-                                    } else {
-                                        vec2norm(&mut gnorm, pg, n);
-                                    }
+                                    vec2norm(&mut gnorm, pg, n);
+                                }
 
-                                    // Report the progress.
-                                    if cd.proc_progress.is_some() {
-                                        ret = cd.proc_progress.expect("non-null function pointer")(
-                                            cd.instance,
-                                            x,
-                                            g,
-                                            fx,
-                                            xnorm,
-                                            gnorm,
-                                            step,
-                                            cd.n,
-                                            k,
-                                            ls,
-                                        );
-                                        if 0 != ret {
+                                // Report the progress.
+                                if cd.proc_progress.is_some() {
+                                    ret = cd.proc_progress.expect("non-null function pointer")(
+                                        cd.instance,
+                                        x,
+                                        g,
+                                        fx,
+                                        xnorm,
+                                        gnorm,
+                                        step,
+                                        cd.n,
+                                        k,
+                                        ls,
+                                    );
+                                    if 0 != ret {
+                                        break;
+                                    }
+                                }
+
+                                // Convergence test.
+                                // The criterion is given by the following formula:
+                                //     |g(x)| / \max(1, |x|) < \epsilon
+
+                                xnorm = xnorm.max(1.0);
+                                if gnorm / xnorm <= param.epsilon {
+                                    info!("lbfgs converged");
+                                    // Convergence.
+                                    ret = LBFGS_SUCCESS as libc::c_int;
+                                    break;
+                                }
+
+                                // Test for stopping criterion.
+                                // The criterion is given by the following formula:
+                                //    (f(past_x) - f(x)) / f(x) < \delta
+                                if !pf.is_null() {
+                                    // We don't test the stopping criterion while k < past.
+                                    if param.past <= k {
+                                        // Compute the relative improvement from the past.
+                                        rate = (*pf.offset((k % param.past) as isize) - fx) / fx;
+                                        // The stopping criterion.
+                                        if rate < param.delta {
+                                            ret = LBFGS_STOP as libc::c_int;
                                             break;
                                         }
                                     }
-
-                                    // Convergence test.
-                                    // The criterion is given by the following formula:
-                                    //     |g(x)| / \max(1, |x|) < \epsilon
-
-                                    xnorm = xnorm.max(1.0);
-                                    if gnorm / xnorm <= param.epsilon {
-                                        info!("lbfgs converged");
-                                        // Convergence.
-                                        ret = LBFGS_SUCCESS as libc::c_int;
-                                        break;
-                                    }
-
-                                    // Test for stopping criterion.
-                                    // The criterion is given by the following formula:
-                                    //    (f(past_x) - f(x)) / f(x) < \delta
-                                    if !pf.is_null() {
-                                        // We don't test the stopping criterion while k < past.
-                                        if param.past <= k {
-                                            // Compute the relative improvement from the past.
-                                            rate =
-                                                (*pf.offset((k % param.past) as isize) - fx) / fx;
-                                            // The stopping criterion.
-                                            if rate < param.delta {
-                                                ret = LBFGS_STOP as libc::c_int;
-                                                break;
-                                            }
-                                        }
-                                        // Store the current value of the objective function.
-                                        *pf.offset((k % param.past) as isize) = fx
-                                    }
-
-                                    if param.max_iterations != 0 && param.max_iterations < k + 1
-                                    {
-                                        // Maximum number of iterations.
-                                        warn!("max_iterations reached!");
-                                        ret = LBFGSERR_MAXIMUMITERATION as libc::c_int;
-                                        break;
-                                    }
-
-                                    // Update vectors s and y:
-                                    // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
-                                    // y_{k+1} = g_{k+1} - g_{k}.
-                                    it = &mut *lm.offset(end as isize) as *mut iteration_data_t;
-                                    vecdiff((*it).s, x, xp, n);
-                                    vecdiff((*it).y, g, gp, n);
-
-                                    // Compute scalars ys and yy:
-                                    // ys = y^t \cdot s = 1 / \rho.
-                                    // yy = y^t \cdot y.
-                                    // Notice that yy is used for scaling the hessian matrix H_0 (Cholesky factor).
-                                    vecdot(&mut ys, (*it).y, (*it).s, n);
-                                    vecdot(&mut yy, (*it).y, (*it).y, n);
-                                    (*it).ys = ys;
-
-                                    // Recursive formula to compute dir = -(H \cdot g).
-                                    // This is described in page 779 of:
-                                    // Jorge Nocedal.
-                                    // Updating Quasi-Newton Matrices with Limited Storage.
-                                    // Mathematics of Computation, Vol. 35, No. 151,
-                                    // pp. 773--782, 1980.
-                                    bound = if m <= k { m } else { k };
-
-                                    k += 1;
-                                    end = (end + 1i32) % m;
-                                    // Compute the steepest direction.
-                                    if param.orthantwise_c == 0.0f64 {
-                                        // Compute the negative of gradients.
-                                        vecncpy(d, g, n);
-                                    } else {
-                                        vecncpy(d, pg, n);
-                                    }
-
-                                    j = end;
-                                    i = 0i32;
-                                    while i < bound {
-                                        // if (--j == -1) j = m-1;
-                                        j = (j + m - 1i32) % m;
-                                        it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
-                                        // \alpha_{j} = \rho_{j} s^{t}_{j} \cdot q_{k+1}.
-                                        vecdot(&mut (*it).alpha, (*it).s, d, n);
-                                        (*it).alpha /= (*it).ys;
-                                        // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
-                                        vecadd(d, (*it).y, -(*it).alpha, n);
-                                        i += 1
-                                    }
-                                    vecscale(d, ys / yy, n);
-                                    i = 0i32;
-                                    while i < bound {
-                                        it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
-                                        // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
-                                        vecdot(&mut beta, (*it).y, d, n);
-                                        beta /= (*it).ys;
-                                        // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
-                                        vecadd(d, (*it).s, (*it).alpha - beta, n);
-                                        // if (++j == m) j = 0;
-                                        j = (j + 1i32) % m;
-                                        i += 1
-                                    }
-
-                                    // Constrain the search direction for orthant-wise updates.
-                                    if param.orthantwise_c != 0.0 {
-                                        i = param.orthantwise_start;
-                                        while i < param.orthantwise_end {
-                                            if *d.offset(i as isize) * *pg.offset(i as isize)
-                                                >= 0i32 as libc::c_double
-                                            {
-                                                *d.offset(i as isize) = 0i32 as lbfgsfloatval_t
-                                            }
-                                            i += 1
-                                        }
-                                    }
-
-                                    // Now the search direction d is ready. We try step = 1 first.
-                                    step = 1.0
+                                    // Store the current value of the objective function.
+                                    *pf.offset((k % param.past) as isize) = fx
                                 }
+
+                                if param.max_iterations != 0 && param.max_iterations < k + 1 {
+                                    // Maximum number of iterations.
+                                    warn!("max_iterations reached!");
+                                    ret = LBFGSERR_MAXIMUMITERATION as libc::c_int;
+                                    break;
+                                }
+
+                                // Update vectors s and y:
+                                // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
+                                // y_{k+1} = g_{k+1} - g_{k}.
+                                it = &mut *lm.offset(end as isize) as *mut iteration_data_t;
+                                vecdiff((*it).s, x, xp, n);
+                                vecdiff((*it).y, g, gp, n);
+
+                                // Compute scalars ys and yy:
+                                // ys = y^t \cdot s = 1 / \rho.
+                                // yy = y^t \cdot y.
+                                // Notice that yy is used for scaling the hessian matrix H_0 (Cholesky factor).
+                                vecdot(&mut ys, (*it).y, (*it).s, n);
+                                vecdot(&mut yy, (*it).y, (*it).y, n);
+                                (*it).ys = ys;
+
+                                // Recursive formula to compute dir = -(H \cdot g).
+                                // This is described in page 779 of:
+                                // Jorge Nocedal.
+                                // Updating Quasi-Newton Matrices with Limited Storage.
+                                // Mathematics of Computation, Vol. 35, No. 151,
+                                // pp. 773--782, 1980.
+                                bound = if m <= k { m } else { k };
+
+                                k += 1;
+                                end = (end + 1i32) % m;
+                                // Compute the steepest direction.
+                                if param.orthantwise_c == 0.0f64 {
+                                    // Compute the negative of gradients.
+                                    vecncpy(d, g, n);
+                                } else {
+                                    vecncpy(d, pg, n);
+                                }
+
+                                j = end;
+                                i = 0i32;
+                                while i < bound {
+                                    // if (--j == -1) j = m-1;
+                                    j = (j + m - 1i32) % m;
+                                    it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
+                                    // \alpha_{j} = \rho_{j} s^{t}_{j} \cdot q_{k+1}.
+                                    vecdot(&mut (*it).alpha, (*it).s, d, n);
+                                    (*it).alpha /= (*it).ys;
+                                    // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
+                                    vecadd(d, (*it).y, -(*it).alpha, n);
+                                    i += 1
+                                }
+                                vecscale(d, ys / yy, n);
+                                i = 0i32;
+                                while i < bound {
+                                    it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
+                                    // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
+                                    vecdot(&mut beta, (*it).y, d, n);
+                                    beta /= (*it).ys;
+                                    // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
+                                    vecadd(d, (*it).s, (*it).alpha - beta, n);
+                                    // if (++j == m) j = 0;
+                                    j = (j + 1i32) % m;
+                                    i += 1
+                                }
+
+                                // Constrain the search direction for orthant-wise updates.
+                                if param.orthantwise_c != 0.0 {
+                                    i = param.orthantwise_start;
+                                    while i < param.orthantwise_end {
+                                        if *d.offset(i as isize) * *pg.offset(i as isize)
+                                            >= 0i32 as libc::c_double
+                                        {
+                                            *d.offset(i as isize) = 0i32 as lbfgsfloatval_t
+                                        }
+                                        i += 1
+                                    }
+                                }
+
+                                // Now the search direction d is ready. We try step = 1 first.
+                                step = 1.0
                             }
                         }
                     }
