@@ -509,7 +509,6 @@ impl Problem {
             gx: vec![0.0; n],
         }
     }
-
 }
 
 pub trait Evaluate {
@@ -524,6 +523,7 @@ impl Evaluate for Problem {
     }
 }
 
+#[derive(Debug)]
 pub struct LinesearchOption {
     /// ftol and gtol are nonnegative input variables. (in this reverse
     /// communication implementation gtol is defined in a common statement.)
@@ -542,6 +542,21 @@ pub struct LinesearchOption {
     min_step: f64,
 
     max_linesearch: usize,
+
+    condition: LineSearchCondition,
+
+    /// A coefficient for the Wolfe condition.
+    /// *  This parameter is valid only when the backtracking line-search
+    /// *  algorithm is used with the Wolfe condition,
+    /// *  The default value is 0.9. This parameter should be greater the ftol parameter and smaller than 1.0.
+    wolfe: f64,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum LineSearchCondition {
+    Armijo,
+    Wolfe,
+    StrongWolf,
 }
 
 // TODO: better defaults
@@ -554,6 +569,8 @@ impl Default for LinesearchOption {
             min_step: 1e-3,
             max_step: 1.0,
             max_linesearch: 20,
+            wolfe: 0.9,
+            condition: LineSearchCondition::StrongWolf,
         }
     }
 }
@@ -1680,9 +1697,118 @@ unsafe extern "C" fn update_trial_interval(
 }
 // unsafe:1 ends here
 
-// BackTracking
+// new
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*BackTracking][BackTracking:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+pub mod backtracking {
+    // dependencies
+    use super::Evaluate;
+    use super::LbfgsMath;
+    use super::LineSearching;
+    use super::LinesearchOption;
+    use super::LineSearchCondition;
+    use super::Problem;
+    use quicli::prelude::{bail, Result};
+
+    /// A struct represents MCSRCH subroutine in original lbfgs.f by J. Nocera
+    pub struct BackTracking<'a> {
+        /// `prob` holds input variables `x`, gradient `gx` arrays of length
+        /// n, and function value `fx`. on input it must contain the base point
+        /// for the line search. on output it contains data on x + stp*s.
+        prob: &'a mut Problem,
+
+        param: LinesearchOption,
+    }
+
+    impl<'a> LineSearching for BackTracking<'a> {
+        fn find(&mut self, stp: &mut f64, s: &[f64]) -> Result<usize> {
+            let mut width: f64 = 0.;
+            let mut dg: f64 = 0.;
+            let mut finit: f64 = 0.;
+            let mut dgtest: f64 = 0.;
+            let dec: f64 = 0.5f64;
+            let inc: f64 = 2.1f64;
+
+            // Check the input parameters for errors.
+            if *stp <= 0.0 {
+                bail!("LBFGSERR_INVALIDPARAMETERS");
+            }
+
+            // Compute the initial gradient in the search direction.
+            // vecdot(&mut dginit, g, s, n);
+            let mut dginit = self.prob.gx.vecdot(s);
+
+            // Make sure that s points to a descent direction.
+            if dginit.is_sign_positive() {
+                bail!("LBFGSERR_INCREASEGRADIENT");
+            }
+
+            // The initial value of the objective function.
+            finit = self.prob.fx;
+
+            let param = &self.param;
+            dgtest = param.ftol * dginit;
+
+            let mut count = 0;
+            loop {
+                // FIXME: handle xp in Problem
+                // veccpy(x, xp, n);
+                // vecadd(x, s, *stp, n);
+                self.prob.x.vecadd(s, *stp);
+
+                // Evaluate the function and gradient values.
+                self.prob.eval()?;
+
+                count += 1;
+                if self.prob.fx > finit + *stp * dgtest {
+                    width = dec
+                } else {
+                    // The sufficient decrease condition (Armijo condition).
+                    if param.condition == LineSearchCondition::Armijo {
+                        // Exit with the Armijo condition.
+                        return Ok(count);
+                    }
+
+                    // Check the Wolfe condition.
+                    // vecdot(&mut dg, g, s, n);
+                    dg = self.prob.gx.vecdot(s);
+                    if dg < param.wolfe * dginit {
+                        width = inc
+                    } else if param.condition == LineSearchCondition::Wolfe {
+                        // Exit with the regular Wolfe condition.
+                        return Ok(count);
+                    } else if dg > -param.wolfe * dginit {
+                        width = dec
+                    } else {
+                        return Ok(count);
+                    }
+                }
+
+                // The step is the minimum value.
+                if *stp < param.min_step {
+                    bail!("LBFGSERR_MINIMUMSTEP");
+                }
+                // The step is the maximum value.
+                if *stp > param.max_step {
+                    bail!("LBFGSERR_MAXIMUMSTEP");
+                }
+                // Maximum number of iteration.
+                if param.max_linesearch <= count {
+                    bail!("LBFGSERR_MAXIMUMLINESEARCH");
+                }
+
+                *stp *= width
+            }
+
+            bail!("LOGICAL ERROR!");
+        }
+    }
+}
+// new:1 ends here
+
+// old
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 unsafe extern "C" fn line_search_backtracking(
     n: libc::c_int,
     mut x: *mut f64,
@@ -1845,7 +1971,7 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
         }
     }
 }
-// BackTracking:1 ends here
+// old:1 ends here
 
 // vector operations
 
