@@ -524,7 +524,7 @@ impl Evaluate for Problem {
 }
 
 #[derive(Debug)]
-pub struct LinesearchOption {
+pub struct LineSearchOption {
     /// ftol and gtol are nonnegative input variables. (in this reverse
     /// communication implementation gtol is defined in a common statement.)
     ///
@@ -560,9 +560,9 @@ pub enum LineSearchCondition {
 }
 
 // TODO: better defaults
-impl Default for LinesearchOption {
+impl Default for LineSearchOption {
     fn default() -> Self {
-        LinesearchOption {
+        LineSearchOption {
             ftol: 1e-4,
             gtol: 1e-4,
             xtol: 1e-4,
@@ -755,7 +755,7 @@ mod mcsrch {
     // dependencies
     use super::mcstep;
     use super::LbfgsMath;
-    use super::LinesearchOption;
+    use super::LineSearchOption;
     use super::Evaluate;
     use super::LineSearching;
     use super::Problem;
@@ -768,7 +768,7 @@ mod mcsrch {
         /// for the line search. on output it contains data on x + stp*s.
         prob: &'a mut Problem,
 
-        param: LinesearchOption,
+        param: LineSearchOption,
     }
 
     impl<'a> LineSearching for Mcsrch<'a> {
@@ -1705,7 +1705,7 @@ pub mod backtracking {
     use super::Evaluate;
     use super::LbfgsMath;
     use super::LineSearching;
-    use super::LinesearchOption;
+    use super::LineSearchOption;
     use super::LineSearchCondition;
     use super::Problem;
     use quicli::prelude::{bail, Result};
@@ -1717,7 +1717,7 @@ pub mod backtracking {
         /// for the line search. on output it contains data on x + stp*s.
         prob: &'a mut Problem,
 
-        param: LinesearchOption,
+        param: LineSearchOption,
     }
 
     impl<'a> LineSearching for BackTracking<'a> {
