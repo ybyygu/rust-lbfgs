@@ -486,6 +486,44 @@ impl Default for lbfgs_parameter_t {
 // new
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+struct Problem {
+    /// x is an array of length n. on input it must contain the base point for
+    /// the line search.
+    pub x: Vec<f64>,
+
+    /// `fx` is a variable. It must contain the value of problem `f` at
+    /// x.
+    pub fx: f64,
+
+    /// `gx` is an array of length n. It must contain the gradient of `f` at
+    /// x.
+    pub gx: Vec<f64>,
+}
+
+impl Problem {
+    /// Initialize problem with array length n
+    fn new(n: usize) -> Self {
+        Problem {
+            x: vec![0.0; n],
+            fx: 0.0,
+            gx: vec![0.0; n],
+        }
+    }
+
+}
+
+pub trait Evaluate {
+    /// Evaluate function value `fx` and gradient `gx` at `x`
+    fn eval(&mut self) -> Result<()>;
+}
+
+// Should be defined by user
+impl Evaluate for Problem {
+    fn eval(&mut self) -> Result<()> {
+        unimplemented!()
+    }
+}
+
 pub struct LinesearchOption {
     /// ftol and gtol are nonnegative input variables. (in this reverse
     /// communication implementation gtol is defined in a common statement.)
@@ -521,7 +559,17 @@ impl Default for LinesearchOption {
 }
 
 trait LineSearching {
-    fn find();
+    /// Apply line search algorithm to find satisfactory step size
+    ///
+    /// # Arguments
+    ///
+    /// * step: initial step size
+    /// * direction: proposed searching direction
+    ///
+    /// # Return
+    ///
+    /// * the number of line searching iterations
+    fn find(&mut self, step: &mut f64, direction: &[f64]) -> Result<usize>;
 }
 // new:1 ends here
 
@@ -684,45 +732,16 @@ pub type line_search_proc = Option<
 // src
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
-struct Problem {
-    /// x is an array of length n. on input it must contain the base point for
-    /// the line search.
-    pub x: Vec<f64>,
-
-    /// `fx` is a variable. It must contain the value of problem `f` at
-    /// x.
-    pub fx: f64,
-
-    /// `gx` is an array of length n. It must contain the gradient of `f` at
-    /// x.
-    pub gx: Vec<f64>,
-}
-
-impl Problem {
-    /// Initialize problem with array length n
-    fn new(n: usize) -> Self {
-        Problem {
-            x: vec![0.0; n],
-            fx: 0.0,
-            gx: vec![0.0; n],
-        }
-    }
-
-    /// Evaluate function value `fx` and gradient `gx` at `x`
-    fn eval(&mut self) -> Result<()>
-    {
-        unimplemented!()
-    }
-}
-
 /// The purpose of mcsrch is to find a step which satisfies a sufficient
 /// decrease condition and a curvature condition.
 mod mcsrch {
     // dependencies
-    use super::Problem;
+    use super::mcstep;
     use super::LbfgsMath;
     use super::LinesearchOption;
-    use super::mcstep;
+    use super::Evaluate;
+    use super::LineSearching;
+    use super::Problem;
     use quicli::prelude::{bail, Result};
 
     /// A struct represents MCSRCH subroutine in original lbfgs.f by J. Nocera
@@ -732,29 +751,29 @@ mod mcsrch {
         /// for the line search. on output it contains data on x + stp*s.
         prob: &'a mut Problem,
 
-        /// stp is a nonnegative variable. on input stp contains an initial estimate
-        /// of a satisfactory step. on output stp contains the final estimate.
-        stp: f64,
-
         param: LinesearchOption,
     }
 
-    impl<'a> Mcsrch<'a> {
+    impl<'a> LineSearching for Mcsrch<'a> {
         /// Find a step which satisfies a sufficient decrease condition and a
         /// curvature condition (strong wolfe conditions).
         ///
         /// # Arguments
         ///
+        /// * stp: a nonnegative variable. on input stp contains an initial
+        /// estimate of a satisfactory step. on output stp contains the final
+        /// estimate.
         /// * direction: is an input array of length n which specifies the search direction.
+        ///
+        /// # Return
+        ///
+        /// * the final estimate of a satisfactory step.
         ///
         /// # Example
         ///
         /// - TODO
         ///
-        pub fn find(&mut self, s: &[f64]) -> Result<usize>
-        {
-            let stp = &mut self.stp;      // step length
-
+        fn find(&mut self, stp: &mut f64, s: &[f64]) -> Result<usize> {
             // Check the input parameters for errors.
             if !stp.is_sign_positive() {
                 bail!("A logic error (negative line-search step) occurred.");
