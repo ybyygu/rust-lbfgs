@@ -5,6 +5,7 @@
 //
 //  Copyright (c) 1990, Jorge Nocedal
 //  Copyright (c) 2007-2010 Naoaki Okazaki
+//  Copyright (c) 2018, Wenping Guo
 //  All rights reserved.
 //
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -1704,13 +1705,12 @@ pub mod backtracking {
     // dependencies
     use super::Evaluate;
     use super::LbfgsMath;
-    use super::LineSearching;
-    use super::LineSearchOption;
     use super::LineSearchCondition;
+    use super::LineSearchOption;
+    use super::LineSearching;
     use super::Problem;
     use quicli::prelude::{bail, Result};
 
-    /// A struct represents MCSRCH subroutine in original lbfgs.f by J. Nocera
     pub struct BackTracking<'a> {
         /// `prob` holds input variables `x`, gradient `gx` arrays of length
         /// n, and function value `fx`. on input it must contain the base point
@@ -1803,6 +1803,90 @@ pub mod backtracking {
             bail!("LOGICAL ERROR!");
         }
     }
+
+    // // backtracking Owlqn variant
+    // pub struct BacktrackingOwlqn<'a> {
+    //     /// `prob` holds input variables `x`, gradient `gx` arrays of length
+    //     /// n, and function value `fx`. on input it must contain the base point
+    //     /// for the line search. on output it contains data on x + stp*s.
+    //     prob: &'a mut Problem,
+
+    //     param: LineSearchOption,
+    // }
+
+    // impl<'a> LineSearching for BacktrackingOwlqn<'a> {
+    //     fn find(&mut self, stp: &mut f64, s: &[f64]) -> Result<usize> {
+    //         let mut width: f64 = 0.5f64;
+    //         let mut norm: f64 = 0.0f64;
+    //         let mut finit: f64 = *f;
+    //         let mut dgtest: f64 = 0.;
+
+    //         // Check the input parameters for errors.
+    //         if *stp <= 0.0f64 {
+    //             bail!("LBFGSERR_INVALIDPARAMETERS");
+    //         }
+
+    //         // Choose the orthant for the new point.
+    //         let mut i = 0;
+    //         while i < n {
+    //             *wp.offset(i as isize) = if *xp.offset(i as isize) == 0.0f64 {
+    //                 -*gp.offset(i as isize)
+    //             } else {
+    //                 *xp.offset(i as isize)
+    //             };
+    //             i += 1
+    //         }
+
+    //         let mut count = 0;
+    //         loop {
+    //             // Update the current point.
+    //             veccpy(x, xp, n);
+    //             vecadd(x, s, *stp, n);
+
+    //             /* The current point is projected onto the orthant. */
+    //             owlqn_project(x, wp, param.orthantwise_start, param.orthantwise_end);
+    //             /* Evaluate the function and gradient values. */
+    //             *f = (*cd).proc_evaluate.expect("non-null function pointer")(
+    //                 (*cd).instance,
+    //                 x,
+    //                 g,
+    //                 (*cd).n,
+    //                 *stp,
+    //             );
+    //             /* Compute the L1 norm of the variables and add it to the object value. */
+    //             norm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
+    //             *f += norm * param.orthantwise_c;
+    //             count += 1;
+    //             dgtest = 0.0f64;
+    //             i = 0i32;
+    //             while i < n {
+    //                 dgtest +=
+    //                     (*x.offset(i as isize) - *xp.offset(i as isize)) * *gp.offset(i as isize);
+    //                 i += 1
+    //             }
+    //             /* The sufficient decrease condition. */
+    //             if *f <= finit + param.ftol * dgtest {
+    //                 return Ok(count);
+    //             }
+
+    //             /* The step is the minimum value. */
+    //             if *stp < param.min_step {
+    //                 bail!("LBFGSERR_MINIMUMSTEP");
+    //             }
+    //             /* The step is the maximum value. */
+    //             if *stp > param.max_step {
+    //                 bail!("LBFGSERR_MAXIMUMSTEP");
+    //             }
+
+    //             /* Maximum number of iteration. */
+    //             if param.max_linesearch <= count {
+    //                 bail!("LBFGSERR_MAXIMUMLINESEARCH");
+    //             }
+
+    //             *stp *= width
+    //         }
+    //     }
+    // }
 }
 // new:1 ends here
 
