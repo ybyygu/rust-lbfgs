@@ -60,6 +60,40 @@
 // licence.
 // header:1 ends here
 
+// memory
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*memory][memory:1]]
+/* *
+ * Allocate an array for variables.
+ *
+ *  This function allocates an array of variables for the convenience of
+ *  ::lbfgs function; the function has a requreiemt for a variable array
+ *  when libLBFGS is built with SSE/SSE2 optimization routines. A user does
+ *  not have to use this function for libLBFGS built without SSE/SSE2
+ *  optimization.
+ *
+ *  @param  n           The number of variables.
+ */
+#[no_mangle]
+pub unsafe extern "C" fn lbfgs_malloc(mut n: libc::c_int) -> *mut lbfgsfloatval_t {
+    /*defined(USE_SSE)*/
+    return vecalloc(
+        (::std::mem::size_of::<lbfgsfloatval_t>() as libc::c_ulong)
+            .wrapping_mul(n as libc::c_ulong),
+    ) as *mut lbfgsfloatval_t;
+}
+
+//
+//  Free an array of variables.
+//
+//  @param  x           The array of variables allocated by ::lbfgs_malloc
+//                      function.
+#[no_mangle]
+pub unsafe extern "C" fn lbfgs_free(mut x: *mut lbfgsfloatval_t) {
+    vecfree(x as *mut libc::c_void);
+}
+// memory:1 ends here
+
 // base
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
@@ -79,15 +113,6 @@ extern "C" {
 }
 
 pub type size_t = libc::c_ulong;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tag_callback_data {
-    pub n: libc::c_int,
-    pub instance: *mut libc::c_void,
-    pub proc_evaluate: lbfgs_evaluate_t,
-    pub proc_progress: lbfgs_progress_t,
-}
 
 pub type lbfgsfloatval_t = libc::c_double;
 
@@ -277,117 +302,312 @@ pub type lbfgs_progress_t = Option<
         _: libc::c_int,
     ) -> libc::c_int,
 >;
-pub type iteration_data_t = tag_iteration_data;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tag_iteration_data {
-    pub alpha: lbfgsfloatval_t,
-    pub s: *mut lbfgsfloatval_t,
-    pub y: *mut lbfgsfloatval_t,
-    pub ys: lbfgsfloatval_t,
-}
-pub type callback_data_t = tag_callback_data;
 // base:1 ends here
 
-// parameter
+// old
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*parameter][parameter:1]]
-/// L-BFGS optimization parameters.
-///
-/// Call lbfgs_parameter_t::default() function to initialize parameters to the
-/// default values.
-#[derive(Copy, Clone, Debug)]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct lbfgs_parameter_t {
-    /// The number of corrections to approximate the inverse hessian matrix.
-    ///
-    /// The L-BFGS routine stores the computation results of previous \ref m
-    /// iterations to approximate the inverse hessian matrix of the current
-    /// iteration. This parameter controls the size of the limited memories
-    /// (corrections). The default value is \c 6. Values less than \c 3 are not
-    /// recommended. Large values will result in excessive computing time.
-    pub m: libc::c_int,
+pub struct tag_callback_data {
+    pub n: libc::c_int,
+    pub instance: *mut libc::c_void,
+    pub proc_evaluate: lbfgs_evaluate_t,
+    pub proc_progress: lbfgs_progress_t,
+}
 
-    /// Epsilon for convergence test.
-    ///
-    /// This parameter determines the accuracy with which the solution is to be
-    /// found. A minimization terminates when
-    ///
-    ///     ||g|| < epsilon * max(1, ||x||),
-    ///
-    /// where ||.|| denotes the Euclidean (L2) norm. The default value is \c
-    /// 1e-5.
-    pub epsilon: lbfgsfloatval_t,
+pub type callback_data_t = tag_callback_data;
+// old:1 ends here
 
-    /// Distance for delta-based convergence test.
-    ///
-    /// This parameter determines the distance, in iterations, to compute the
-    /// rate of decrease of the objective function. If the value of this
-    /// parameter is zero, the library does not perform the delta-based
-    /// convergence test.
-    ///
-    /// The default value is 0.
-    pub past: libc::c_int,
+// vector operations
 
-    /// Delta for convergence test.
-    ///
-    /// This parameter determines the minimum rate of decrease of the objective
-    /// function. The library stops iterations when the following condition is
-    /// met: (f' - f) / f < delta, where f' is the objective value of \ref past
-    /// iterations ago, and f is the objective value of the current iteration.
-    /// The default value is 0.
-    ///
-    pub delta: lbfgsfloatval_t,
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*vector%20operations][vector operations:1]]
+/// Abstracting lbfgs required math operations
+pub trait LbfgsMath<T> {
+    /// y += c*x
+    fn vecadd(&mut self, x: &[T], c: T);
 
-    /// The maximum number of iterations.
-    ///
-    ///  The lbfgs() function terminates an optimization process with
-    ///  ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
-    ///  exceedes this parameter. Setting this parameter to zero continues an
-    ///  optimization process until a convergence or error.
-    ///
-    /// The default value is 0.
-    pub max_iterations: libc::c_int,
+    /// vector dot product
+    /// s = x.dot(y)
+    fn vecdot(&self, other: &[T]) -> f64;
 
-    /// The line search algorithm.
-    ///
-    ///  This parameter specifies a line search algorithm to be used by the
-    ///  L-BFGS routine.
-    ///
-    pub linesearch: libc::c_int,
+    /// y = z
+    fn veccpy(&mut self, x: &[T]);
 
-    ///
-    /// The maximum number of iterations.
-    ///
-    /// The lbfgs() function terminates an optimization process with
-    /// ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
-    /// exceedes this parameter. Setting this parameter to zero continues an
-    /// optimization process until a convergence or error.
-    ///
-    /// The default value is 0.
-    pub max_linesearch: libc::c_int,
+    /// y = -x
+    fn vecncpy(&mut self, x: &[T]);
 
-    /// The minimum step of the line search routine.
-    ///
-    /// The default value is \c 1e-20. This value need not be modified unless
-    /// the exponents are too large for the machine being used, or unless the
-    /// problem is extremely badly scaled (in which case the exponents should be
-    /// increased).
-    pub min_step: lbfgsfloatval_t,
+    /// z = x - y
+    fn vecdiff(&mut self, x: &[T], y: &[T]);
 
-    /// The maximum step of the line search.
-    ///
-    ///  The default value is \c 1e+20. This value need not be modified unless
-    ///  the exponents are too large for the machine being used, or unless the
-    ///  problem is extremely badly scaled (in which case the exponents should
-    ///  be increased).
-    pub max_step: lbfgsfloatval_t,
+    /// y *= c
+    fn vecscale(&mut self, c: T);
 
+    /// ||x||
+    fn vec2norm(&self) -> T;
+
+    /// 1 / ||x||
+    fn vec2norminv(&self) -> T;
+
+    /// norm = sum(..., |x|, ...)
+    fn owlqn_x1norm(&self, start: usize) -> T;
+}
+
+impl LbfgsMath<f64> for [f64] {
+    /// y += c*x
+    fn vecadd(&mut self, x: &[f64], c: f64) {
+        for (y, x) in self.iter_mut().zip(x) {
+            *y += c * x;
+        }
+    }
+
+    /// s = y.dot(x)
+    fn vecdot(&self, other: &[f64]) -> f64 {
+        self.iter().zip(other).map(|(x, y)| x * y).sum()
+    }
+
+    /// y *= c
+    fn vecscale(&mut self, c: f64) {
+        for y in self.iter_mut() {
+            *y *= c;
+        }
+    }
+
+    /// y = x
+    fn veccpy(&mut self, x: &[f64]) {
+        for (v, x) in self.iter_mut().zip(x) {
+            *v = *x;
+        }
+    }
+
+    /// y = -x
+    fn vecncpy(&mut self, x: &[f64]) {
+        for (v, x) in self.iter_mut().zip(x) {
+            *v = -x;
+        }
+    }
+
+    /// z = x - y
+    fn vecdiff(&mut self, x: &[f64], y: &[f64]) {
+        for ((z, x), y) in self.iter_mut().zip(x).zip(y) {
+            *z = x - y;
+        }
+    }
+
+    /// ||x||
+    fn vec2norm(&self) -> f64 {
+        let n2 = self.vecdot(&self);
+        n2.sqrt()
+    }
+
+    /// 1/||x||
+    fn vec2norminv(&self) -> f64 {
+        1.0 / self.vec2norm()
+    }
+
+    fn owlqn_x1norm(&self, start: usize) -> f64 {
+        self.iter().skip(start).map(|v| v.abs()).sum()
+    }
+}
+
+#[test]
+fn test_lbfgs_math() {
+    // vector scaled add
+    let x = [1.0, 1.0, 1.0];
+    let c = 2.;
+
+    let mut y = [1.0, 2.0, 3.0];
+    y.vecadd(&x, c);
+
+    assert_eq!(3.0, y[0]);
+    assert_eq!(4.0, y[1]);
+    assert_eq!(5.0, y[2]);
+
+    // vector dot
+    let v = y.vecdot(&x);
+    assert_eq!(12.0, v);
+
+    // vector scale
+    y.vecscale(2.0);
+    assert_eq!(6.0, y[0]);
+    assert_eq!(8.0, y[1]);
+    assert_eq!(10.0, y[2]);
+
+    // vector diff
+    let mut z = y.clone();
+    z.vecdiff(&x, &y);
+    assert_eq!(-5.0, z[0]);
+    assert_eq!(-7.0, z[1]);
+    assert_eq!(-9.0, z[2]);
+
+    // vector copy
+    y.veccpy(&x);
+
+    // y = -x
+    y.vecncpy(&x);
+    assert_eq!(-1.0, y[0]);
+    assert_eq!(-1.0, y[1]);
+    assert_eq!(-1.0, y[2]);
+
+    // let x = z.as_ptr();
+    // unsafe {
+    //     let v = owlqn_x1norm(x, 0, 3);
+    //     println!("{:#?}", v);
+    // }
+    let v = z.owlqn_x1norm(1);
+    assert_eq!(v, 16.0);
+}
+
+// x(k+1) = x(k) + alpha_k * d_k
+// y += c*x
+unsafe extern "C" fn vecadd(
+    mut y: *mut lbfgsfloatval_t,
+    x: *const lbfgsfloatval_t,
+    c: lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    // convert pointer to native data type
+    let n = n as usize;
+
+    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
+    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
+
+    arr_y.vecadd(&arr_x, c);
+}
+
+unsafe extern "C" fn vecdot(
+    mut s: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    mut y: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    // convert pointer to native data type
+    let n = n as usize;
+    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
+    let arr_y = unsafe { ::std::slice::from_raw_parts(y, n) };
+
+    *s = arr_x.vecdot(arr_y);
+}
+
+/// y *= c
+unsafe extern "C" fn vecscale(mut y: *mut lbfgsfloatval_t, c: lbfgsfloatval_t, n: libc::c_int) {
+    // convert pointer to native data type
+    let n = n as usize;
+    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
+    arr_y.vecscale(c);
+}
+
+/// y = -x
+unsafe extern "C" fn vecncpy(
+    mut y: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    let n = n as usize;
+    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
+    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
+
+    arr_y.vecncpy(&arr_x);
+}
+
+/// z = x - y
+unsafe extern "C" fn vecdiff(
+    mut z: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    mut y: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    let n = n as usize;
+
+    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
+    let arr_y = unsafe { ::std::slice::from_raw_parts(y, n) };
+    let mut arr_z = unsafe { ::std::slice::from_raw_parts_mut(z, n) };
+
+    arr_z.vecdiff(&arr_x, &arr_y);
+}
+
+/// s = ||x||
+unsafe extern "C" fn vec2norm(
+    mut s: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    vecdot(s, x, x, n);
+    *s = (*s).sqrt();
+}
+
+/// y = x
+unsafe extern "C" fn veccpy(
+    mut y: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    let n = n as usize;
+
+    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
+    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
+
+    arr_y.veccpy(&arr_x);
+}
+
+unsafe extern "C" fn vec2norminv(
+    mut s: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    n: libc::c_int,
+) {
+    vec2norm(s, x, n);
+    *s = 1.0 / *s;
+}
+
+/// norm = sum(|x|, ...)
+unsafe extern "C" fn owlqn_x1norm(
+    mut x: *const lbfgsfloatval_t,
+    start: libc::c_int,
+    n: libc::c_int,
+) -> lbfgsfloatval_t {
+    // let mut i: libc::c_int = 0;
+    // let mut norm: lbfgsfloatval_t = 0.0f64;
+    // i = start;
+    // while i < n {
+    //     norm += (*x.offset(i as isize)).abs();
+    //     i += 1
+    // }
+    // return norm;
+
+    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n as usize) };
+    arr_x.owlqn_x1norm(start as usize)
+}
+
+// TODO: clean up
+unsafe extern "C" fn vecalloc(mut size: size_t) -> *mut libc::c_void {
+    let mut memblock: *mut libc::c_void = malloc(size);
+    if !memblock.is_null() {
+        memset(memblock, 0i32, size);
+    }
+    return memblock;
+}
+
+unsafe extern "C" fn vecfree(mut memblock: *mut libc::c_void) {
+    free(memblock);
+}
+// vector operations:1 ends here
+
+// new
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+#[derive(Debug, Copy, Clone)]
+pub struct LineSearchParam {
+    /// ftol and gtol are nonnegative input variables. (in this reverse
+    /// communication implementation gtol is defined in a common statement.)
+    ///
+    /// Termination occurs when the sufficient decrease condition and the
+    /// directional derivative condition are satisfied.
+    ///
     /// A parameter to control the accuracy of the line search routine.
     ///
     ///  The default value is \c 1e-4. This parameter should be greater
     ///  than zero and smaller than \c 0.5.
-    pub ftol: lbfgsfloatval_t,
+    ftol: f64,
 
     /// A parameter to control the accuracy of the line search routine.
     ///
@@ -398,150 +618,44 @@ pub struct lbfgs_parameter_t {
     ///  value. A typical small value is \c 0.1. This parameter shuold be
     ///  greater than the \ref ftol parameter (\c 1e-4) and smaller than
     ///  \c 1.0.
-    pub gtol: lbfgsfloatval_t,
+    gtol: f64,
 
+    /// xtol is a nonnegative input variable. termination occurs when the
+    /// relative width of the interval of uncertainty is at most xtol.
+    ///
     /// The machine precision for floating-point values.
     ///
     ///  This parameter must be a positive value set by a client program to
     ///  estimate the machine precision. The line search routine will terminate
     ///  with the status code (::LBFGSERR_ROUNDING_ERROR) if the relative width
     ///  of the interval of uncertainty is less than this parameter.
-    pub xtol: lbfgsfloatval_t,
-
-    /// A coefficient for the Wolfe condition.
-    ///
-    ///  This parameter is valid only when the backtracking line-search
-    ///  algorithm is used with the Wolfe condition,
-    ///  ::LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE or
-    ///  ::LBFGS_LINESEARCH_BACKTRACKING_WOLFE. The default value is \c 0.9.
-    ///  This parameter should be greater the \ref ftol parameter and smaller
-    ///  than \c 1.0.
-    pub wolfe: lbfgsfloatval_t,
-
-    /// Coeefficient for the L1 norm of variables.
-    ///
-    ///  This parameter should be set to zero for standard minimization
-    ///  problems. Setting this parameter to a positive value activates
-    ///  Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) method, which
-    ///  minimizes the objective function F(x) combined with the L1 norm |x|
-    ///  of the variables, {F(x) + C |x|}. This parameter is the coeefficient
-    ///  for the |x|, i.e., C. As the L1 norm |x| is not differentiable at
-    ///  zero, the library modifies function and gradient evaluations from
-    ///  a client program suitably; a client program thus have only to return
-    ///  the function value F(x) and gradients G(x) as usual. The default value
-    ///  is zero.
-    pub orthantwise_c: lbfgsfloatval_t,
-
-    /// Start index for computing L1 norm of the variables.
-    ///
-    /// This parameter is valid only for OWL-QN method
-    /// (i.e., \ref orthantwise_c != 0). This parameter b (0 <= b < N)
-    /// specifies the index number from which the library computes the
-    /// L1 norm of the variables x,
-    ///
-    ///     |x| := |x_{b}| + |x_{b+1}| + ... + |x_{N}| .
-    ///
-    /// In other words, variables x_1, ..., x_{b-1} are not used for
-    /// computing the L1 norm. Setting b (0 < b < N), one can protect
-    /// variables, x_1, ..., x_{b-1} (e.g., a bias term of logistic
-    /// regression) from being regularized. The default value is zero.
-    pub orthantwise_start: libc::c_int,
-
-    /// End index for computing L1 norm of the variables.
-    ///
-    /// This parameter is valid only for OWL-QN method
-    /// (i.e., \ref orthantwise_c != 0). This parameter e (0 < e <= N)
-    /// specifies the index number at which the library stops computing the
-    /// L1 norm of the variables x,
-    pub orthantwise_end: libc::c_int,
-}
-
-impl Default for lbfgs_parameter_t {
-    /// Initialize L-BFGS parameters to the default values.
-    ///
-    /// Call this function to fill a parameter structure with the default values
-    /// and overwrite parameter values if necessary.
-    fn default() -> Self {
-        lbfgs_parameter_t {
-            m: 6,
-            epsilon: 1e-5,
-            past: 0,
-            delta: 1e-5,
-            max_iterations: 0,
-            linesearch: LBFGS_LINESEARCH_DEFAULT as libc::c_int,
-            max_linesearch: 40,
-            min_step: 1e-20,
-            max_step: 1e20,
-            ftol: 1e-4,
-            wolfe: 0.9,
-            gtol: 0.9,
-            xtol: 1.0e-16,
-            orthantwise_c: 0.0,
-            orthantwise_start: 0,
-            orthantwise_end: -1,
-        }
-    }
-}
-// parameter:1 ends here
-
-// new
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
-struct Problem {
-    /// x is an array of length n. on input it must contain the base point for
-    /// the line search.
-    pub x: Vec<f64>,
-
-    /// `fx` is a variable. It must contain the value of problem `f` at
-    /// x.
-    pub fx: f64,
-
-    /// `gx` is an array of length n. It must contain the gradient of `f` at
-    /// x.
-    pub gx: Vec<f64>,
-}
-
-impl Problem {
-    /// Initialize problem with array length n
-    fn new(n: usize) -> Self {
-        Problem {
-            x: vec![0.0; n],
-            fx: 0.0,
-            gx: vec![0.0; n],
-        }
-    }
-}
-
-pub trait Evaluate {
-    /// Evaluate function value `fx` and gradient `gx` at `x`
-    fn eval(&mut self) -> Result<()>;
-}
-
-// Should be defined by user
-impl Evaluate for Problem {
-    fn eval(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-}
-
-#[derive(Debug)]
-pub struct LineSearchOption {
-    /// ftol and gtol are nonnegative input variables. (in this reverse
-    /// communication implementation gtol is defined in a common statement.)
-    ///
-    /// Termination occurs when the sufficient decrease condition and the
-    /// directional derivative condition are satisfied.
-    ftol: f64,
-    gtol: f64,
-
-    /// xtol is a nonnegative input variable. termination occurs when the
-    /// relative width of the interval of uncertainty is at most xtol.
     xtol: f64,
 
-    max_step: f64,
-
+    /// The minimum step of the line search routine.
+    ///
+    /// The default value is \c 1e-20. This value need not be modified unless
+    /// the exponents are too large for the machine being used, or unless the
+    /// problem is extremely badly scaled (in which case the exponents should be
+    /// increased).
     min_step: f64,
 
+    /// The maximum step of the line search.
+    ///
+    ///  The default value is \c 1e+20. This value need not be modified unless
+    ///  the exponents are too large for the machine being used, or unless the
+    ///  problem is extremely badly scaled (in which case the exponents should
+    ///  be increased).
+    max_step: f64,
+
+    ///
+    /// The maximum number of iterations.
+    ///
+    /// The lbfgs() function terminates an optimization process with
+    /// ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
+    /// exceedes this parameter. Setting this parameter to zero continues an
+    /// optimization process until a convergence or error.
+    ///
+    /// The default value is 0.
     max_linesearch: usize,
 
     condition: LineSearchCondition,
@@ -553,7 +667,7 @@ pub struct LineSearchOption {
     wolfe: f64,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum LineSearchCondition {
     Armijo,
     Wolfe,
@@ -561,22 +675,22 @@ pub enum LineSearchCondition {
 }
 
 // TODO: better defaults
-impl Default for LineSearchOption {
+impl Default for LineSearchParam {
     fn default() -> Self {
-        LineSearchOption {
+        LineSearchParam {
             ftol: 1e-4,
-            gtol: 1e-4,
-            xtol: 1e-4,
-            min_step: 1e-3,
-            max_step: 1.0,
-            max_linesearch: 20,
+            gtol: 0.9,
+            xtol: 1e-16,
+            min_step: 1e-20,
+            max_step: 1e20,
+            max_linesearch: 40,
             wolfe: 0.9,
             condition: LineSearchCondition::StrongWolf,
         }
     }
 }
 
-trait LineSearching {
+trait LineSearching<E> {
     /// Apply line search algorithm to find satisfactory step size
     ///
     /// # Arguments
@@ -587,7 +701,7 @@ trait LineSearching {
     /// # Return
     ///
     /// * the number of line searching iterations
-    fn find(&mut self, step: &mut f64, direction: &[f64]) -> Result<usize>;
+    fn find(&mut self, step: &mut f64, direction: &[f64], eval_fn: E) -> Result<usize>;
 }
 // new:1 ends here
 
@@ -756,7 +870,7 @@ mod mcsrch {
     // dependencies
     use super::mcstep;
     use super::LbfgsMath;
-    use super::LineSearchOption;
+    use super::LineSearchParam;
     use super::Evaluate;
     use super::LineSearching;
     use super::Problem;
@@ -769,10 +883,13 @@ mod mcsrch {
         /// for the line search. on output it contains data on x + stp*s.
         prob: &'a mut Problem,
 
-        param: LineSearchOption,
+        param: LineSearchParam,
     }
 
-    impl<'a> LineSearching for Mcsrch<'a> {
+    impl<'a, E> LineSearching<E> for Mcsrch<'a>
+    where
+        E: FnMut(&mut Problem) -> Result<()>,
+    {
         /// Find a step which satisfies a sufficient decrease condition and a
         /// curvature condition (strong wolfe conditions).
         ///
@@ -791,7 +908,7 @@ mod mcsrch {
         ///
         /// - TODO
         ///
-        fn find(&mut self, stp: &mut f64, s: &[f64]) -> Result<usize> {
+        fn find(&mut self, stp: &mut f64, s: &[f64], mut eval_fn: E) -> Result<usize> {
             // Check the input parameters for errors.
             if !stp.is_sign_positive() {
                 bail!("A logic error (negative line-search step) occurred.");
@@ -881,7 +998,8 @@ mod mcsrch {
 
                 // Evaluate the function and gradient values.
                 // *f = cd(x, g, *stp)?;
-                self.prob.eval()?;
+                eval_fn(&mut self.prob)?;
+
                 let f = self.prob.fx;
 
                 // vecdot(&mut dg, g, s, n);
@@ -1706,7 +1824,7 @@ pub mod backtracking {
     use super::Evaluate;
     use super::LbfgsMath;
     use super::LineSearchCondition;
-    use super::LineSearchOption;
+    use super::LineSearchParam;
     use super::LineSearching;
     use super::Problem;
     use quicli::prelude::{bail, Result};
@@ -1717,11 +1835,14 @@ pub mod backtracking {
         /// for the line search. on output it contains data on x + stp*s.
         prob: &'a mut Problem,
 
-        param: LineSearchOption,
+        param: LineSearchParam,
     }
 
-    impl<'a> LineSearching for BackTracking<'a> {
-        fn find(&mut self, stp: &mut f64, s: &[f64]) -> Result<usize> {
+    impl<'a, E> LineSearching<E> for BackTracking<'a>
+    where
+        E: FnMut(&mut Problem) -> Result<()>,
+    {
+        fn find(&mut self, stp: &mut f64, s: &[f64], mut eval_fn: E) -> Result<usize> {
             let mut width: f64 = 0.;
             let mut dg: f64 = 0.;
             let mut finit: f64 = 0.;
@@ -1757,7 +1878,7 @@ pub mod backtracking {
                 self.prob.x.vecadd(s, *stp);
 
                 // Evaluate the function and gradient values.
-                self.prob.eval()?;
+                eval_fn(&mut self.prob)?;
 
                 count += 1;
                 if self.prob.fx > finit + *stp * dgtest {
@@ -1811,7 +1932,7 @@ pub mod backtracking {
     //     /// for the line search. on output it contains data on x + stp*s.
     //     prob: &'a mut Problem,
 
-    //     param: LineSearchOption,
+    //     param: LineSearchParam,
     // }
 
     // impl<'a> LineSearching for BacktrackingOwlqn<'a> {
@@ -2057,282 +2178,559 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
 }
 // old:1 ends here
 
-// vector operations
+// new
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*vector%20operations][vector operations:1]]
-/// Abstracting lbfgs required math operations
-pub trait LbfgsMath<T> {
-    /// y += c*x
-    fn vecadd(&mut self, x: &[T], c: T);
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+/// L-BFGS optimization parameters.
+///
+/// Call lbfgs_parameter_t::default() function to initialize parameters to the
+/// default values.
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+pub struct LbfgsParam {
+    /// The number of corrections to approximate the inverse hessian matrix.
+    ///
+    /// The L-BFGS routine stores the computation results of previous \ref m
+    /// iterations to approximate the inverse hessian matrix of the current
+    /// iteration. This parameter controls the size of the limited memories
+    /// (corrections). The default value is 6. Values less than 3 are not
+    /// recommended. Large values will result in excessive computing time.
+    pub m: usize,
 
-    /// vector dot product
-    /// s = x.dot(y)
-    fn vecdot(&self, other: &[T]) -> f64;
+    /// Epsilon for convergence test.
+    ///
+    /// This parameter determines the accuracy with which the solution is to be
+    /// found. A minimization terminates when
+    ///
+    ///     ||g|| < epsilon * max(1, ||x||),
+    ///
+    /// where ||.|| denotes the Euclidean (L2) norm. The default value is \c
+    /// 1e-5.
+    pub epsilon: f64,
 
-    /// y = z
-    fn veccpy(&mut self, x: &[T]);
+    /// Distance for delta-based convergence test.
+    ///
+    /// This parameter determines the distance, in iterations, to compute the
+    /// rate of decrease of the objective function. If the value of this
+    /// parameter is zero, the library does not perform the delta-based
+    /// convergence test.
+    ///
+    /// The default value is 0.
+    pub past: usize,
 
-    /// y = -x
-    fn vecncpy(&mut self, x: &[T]);
+    /// Delta for convergence test.
+    ///
+    /// This parameter determines the minimum rate of decrease of the objective
+    /// function. The library stops iterations when the following condition is
+    /// met: (f' - f) / f < delta, where f' is the objective value of \ref past
+    /// iterations ago, and f is the objective value of the current iteration.
+    /// The default value is 0.
+    ///
+    pub delta: f64,
 
-    /// z = x - y
-    fn vecdiff(&mut self, x: &[T], y: &[T]);
+    /// The maximum number of iterations.
+    ///
+    ///  The lbfgs() function terminates an optimization process with
+    ///  ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
+    ///  exceedes this parameter. Setting this parameter to zero continues an
+    ///  optimization process until a convergence or error.
+    ///
+    /// The default value is 0.
+    pub max_iterations: usize,
 
-    /// y *= c
-    fn vecscale(&mut self, c: T);
+    /// The line search options.
+    ///
+    ///  This parameter specifies a line search algorithm to be used by the
+    ///  L-BFGS routine.
+    ///
+    pub linesearch: LineSearchParam,
 
-    /// ||x||
-    fn vec2norm(&self) -> T;
+    /// Coeefficient for the L1 norm of variables.
+    ///
+    ///  This parameter should be set to zero for standard minimization
+    ///  problems. Setting this parameter to a positive value activates
+    ///  Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) method, which
+    ///  minimizes the objective function F(x) combined with the L1 norm |x|
+    ///  of the variables, {F(x) + C |x|}. This parameter is the coeefficient
+    ///  for the |x|, i.e., C. As the L1 norm |x| is not differentiable at
+    ///  zero, the library modifies function and gradient evaluations from
+    ///  a client program suitably; a client program thus have only to return
+    ///  the function value F(x) and gradients G(x) as usual. The default value
+    ///  is zero.
+    pub orthantwise_c: f64,
 
-    /// 1 / ||x||
-    fn vec2norminv(&self) -> T;
+    /// Start index for computing L1 norm of the variables.
+    ///
+    /// This parameter is valid only for OWL-QN method
+    /// (i.e., \ref orthantwise_c != 0). This parameter b (0 <= b < N)
+    /// specifies the index number from which the library computes the
+    /// L1 norm of the variables x,
+    ///
+    ///     |x| := |x_{b}| + |x_{b+1}| + ... + |x_{N}| .
+    ///
+    /// In other words, variables x_1, ..., x_{b-1} are not used for
+    /// computing the L1 norm. Setting b (0 < b < N), one can protect
+    /// variables, x_1, ..., x_{b-1} (e.g., a bias term of logistic
+    /// regression) from being regularized. The default value is zero.
+    pub orthantwise_start: isize,
 
-    /// norm = sum(..., |x|, ...)
-    fn owlqn_x1norm(&self, start: usize) -> T;
+    /// End index for computing L1 norm of the variables.
+    ///
+    /// This parameter is valid only for OWL-QN method
+    /// (i.e., \ref orthantwise_c != 0). This parameter e (0 < e <= N)
+    /// specifies the index number at which the library stops computing the
+    /// L1 norm of the variables x,
+    pub orthantwise_end: isize,
 }
 
-impl LbfgsMath<f64> for [f64] {
-    /// y += c*x
-    fn vecadd(&mut self, x: &[f64], c: f64) {
-        for (y, x) in self.iter_mut().zip(x) {
-            *y += c * x;
+impl Default for LbfgsParam {
+    /// Initialize L-BFGS parameters to the default values.
+    ///
+    /// Call this function to fill a parameter structure with the default values
+    /// and overwrite parameter values if necessary.
+    fn default() -> Self {
+        LbfgsParam {
+            m: 6,
+            epsilon: 1e-5,
+            past: 0,
+            delta: 1e-5,
+            max_iterations: 0,
+            orthantwise_c: 0.0,
+            orthantwise_start: 0,
+            orthantwise_end: -1,
+            linesearch: LineSearchParam::default(),
         }
-    }
-
-    /// s = y.dot(x)
-    fn vecdot(&self, other: &[f64]) -> f64 {
-        self.iter().zip(other).map(|(x, y)| x * y).sum()
-    }
-
-    /// y *= c
-    fn vecscale(&mut self, c: f64) {
-        for y in self.iter_mut() {
-            *y *= c;
-        }
-    }
-
-    /// y = x
-    fn veccpy(&mut self, x: &[f64]) {
-        for (v, x) in self.iter_mut().zip(x) {
-            *v = *x;
-        }
-    }
-
-    /// y = -x
-    fn vecncpy(&mut self, x: &[f64]) {
-        for (v, x) in self.iter_mut().zip(x) {
-            *v = -x;
-        }
-    }
-
-    /// z = x - y
-    fn vecdiff(&mut self, x: &[f64], y: &[f64]) {
-        for ((z, x), y) in self.iter_mut().zip(x).zip(y) {
-            *z = x - y;
-        }
-    }
-
-    /// ||x||
-    fn vec2norm(&self) -> f64 {
-        let n2 = self.vecdot(&self);
-        n2.sqrt()
-    }
-
-    /// 1/||x||
-    fn vec2norminv(&self) -> f64 {
-        1.0 / self.vec2norm()
-    }
-
-    fn owlqn_x1norm(&self, start: usize) -> f64 {
-        self.iter().skip(start).map(|v| v.abs()).sum()
     }
 }
 
-#[test]
-fn test_lbfgs_math() {
-    // vector scaled add
-    let x = [1.0, 1.0, 1.0];
-    let c = 2.;
+impl LbfgsParam {
+    // Check the input parameters for errors.
+    pub fn validate(&self) -> Result<()> {
+        if self.epsilon < 0.0 {
+            bail!("LBFGSERR_INVALID_EPSILON");
+        }
+        if self.past < 0 {
+            bail!("LBFGSERR_INVALID_TESTPERIOD");
+        }
+        if self.delta < 0.0 {
+            bail!("LBFGSERR_INVALID_DELTA");
+        }
+        if self.linesearch.min_step < 0.0f64 {
+            bail!("LBFGSERR_INVALID_MINSTEP");
+        }
+        if self.linesearch.max_step < self.linesearch.min_step {
+            bail!("LBFGSERR_INVALID_MINSTEP");
+        }
+        if self.linesearch.ftol < 0.0 {
+            bail!("LBFGSERR_INVALID_FTOL");
+        }
 
-    let mut y = [1.0, 2.0, 3.0];
-    y.vecadd(&x, c);
+        if self.linesearch.condition == LineSearchCondition::Wolfe
+            || self.linesearch.condition == LineSearchCondition::StrongWolf
+        {
+            if self.linesearch.wolfe <= self.linesearch.ftol || 1.0 <= self.linesearch.wolfe {
+                bail!("LBFGSERR_INVALID_WOLFE");
+            }
+        }
 
-    assert_eq!(3.0, y[0]);
-    assert_eq!(4.0, y[1]);
-    assert_eq!(5.0, y[2]);
+        if self.linesearch.gtol < 0.0 {
+            bail!("LBFGSERR_INVALID_GTOL");
+        }
+        if self.linesearch.xtol < 0.0 {
+            bail!("LBFGSERR_INVALID_XTOL");
+        }
+        if self.linesearch.max_linesearch <= 0 {
+            bail!("LBFGSERR_INVALID_MAXLINESEARCH");
+        }
 
-    // vector dot
-    let v = y.vecdot(&x);
-    assert_eq!(12.0, v);
+        // FIXME: take care below
+        // if self.orthantwise_c < 0.0 {
+        //     bail!("LBFGSERR_INVALID_ORTHANTWISE");
+        // }
+        // if self.orthantwise_start < 0 || n < self.orthantwise_start {
+        //     bail!("LBFGSERR_INVALID_ORTHANTWISE_START");
+        // }
 
-    // vector scale
-    y.vecscale(2.0);
-    assert_eq!(6.0, y[0]);
-    assert_eq!(8.0, y[1]);
-    assert_eq!(10.0, y[2]);
+        // if self.orthantwise_end < 0 {
+        //     self.orthantwise_end = n;
+        // }
 
-    // vector diff
-    let mut z = y.clone();
-    z.vecdiff(&x, &y);
-    assert_eq!(-5.0, z[0]);
-    assert_eq!(-7.0, z[1]);
-    assert_eq!(-9.0, z[2]);
+        // if n < self.orthantwise_end {
+        //     bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
+        // }
 
-    // vector copy
-    y.veccpy(&x);
+        // FIXME: take care below
+        // if self.orthantwise_c != 0.0 {
+        //     match self.linesearch {
+        //         2 => linesearch = Some(line_search_backtracking_owlqn),
+        //         _ => {
+        //             // Only the backtracking method is available.
+        //             bail!("LBFGSERR_INVALID_LINESEARCH");
+        //         }
+        //     }
+        // } else {
+        //     match self.linesearch {
+        //         0 => linesearch = Some(line_search_morethuente),
+        //         1 | 2 | 3 => linesearch = Some(line_search_backtracking),
+        //         _ => bail!("LBFGSERR_INVALID_LINESEARCH"),
+        //     }
+        // }
 
-    // y = -x
-    y.vecncpy(&x);
-    assert_eq!(-1.0, y[0]);
-    assert_eq!(-1.0, y[1]);
-    assert_eq!(-1.0, y[2]);
+        Ok(())
+    }
+}
+// new:1 ends here
 
-    // let x = z.as_ptr();
-    // unsafe {
-    //     let v = owlqn_x1norm(x, 0, 3);
-    //     println!("{:#?}", v);
-    // }
-    let v = z.owlqn_x1norm(1);
-    assert_eq!(v, 16.0);
+// old
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+/// L-BFGS optimization parameters.
+///
+/// Call lbfgs_parameter_t::default() function to initialize parameters to the
+/// default values.
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+pub struct lbfgs_parameter_t {
+    /// The number of corrections to approximate the inverse hessian matrix.
+    ///
+    /// The L-BFGS routine stores the computation results of previous \ref m
+    /// iterations to approximate the inverse hessian matrix of the current
+    /// iteration. This parameter controls the size of the limited memories
+    /// (corrections). The default value is \c 6. Values less than \c 3 are not
+    /// recommended. Large values will result in excessive computing time.
+    pub m: libc::c_int,
+
+    /// Epsilon for convergence test.
+    ///
+    /// This parameter determines the accuracy with which the solution is to be
+    /// found. A minimization terminates when
+    ///
+    ///     ||g|| < epsilon * max(1, ||x||),
+    ///
+    /// where ||.|| denotes the Euclidean (L2) norm. The default value is \c
+    /// 1e-5.
+    pub epsilon: lbfgsfloatval_t,
+
+    /// Distance for delta-based convergence test.
+    ///
+    /// This parameter determines the distance, in iterations, to compute the
+    /// rate of decrease of the objective function. If the value of this
+    /// parameter is zero, the library does not perform the delta-based
+    /// convergence test.
+    ///
+    /// The default value is 0.
+    pub past: libc::c_int,
+
+    /// Delta for convergence test.
+    ///
+    /// This parameter determines the minimum rate of decrease of the objective
+    /// function. The library stops iterations when the following condition is
+    /// met: (f' - f) / f < delta, where f' is the objective value of \ref past
+    /// iterations ago, and f is the objective value of the current iteration.
+    /// The default value is 0.
+    ///
+    pub delta: lbfgsfloatval_t,
+
+    /// The maximum number of iterations.
+    ///
+    ///  The lbfgs() function terminates an optimization process with
+    ///  ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
+    ///  exceedes this parameter. Setting this parameter to zero continues an
+    ///  optimization process until a convergence or error.
+    ///
+    /// The default value is 0.
+    pub max_iterations: libc::c_int,
+
+    /// The line search algorithm.
+    ///
+    ///  This parameter specifies a line search algorithm to be used by the
+    ///  L-BFGS routine.
+    ///
+    pub linesearch: libc::c_int,
+
+    ///
+    /// The maximum number of iterations.
+    ///
+    /// The lbfgs() function terminates an optimization process with
+    /// ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
+    /// exceedes this parameter. Setting this parameter to zero continues an
+    /// optimization process until a convergence or error.
+    ///
+    /// The default value is 0.
+    pub max_linesearch: libc::c_int,
+
+    /// The minimum step of the line search routine.
+    ///
+    /// The default value is \c 1e-20. This value need not be modified unless
+    /// the exponents are too large for the machine being used, or unless the
+    /// problem is extremely badly scaled (in which case the exponents should be
+    /// increased).
+    pub min_step: lbfgsfloatval_t,
+
+    /// The maximum step of the line search.
+    ///
+    ///  The default value is \c 1e+20. This value need not be modified unless
+    ///  the exponents are too large for the machine being used, or unless the
+    ///  problem is extremely badly scaled (in which case the exponents should
+    ///  be increased).
+    pub max_step: lbfgsfloatval_t,
+
+    /// A parameter to control the accuracy of the line search routine.
+    ///
+    ///  The default value is \c 1e-4. This parameter should be greater
+    ///  than zero and smaller than \c 0.5.
+    pub ftol: lbfgsfloatval_t,
+
+    /// A parameter to control the accuracy of the line search routine.
+    ///
+    ///  The default value is \c 0.9. If the function and gradient
+    ///  evaluations are inexpensive with respect to the cost of the
+    ///  iteration (which is sometimes the case when solving very large
+    ///  problems) it may be advantageous to set this parameter to a small
+    ///  value. A typical small value is \c 0.1. This parameter shuold be
+    ///  greater than the \ref ftol parameter (\c 1e-4) and smaller than
+    ///  \c 1.0.
+    pub gtol: lbfgsfloatval_t,
+
+    /// The machine precision for floating-point values.
+    ///
+    ///  This parameter must be a positive value set by a client program to
+    ///  estimate the machine precision. The line search routine will terminate
+    ///  with the status code (::LBFGSERR_ROUNDING_ERROR) if the relative width
+    ///  of the interval of uncertainty is less than this parameter.
+    pub xtol: lbfgsfloatval_t,
+
+    /// A coefficient for the Wolfe condition.
+    ///
+    ///  This parameter is valid only when the backtracking line-search
+    ///  algorithm is used with the Wolfe condition,
+    ///  ::LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE or
+    ///  ::LBFGS_LINESEARCH_BACKTRACKING_WOLFE. The default value is \c 0.9.
+    ///  This parameter should be greater the \ref ftol parameter and smaller
+    ///  than \c 1.0.
+    pub wolfe: lbfgsfloatval_t,
+
+    /// Coeefficient for the L1 norm of variables.
+    ///
+    ///  This parameter should be set to zero for standard minimization
+    ///  problems. Setting this parameter to a positive value activates
+    ///  Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) method, which
+    ///  minimizes the objective function F(x) combined with the L1 norm |x|
+    ///  of the variables, {F(x) + C |x|}. This parameter is the coeefficient
+    ///  for the |x|, i.e., C. As the L1 norm |x| is not differentiable at
+    ///  zero, the library modifies function and gradient evaluations from
+    ///  a client program suitably; a client program thus have only to return
+    ///  the function value F(x) and gradients G(x) as usual. The default value
+    ///  is zero.
+    pub orthantwise_c: lbfgsfloatval_t,
+
+    /// Start index for computing L1 norm of the variables.
+    ///
+    /// This parameter is valid only for OWL-QN method
+    /// (i.e., \ref orthantwise_c != 0). This parameter b (0 <= b < N)
+    /// specifies the index number from which the library computes the
+    /// L1 norm of the variables x,
+    ///
+    ///     |x| := |x_{b}| + |x_{b+1}| + ... + |x_{N}| .
+    ///
+    /// In other words, variables x_1, ..., x_{b-1} are not used for
+    /// computing the L1 norm. Setting b (0 < b < N), one can protect
+    /// variables, x_1, ..., x_{b-1} (e.g., a bias term of logistic
+    /// regression) from being regularized. The default value is zero.
+    pub orthantwise_start: libc::c_int,
+
+    /// End index for computing L1 norm of the variables.
+    ///
+    /// This parameter is valid only for OWL-QN method
+    /// (i.e., \ref orthantwise_c != 0). This parameter e (0 < e <= N)
+    /// specifies the index number at which the library stops computing the
+    /// L1 norm of the variables x,
+    pub orthantwise_end: libc::c_int,
 }
 
-// x(k+1) = x(k) + alpha_k * d_k
-// y += c*x
-unsafe extern "C" fn vecadd(
-    mut y: *mut lbfgsfloatval_t,
-    x: *const lbfgsfloatval_t,
+impl Default for lbfgs_parameter_t {
+    /// Initialize L-BFGS parameters to the default values.
+    ///
+    /// Call this function to fill a parameter structure with the default values
+    /// and overwrite parameter values if necessary.
+    fn default() -> Self {
+        lbfgs_parameter_t {
+            m: 6,
+            epsilon: 1e-5,
+            past: 0,
+            delta: 1e-5,
+            max_iterations: 0,
+            linesearch: LBFGS_LINESEARCH_DEFAULT as libc::c_int,
+            max_linesearch: 40,
+            min_step: 1e-20,
+            max_step: 1e20,
+            ftol: 1e-4,
+            wolfe: 0.9,
+            gtol: 0.9,
+            xtol: 1.0e-16,
+            orthantwise_c: 0.0,
+            orthantwise_start: 0,
+            orthantwise_end: -1,
+        }
+    }
+}
+// old:1 ends here
+
+// new
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+fn owlqn_project_new(
+    d: &mut [f64],
+    sign: &[f64],
+    start: usize,
+    end: usize,
+) {
+    let mut i = start;
+    while i < end {
+        if d[i] * sign[i] <= 0.0 {
+            d[i] = 0.0
+        }
+        i += 1
+    }
+}
+// new:1 ends here
+
+// old
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+unsafe extern "C" fn owlqn_pseudo_gradient(
+    mut pg: *mut lbfgsfloatval_t,
+    mut x: *const lbfgsfloatval_t,
+    mut g: *const lbfgsfloatval_t,
+    n: libc::c_int,
     c: lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    // convert pointer to native data type
-    let n = n as usize;
-
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
-
-    arr_y.vecadd(&arr_x, c);
-}
-
-unsafe extern "C" fn vecdot(
-    mut s: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    mut y: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    // convert pointer to native data type
-    let n = n as usize;
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let arr_y = unsafe { ::std::slice::from_raw_parts(y, n) };
-
-    *s = arr_x.vecdot(arr_y);
-}
-
-/// y *= c
-unsafe extern "C" fn vecscale(mut y: *mut lbfgsfloatval_t, c: lbfgsfloatval_t, n: libc::c_int) {
-    // convert pointer to native data type
-    let n = n as usize;
-    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
-    arr_y.vecscale(c);
-}
-
-/// y = -x
-unsafe extern "C" fn vecncpy(
-    mut y: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let n = n as usize;
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
-
-    arr_y.vecncpy(&arr_x);
-}
-
-/// z = x - y
-unsafe extern "C" fn vecdiff(
-    mut z: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    mut y: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let n = n as usize;
-
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let arr_y = unsafe { ::std::slice::from_raw_parts(y, n) };
-    let mut arr_z = unsafe { ::std::slice::from_raw_parts_mut(z, n) };
-
-    arr_z.vecdiff(&arr_x, &arr_y);
-}
-
-/// s = ||x||
-unsafe extern "C" fn vec2norm(
-    mut s: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    vecdot(s, x, x, n);
-    *s = (*s).sqrt();
-}
-
-/// y = x
-unsafe extern "C" fn veccpy(
-    mut y: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let n = n as usize;
-
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
-
-    arr_y.veccpy(&arr_x);
-}
-
-unsafe extern "C" fn vec2norminv(
-    mut s: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    vec2norm(s, x, n);
-    *s = 1.0 / *s;
-}
-
-/// norm = sum(|x|, ...)
-unsafe extern "C" fn owlqn_x1norm(
-    mut x: *const lbfgsfloatval_t,
     start: libc::c_int,
-    n: libc::c_int,
-) -> lbfgsfloatval_t {
-    // let mut i: libc::c_int = 0;
-    // let mut norm: lbfgsfloatval_t = 0.0f64;
-    // i = start;
-    // while i < n {
-    //     norm += (*x.offset(i as isize)).abs();
-    //     i += 1
-    // }
-    // return norm;
-
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n as usize) };
-    arr_x.owlqn_x1norm(start as usize)
-}
-
-// TODO: clean up
-unsafe extern "C" fn vecalloc(mut size: size_t) -> *mut libc::c_void {
-    let mut memblock: *mut libc::c_void = malloc(size);
-    if !memblock.is_null() {
-        memset(memblock, 0i32, size);
+    end: libc::c_int,
+) {
+    let mut i: libc::c_int = 0;
+    /* Compute the negative of gradients. */
+    i = 0i32;
+    while i < start {
+        *pg.offset(i as isize) = *g.offset(i as isize);
+        i += 1
     }
-    return memblock;
+
+    // Compute the psuedo-gradients.
+    i = start;
+    while i < end {
+        if *x.offset(i as isize) < 0.0f64 {
+            /* Differentiable. */
+            *pg.offset(i as isize) = *g.offset(i as isize) - c
+        } else if 0.0f64 < *x.offset(i as isize) {
+            /* Differentiable. */
+            *pg.offset(i as isize) = *g.offset(i as isize) + c
+        } else if *g.offset(i as isize) < -c {
+            /* Take the right partial derivative. */
+            *pg.offset(i as isize) = *g.offset(i as isize) + c
+        } else if c < *g.offset(i as isize) {
+            /* Take the left partial derivative. */
+            *pg.offset(i as isize) = *g.offset(i as isize) - c
+        } else {
+            *pg.offset(i as isize) = 0.0f64
+        }
+        i += 1
+    }
+    i = end;
+    while i < n {
+        *pg.offset(i as isize) = *g.offset(i as isize);
+        i += 1
+    }
 }
 
-unsafe extern "C" fn vecfree(mut memblock: *mut libc::c_void) {
-    free(memblock);
+unsafe extern "C" fn owlqn_project(
+    mut d: *mut lbfgsfloatval_t,
+    mut sign: *const lbfgsfloatval_t,
+    start: libc::c_int,
+    end: libc::c_int,
+) {
+    let mut i = start as isize;
+    while i < end as isize {
+        if *d.offset(i) * *sign.offset(i) <= 0.0 {
+            *d.offset(i) = 0.0
+        }
+        i += 1
+    }
 }
-// vector operations:1 ends here
+// old:1 ends here
 
-// src
+// problem
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*problem][problem:1]]
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct Problem {
+    /// x is an array of length n. on input it must contain the base point for
+    /// the line search.
+    pub x: Vec<f64>,
+
+    /// `fx` is a variable. It must contain the value of problem `f` at
+    /// x.
+    pub fx: f64,
+
+    /// `gx` is an array of length n. It must contain the gradient of `f` at
+    /// x.
+    pub gx: Vec<f64>,
+}
+
+impl Problem {
+    /// Initialize problem with array length n
+    pub fn new(x: &[f64]) -> Self {
+        let n = x.len();
+        Problem {
+            x: x.into(),
+            fx: 0.0,
+            gx: vec![0.0; n],
+        }
+    }
+}
+
+pub trait Evaluate {
+    /// Evaluate function value `fx` and gradient `gx` at `x`
+    fn eval(&mut self) -> Result<()>;
+}
+// problem:1 ends here
+
+// new
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+#[derive(Clone)]
+struct IterationData {
+    pub alpha: f64,
+
+    /// [n]
+    pub s: Vec<f64>,
+
+    /// [n]
+    pub y: Vec<f64>,
+
+    /// vecdot(y, s)
+    pub ys: f64,
+}
+// new:1 ends here
+
+// old
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+pub type iteration_data_t = tag_iteration_data;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tag_iteration_data {
+    pub alpha: lbfgsfloatval_t,
+    pub s: *mut lbfgsfloatval_t,
+    pub y: *mut lbfgsfloatval_t,
+    pub ys: lbfgsfloatval_t,
+}
+// old:1 ends here
+
+// old
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 #[no_mangle]
 pub unsafe extern "C" fn lbfgs(
     arr_x: &mut [f64],
@@ -2425,7 +2823,7 @@ pub unsafe extern "C" fn lbfgs(
     if n < param.orthantwise_end {
         return LBFGSERR_INVALID_ORTHANTWISE_END as libc::c_int;
     }
-    if param.orthantwise_c != 0.0f64 {
+    if param.orthantwise_c != 0.0 {
         match param.linesearch {
             2 => linesearch = Some(line_search_backtracking_owlqn),
             _ => {
@@ -2465,10 +2863,10 @@ pub unsafe extern "C" fn lbfgs(
     let mut pf: *mut lbfgsfloatval_t = 0 as *mut lbfgsfloatval_t;
 
     // Allocate limited memory storage.
-    let mut lm: *mut iteration_data_t = 0 as *mut iteration_data_t;
+    // let mut lm: *mut iteration_data_t = 0 as *mut iteration_data_t;
     // let mut lm_arr: Vec<f64> = Vec::with_capacity(m as usize);
     // let lm = lm_arr.as_mut_ptr();
-    lm = vecalloc(
+    let mut lm = vecalloc(
         (m as libc::c_ulong)
             .wrapping_mul(::std::mem::size_of::<iteration_data_t>() as libc::c_ulong),
     ) as *mut iteration_data_t;
@@ -2760,94 +3158,110 @@ pub unsafe extern "C" fn lbfgs(
     }
     return ret;
 }
+// old:1 ends here
 
-unsafe extern "C" fn owlqn_pseudo_gradient(
-    mut pg: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    mut g: *const lbfgsfloatval_t,
-    n: libc::c_int,
-    c: lbfgsfloatval_t,
-    start: libc::c_int,
-    end: libc::c_int,
-) {
-    let mut i: libc::c_int = 0;
-    /* Compute the negative of gradients. */
-    i = 0i32;
-    while i < start {
-        *pg.offset(i as isize) = *g.offset(i as isize);
-        i += 1
-    }
+// new
 
-    // Compute the psuedo-gradients.
-    i = start;
-    while i < end {
-        if *x.offset(i as isize) < 0.0f64 {
-            /* Differentiable. */
-            *pg.offset(i as isize) = *g.offset(i as isize) - c
-        } else if 0.0f64 < *x.offset(i as isize) {
-            /* Differentiable. */
-            *pg.offset(i as isize) = *g.offset(i as isize) + c
-        } else if *g.offset(i as isize) < -c {
-            /* Take the right partial derivative. */
-            *pg.offset(i as isize) = *g.offset(i as isize) + c
-        } else if c < *g.offset(i as isize) {
-            /* Take the left partial derivative. */
-            *pg.offset(i as isize) = *g.offset(i as isize) - c
-        } else {
-            *pg.offset(i as isize) = 0.0f64
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+/// Store optimization progress data
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct ProgressData<'a> {
+    /// The current values of variables
+    pub arr_x: &'a [f64],
+    /// The current gradient values of variables.
+    pub grd_x: &'a [f64],
+    /// The current value of the objective function.
+    pub fx: f64,
+    /// The Euclidean norm of the variables
+    pub xnorm: f64,
+    /// The Euclidean norm of the gradients.
+    pub gnorm: f64,
+    /// The line-search step used for this iteration.
+    pub step: f64,
+    /// The iteration count.
+    pub niter: usize,
+    /// The number of evaluations called for this iteration.
+    pub ncall: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct LBFGS<F, G>
+where
+    F: FnMut(&mut Problem) -> Result<()>,
+    G: FnMut(&ProgressData) -> bool,
+{
+    pub param: LbfgsParam,
+    evaluate: Option<F>,
+    progress: Option<G>,
+}
+
+impl<F, G> Default for LBFGS<F, G>
+where
+    F: FnMut(&mut Problem) -> Result<()>,
+    G: FnMut(&ProgressData) -> bool,
+{
+    fn default() -> Self {
+        LBFGS {
+            param: LbfgsParam::default(),
+            evaluate: None,
+            progress: None,
         }
-        i += 1
-    }
-    i = end;
-    while i < n {
-        *pg.offset(i as isize) = *g.offset(i as isize);
-        i += 1
     }
 }
 
-/* *
- * Allocate an array for variables.
- *
- *  This function allocates an array of variables for the convenience of
- *  ::lbfgs function; the function has a requreiemt for a variable array
- *  when libLBFGS is built with SSE/SSE2 optimization routines. A user does
- *  not have to use this function for libLBFGS built without SSE/SSE2
- *  optimization.
- *
- *  @param  n           The number of variables.
- */
-#[no_mangle]
-pub unsafe extern "C" fn lbfgs_malloc(mut n: libc::c_int) -> *mut lbfgsfloatval_t {
-    /*defined(USE_SSE)*/
-    return vecalloc(
-        (::std::mem::size_of::<lbfgsfloatval_t>() as libc::c_ulong)
-            .wrapping_mul(n as libc::c_ulong),
-    ) as *mut lbfgsfloatval_t;
-}
+/// Create lbfgs optimizer with epsilon convergence
+impl<F, G> LBFGS<F, G>
+where
+    F: FnMut(&mut Problem) -> Result<()>,
+    G: FnMut(&ProgressData) -> bool,
+{
+    pub fn with_epsilon(epsilon: f64) -> Self {
+        assert!(epsilon.is_sign_positive());
 
-//
-//  Free an array of variables.
-//
-//  @param  x           The array of variables allocated by ::lbfgs_malloc
-//                      function.
-#[no_mangle]
-pub unsafe extern "C" fn lbfgs_free(mut x: *mut lbfgsfloatval_t) {
-    vecfree(x as *mut libc::c_void);
-}
+        let mut lbfgs = LBFGS::default();
 
-unsafe extern "C" fn owlqn_project(
-    mut d: *mut lbfgsfloatval_t,
-    mut sign: *const lbfgsfloatval_t,
-    start: libc::c_int,
-    end: libc::c_int,
-) {
-    let mut i: libc::c_int = 0;
-    i = start;
-    while i < end {
-        if *d.offset(i as isize) * *sign.offset(i as isize) <= 0i32 as libc::c_double {
-            *d.offset(i as isize) = 0i32 as lbfgsfloatval_t
-        }
-        i += 1
+        lbfgs.param.epsilon = epsilon;
+
+        lbfgs
+    }
+
+    /// Set progress monitor
+    pub fn set_progress_monitor(&mut self, prgr_fn: G) {
+        self.progress = Some(prgr_fn);
+    }
+
+    /// Check the input parameters for errors.
+    pub fn validate(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Start the L-BFGS optimization; this will invoke the callback functions
+    /// evaluate() and progress() when necessary.
+    ///
+    /// # Parameters
+    ///
+    /// - arr_x  : The array of input variables.
+    /// - eval_fn: A closure to evaluate on arr_x
+    ///
+    /// # Return
+    ///
+    /// * on success, return final evaluated `Problem`.
+    ///
+    pub fn run(&mut self, prob: &mut Problem, mut eval_fn: F) -> Result<()> {
+        // Check the input parameters for errors.
+        self.validate()?;
+
+        // evaluate the problem to get value and gradient.
+        eval_fn(prob)?;
+
+        // Allocate working space.
+        let prob_prev = prob.clone();
+
+        let xnorm = prob.x.vec2norm();
+
+        unimplemented!()
     }
 }
-// src:1 ends here
+// new:1 ends here
