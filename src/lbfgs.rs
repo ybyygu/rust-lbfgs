@@ -2695,9 +2695,9 @@ pub trait Evaluate {
 }
 // problem:1 ends here
 
-// new
+// iteration data
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*iteration%20data][iteration data:1]]
 #[derive(Clone)]
 struct IterationData {
     pub alpha: f64,
@@ -2711,22 +2711,7 @@ struct IterationData {
     /// vecdot(y, s)
     pub ys: f64,
 }
-// new:1 ends here
-
-// old
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
-pub type iteration_data_t = tag_iteration_data;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tag_iteration_data {
-    pub alpha: lbfgsfloatval_t,
-    pub s: *mut lbfgsfloatval_t,
-    pub y: *mut lbfgsfloatval_t,
-    pub ys: lbfgsfloatval_t,
-}
-// old:1 ends here
+// iteration data:1 ends here
 
 // old
 
