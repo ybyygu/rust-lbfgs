@@ -2748,8 +2748,6 @@ pub unsafe extern "C" fn lbfgs(
 
     let mut current_block: u64;
     let mut ret: libc::c_int = 0;
-    let mut i: libc::c_int = 0;
-    let mut j: libc::c_int = 0;
     let mut k: libc::c_int = 0;
     let mut ls: libc::c_int = 0;
     let mut end: libc::c_int = 0;
@@ -2757,7 +2755,6 @@ pub unsafe extern "C" fn lbfgs(
     let mut step: lbfgsfloatval_t = 0.;
 
     let m: libc::c_int = param.m;
-    let mut it: *mut iteration_data_t = 0 as *mut iteration_data_t;
     let mut ys = 0.;
     let mut yy = 0.;
     let mut xnorm = 0.;
@@ -2860,302 +2857,252 @@ pub unsafe extern "C" fn lbfgs(
     let mut pg_arr: Vec<f64> = Vec::with_capacity(n as usize);
     let pg = pg_arr.as_mut_ptr();
 
-    let mut pf: *mut lbfgsfloatval_t = 0 as *mut lbfgsfloatval_t;
-
     // Allocate limited memory storage.
-    // let mut lm: *mut iteration_data_t = 0 as *mut iteration_data_t;
-    // let mut lm_arr: Vec<f64> = Vec::with_capacity(m as usize);
-    // let lm = lm_arr.as_mut_ptr();
-    let mut lm = vecalloc(
-        (m as libc::c_ulong)
-            .wrapping_mul(::std::mem::size_of::<iteration_data_t>() as libc::c_ulong),
-    ) as *mut iteration_data_t;
+    let mut lm_arr: Vec<IterationData> = Vec::with_capacity(m as usize);
 
-    if lm.is_null() {
-        ret = LBFGSERR_OUTOFMEMORY as libc::c_int
+    // Initialize the limited memory.
+    let _m = m as usize;
+    for i in 0.._m {
+        lm_arr.push(IterationData {
+            alpha: 0.0,
+            ys: 0.0,
+            s: vec![0.0; n as usize],
+            y: vec![0.0; n as usize],
+        });
+    }
+
+    // Allocate an array for storing previous values of the objective function.
+    let mut pf = vec![0.0; param.past as usize];
+
+    // Store the initial value of the objective function.
+    if pf.len() > 0 {
+        pf[0] = fx;
+    }
+
+    // Evaluate the function value and its gradient.
+    fx = cd.proc_evaluate.expect("non-null function pointer")(cd.instance, x, g, cd.n, 0.0);
+    if 0.0 != param.orthantwise_c {
+        // Compute the L1 norm of the variable and add it to the object value.
+        xnorm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
+        fx += xnorm * param.orthantwise_c;
+        owlqn_pseudo_gradient(
+            pg,
+            x,
+            g,
+            n,
+            param.orthantwise_c,
+            param.orthantwise_start,
+            param.orthantwise_end,
+        );
+    }
+    // Compute the direction;
+    // we assume the initial hessian matrix H_0 as the identity matrix.
+    if param.orthantwise_c == 0.0f64 {
+        vecncpy(d, g, n);
     } else {
-        // Initialize the limited memory.
-        i = 0i32;
+        vecncpy(d, pg, n);
+    }
 
-        loop {
-            if !(i < m) {
-                current_block = 2891135413264362348;
+    // Make sure that the initial variables are not a minimizer.
+    vec2norm(&mut xnorm, x, n);
+    if param.orthantwise_c == 0.0f64 {
+        vec2norm(&mut gnorm, g, n);
+    } else {
+        vec2norm(&mut gnorm, pg, n);
+    }
+    xnorm = xnorm.max(1.0);
+
+    if gnorm / xnorm <= param.epsilon {
+        ret = LBFGS_ALREADY_MINIMIZED as libc::c_int
+    }
+
+    // Compute the initial step:
+    // step = 1.0 / sqrt(vecdot(d, d, n))
+    vec2norminv(&mut step, d, n);
+    k = 1;
+    end = 0;
+
+    info!("start lbfgs loop...");
+    loop {
+        // Store the current position and gradient vectors.
+        veccpy(xp, x, n);
+        veccpy(gp, g, n);
+        // Search for an optimal step.
+        if param.orthantwise_c == 0.0 {
+            ls = linesearch.expect("non-null function pointer")(
+                n, x, &mut fx, g, d, &mut step, xp, gp, w, &mut cd, &param,
+            )
+        } else {
+            ls = linesearch.expect("non-null function pointer")(
+                n, x, &mut fx, g, d, &mut step, xp, pg, w, &mut cd, &param,
+            );
+            owlqn_pseudo_gradient(
+                pg,
+                x,
+                g,
+                n,
+                param.orthantwise_c,
+                param.orthantwise_start,
+                param.orthantwise_end,
+            );
+        }
+        if ls < 0 {
+            error!("line search failed, revert to the previous point!");
+            /* Revert to the previous point. */
+            veccpy(x, xp, n);
+            veccpy(g, gp, n);
+            ret = ls;
+            break;
+        }
+        /* Compute x and g norms. */
+        vec2norm(&mut xnorm, x, n);
+        if param.orthantwise_c == 0.0 {
+            vec2norm(&mut gnorm, g, n);
+        } else {
+            vec2norm(&mut gnorm, pg, n);
+        }
+
+        // Report the progress.
+        if cd.proc_progress.is_some() {
+            ret = cd.proc_progress.expect("non-null function pointer")(
+                cd.instance,
+                x,
+                g,
+                fx,
+                xnorm,
+                gnorm,
+                step,
+                cd.n,
+                k,
+                ls,
+            );
+            if 0 != ret {
                 break;
             }
-            it = &mut *lm.offset(i as isize) as *mut iteration_data_t;
-            (*it).alpha = 0i32 as lbfgsfloatval_t;
-            (*it).ys = 0i32 as lbfgsfloatval_t;
-            (*it).s = vecalloc(
-                (n as libc::c_ulong)
-                    .wrapping_mul(::std::mem::size_of::<lbfgsfloatval_t>() as libc::c_ulong),
-            ) as *mut lbfgsfloatval_t;
-            (*it).y = vecalloc(
-                (n as libc::c_ulong)
-                    .wrapping_mul(::std::mem::size_of::<lbfgsfloatval_t>() as libc::c_ulong),
-            ) as *mut lbfgsfloatval_t;
-            if (*it).s.is_null() || (*it).y.is_null() {
-                ret = LBFGSERR_OUTOFMEMORY as libc::c_int;
-                current_block = 13422061289108735151;
-                break;
-            } else {
+        }
+
+        // Convergence test.
+        // The criterion is given by the following formula:
+        //     |g(x)| / \max(1, |x|) < \epsilon
+
+        xnorm = xnorm.max(1.0);
+        if gnorm / xnorm <= param.epsilon {
+            info!("lbfgs converged");
+            // Convergence.
+            ret = LBFGS_SUCCESS as libc::c_int;
+            break;
+        }
+
+        // Test for stopping criterion.
+        // The criterion is given by the following formula:
+        //    (f(past_x) - f(x)) / f(x) < \delta
+        if pf.len() > 0 {
+            // We don't test the stopping criterion while k < past.
+            if param.past <= k {
+                // Compute the relative improvement from the past.
+                // rate = (*pf.offset((k % param.past) as isize) - fx) / fx;
+                rate = (pf[(k % param.past) as usize] - fx) / fx;
+                // The stopping criterion.
+                if rate < param.delta {
+                    ret = LBFGS_STOP as libc::c_int;
+                    break;
+                }
+            }
+            // Store the current value of the objective function.
+            // *pf.offset((k % param.past) as isize) = fx
+            pf[(k % param.past) as usize] = fx;
+        }
+
+        if param.max_iterations != 0 && param.max_iterations < k + 1 {
+            // Maximum number of iterations.
+            warn!("max_iterations reached!");
+            ret = LBFGSERR_MAXIMUMITERATION as libc::c_int;
+            break;
+        }
+
+        // Update vectors s and y:
+        // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
+        // y_{k+1} = g_{k+1} - g_{k}.
+        // it = &mut *lm.offset(end as isize) as *mut iteration_data_t;
+        let mut it = &mut lm_arr[end as usize];
+        vecdiff((*it).s.as_mut_ptr(), x, xp, n);
+        vecdiff((*it).y.as_mut_ptr(), g, gp, n);
+
+        // Compute scalars ys and yy:
+        // ys = y^t \cdot s = 1 / \rho.
+        // yy = y^t \cdot y.
+        // Notice that yy is used for scaling the hessian matrix H_0 (Cholesky factor).
+        vecdot(&mut ys, (*it).y.as_mut_ptr(), (*it).s.as_mut_ptr(), n);
+        vecdot(&mut yy, (*it).y.as_mut_ptr(), (*it).y.as_mut_ptr(), n);
+        (*it).ys = ys;
+
+        // Recursive formula to compute dir = -(H \cdot g).
+        // This is described in page 779 of:
+        // Jorge Nocedal.
+        // Updating Quasi-Newton Matrices with Limited Storage.
+        // Mathematics of Computation, Vol. 35, No. 151,
+        // pp. 773--782, 1980.
+        bound = if m <= k { m } else { k };
+
+        k += 1;
+        end = (end + 1i32) % m;
+        // Compute the steepest direction.
+        if param.orthantwise_c == 0.0f64 {
+            // Compute the negative of gradients.
+            vecncpy(d, g, n);
+        } else {
+            vecncpy(d, pg, n);
+        }
+
+        let mut i = 0;
+        let mut j = end;
+        while i < bound {
+            // if (--j == -1) j = m-1;
+            j = (j + m - 1i32) % m;
+            // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
+            let mut it = &mut lm_arr[j as usize];
+
+            // \alpha_{j} = \rho_{j} s^{t}_{j} \cdot q_{k+1}.
+            vecdot(&mut (*it).alpha, (*it).s.as_mut_ptr(), d, n);
+            it.alpha /= it.ys;
+            // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
+            vecadd(d, (*it).y.as_mut_ptr(), -(*it).alpha, n);
+            i += 1
+        }
+        vecscale(d, ys / yy, n);
+
+        let mut i = 0;
+        while i < bound {
+            // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
+            let it = &mut lm_arr[j as usize];
+            // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
+            vecdot(&mut beta, (*it).y.as_mut_ptr(), d, n);
+            beta /= (*it).ys;
+            // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
+            vecadd(d, (*it).s.as_mut_ptr(), (*it).alpha - beta, n);
+            // if (++j == m) j = 0;
+            j = (j + 1i32) % m;
+            i += 1
+        }
+
+        // Constrain the search direction for orthant-wise updates.
+        if param.orthantwise_c != 0.0 {
+            let mut i = param.orthantwise_start;
+            while i < param.orthantwise_end {
+                if *d.offset(i as isize) * *pg.offset(i as isize) >= 0i32 as libc::c_double {
+                    *d.offset(i as isize) = 0i32 as lbfgsfloatval_t
+                }
                 i += 1
             }
         }
-        match current_block {
-            13422061289108735151 => {}
-            _ => {
-                // Allocate an array for storing previous values of the objective function.
-                if 0 < param.past {
-                    pf = vecalloc(
-                        (param.past as libc::c_ulong)
-                            .wrapping_mul(::std::mem::size_of::<lbfgsfloatval_t>() as libc::c_ulong),
-                    ) as *mut lbfgsfloatval_t
-                }
-                // Evaluate the function value and its gradient.
-                fx = cd.proc_evaluate.expect("non-null function pointer")(
-                    cd.instance,
-                    x,
-                    g,
-                    cd.n,
-                    0.0,
-                );
-                if 0.0 != param.orthantwise_c {
-                    // Compute the L1 norm of the variable and add it to the object value.
-                    xnorm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
-                    fx += xnorm * param.orthantwise_c;
-                    owlqn_pseudo_gradient(
-                        pg,
-                        x,
-                        g,
-                        n,
-                        param.orthantwise_c,
-                        param.orthantwise_start,
-                        param.orthantwise_end,
-                    );
-                }
-                // Store the initial value of the objective function.
-                if !pf.is_null() {
-                    *pf.offset(0isize) = fx
-                }
 
-                // Compute the direction;
-                // we assume the initial hessian matrix H_0 as the identity matrix.
-                if param.orthantwise_c == 0.0f64 {
-                    vecncpy(d, g, n);
-                } else {
-                    vecncpy(d, pg, n);
-                }
-
-                // Make sure that the initial variables are not a minimizer.
-                vec2norm(&mut xnorm, x, n);
-                if param.orthantwise_c == 0.0f64 {
-                    vec2norm(&mut gnorm, g, n);
-                } else {
-                    vec2norm(&mut gnorm, pg, n);
-                }
-                if xnorm < 1.0 {
-                    xnorm = 1.0
-                }
-                if gnorm / xnorm <= param.epsilon {
-                    ret = LBFGS_ALREADY_MINIMIZED as libc::c_int
-                }
-
-                // Compute the initial step:
-                // step = 1.0 / sqrt(vecdot(d, d, n))
-                vec2norminv(&mut step, d, n);
-                k = 1;
-                end = 0;
-
-                info!("start lbfgs loop...");
-                loop {
-                    // Store the current position and gradient vectors.
-                    veccpy(xp, x, n);
-                    veccpy(gp, g, n);
-                    // Search for an optimal step.
-                    if param.orthantwise_c == 0.0 {
-                        ls = linesearch.expect("non-null function pointer")(
-                            n, x, &mut fx, g, d, &mut step, xp, gp, w, &mut cd, &param,
-                        )
-                    } else {
-                        ls = linesearch.expect("non-null function pointer")(
-                            n, x, &mut fx, g, d, &mut step, xp, pg, w, &mut cd, &param,
-                        );
-                        owlqn_pseudo_gradient(
-                            pg,
-                            x,
-                            g,
-                            n,
-                            param.orthantwise_c,
-                            param.orthantwise_start,
-                            param.orthantwise_end,
-                        );
-                    }
-                    if ls < 0 {
-                        error!("line search failed, revert to the previous point!");
-                        /* Revert to the previous point. */
-                        veccpy(x, xp, n);
-                        veccpy(g, gp, n);
-                        ret = ls;
-                        break;
-                    }
-                    /* Compute x and g norms. */
-                    vec2norm(&mut xnorm, x, n);
-                    if param.orthantwise_c == 0.0 {
-                        vec2norm(&mut gnorm, g, n);
-                    } else {
-                        vec2norm(&mut gnorm, pg, n);
-                    }
-
-                    // Report the progress.
-                    if cd.proc_progress.is_some() {
-                        ret = cd.proc_progress.expect("non-null function pointer")(
-                            cd.instance,
-                            x,
-                            g,
-                            fx,
-                            xnorm,
-                            gnorm,
-                            step,
-                            cd.n,
-                            k,
-                            ls,
-                        );
-                        if 0 != ret {
-                            break;
-                        }
-                    }
-
-                    // Convergence test.
-                    // The criterion is given by the following formula:
-                    //     |g(x)| / \max(1, |x|) < \epsilon
-
-                    xnorm = xnorm.max(1.0);
-                    if gnorm / xnorm <= param.epsilon {
-                        info!("lbfgs converged");
-                        // Convergence.
-                        ret = LBFGS_SUCCESS as libc::c_int;
-                        break;
-                    }
-
-                    // Test for stopping criterion.
-                    // The criterion is given by the following formula:
-                    //    (f(past_x) - f(x)) / f(x) < \delta
-                    if !pf.is_null() {
-                        // We don't test the stopping criterion while k < past.
-                        if param.past <= k {
-                            // Compute the relative improvement from the past.
-                            rate = (*pf.offset((k % param.past) as isize) - fx) / fx;
-                            // The stopping criterion.
-                            if rate < param.delta {
-                                ret = LBFGS_STOP as libc::c_int;
-                                break;
-                            }
-                        }
-                        // Store the current value of the objective function.
-                        *pf.offset((k % param.past) as isize) = fx
-                    }
-
-                    if param.max_iterations != 0 && param.max_iterations < k + 1 {
-                        // Maximum number of iterations.
-                        warn!("max_iterations reached!");
-                        ret = LBFGSERR_MAXIMUMITERATION as libc::c_int;
-                        break;
-                    }
-
-                    // Update vectors s and y:
-                    // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
-                    // y_{k+1} = g_{k+1} - g_{k}.
-                    it = &mut *lm.offset(end as isize) as *mut iteration_data_t;
-                    vecdiff((*it).s, x, xp, n);
-                    vecdiff((*it).y, g, gp, n);
-
-                    // Compute scalars ys and yy:
-                    // ys = y^t \cdot s = 1 / \rho.
-                    // yy = y^t \cdot y.
-                    // Notice that yy is used for scaling the hessian matrix H_0 (Cholesky factor).
-                    vecdot(&mut ys, (*it).y, (*it).s, n);
-                    vecdot(&mut yy, (*it).y, (*it).y, n);
-                    (*it).ys = ys;
-
-                    // Recursive formula to compute dir = -(H \cdot g).
-                    // This is described in page 779 of:
-                    // Jorge Nocedal.
-                    // Updating Quasi-Newton Matrices with Limited Storage.
-                    // Mathematics of Computation, Vol. 35, No. 151,
-                    // pp. 773--782, 1980.
-                    bound = if m <= k { m } else { k };
-
-                    k += 1;
-                    end = (end + 1i32) % m;
-                    // Compute the steepest direction.
-                    if param.orthantwise_c == 0.0f64 {
-                        // Compute the negative of gradients.
-                        vecncpy(d, g, n);
-                    } else {
-                        vecncpy(d, pg, n);
-                    }
-
-                    j = end;
-                    i = 0i32;
-                    while i < bound {
-                        // if (--j == -1) j = m-1;
-                        j = (j + m - 1i32) % m;
-                        it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
-                        // \alpha_{j} = \rho_{j} s^{t}_{j} \cdot q_{k+1}.
-                        vecdot(&mut (*it).alpha, (*it).s, d, n);
-                        (*it).alpha /= (*it).ys;
-                        // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
-                        vecadd(d, (*it).y, -(*it).alpha, n);
-                        i += 1
-                    }
-                    vecscale(d, ys / yy, n);
-                    i = 0i32;
-                    while i < bound {
-                        it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
-                        // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
-                        vecdot(&mut beta, (*it).y, d, n);
-                        beta /= (*it).ys;
-                        // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
-                        vecadd(d, (*it).s, (*it).alpha - beta, n);
-                        // if (++j == m) j = 0;
-                        j = (j + 1i32) % m;
-                        i += 1
-                    }
-
-                    // Constrain the search direction for orthant-wise updates.
-                    if param.orthantwise_c != 0.0 {
-                        i = param.orthantwise_start;
-                        while i < param.orthantwise_end {
-                            if *d.offset(i as isize) * *pg.offset(i as isize)
-                                >= 0i32 as libc::c_double
-                            {
-                                *d.offset(i as isize) = 0i32 as lbfgsfloatval_t
-                            }
-                            i += 1
-                        }
-                    }
-
-                    // Now the search direction d is ready. We try step = 1 first.
-                    step = 1.0
-                }
-            }
-        }
+        // Now the search direction d is ready. We try step = 1 first.
+        step = 1.0
     }
 
     // Return the final value of the objective function.
     *ptr_fx = fx;
 
-    vecfree(pf as *mut libc::c_void);
-    /* Free memory blocks used by this function. */
-    if !lm.is_null() {
-        i = 0i32;
-        while i < m {
-            vecfree((*lm.offset(i as isize)).s as *mut libc::c_void);
-            vecfree((*lm.offset(i as isize)).y as *mut libc::c_void);
-            i += 1
-        }
-        vecfree(lm as *mut libc::c_void);
-    }
     return ret;
 }
 // old:1 ends here
