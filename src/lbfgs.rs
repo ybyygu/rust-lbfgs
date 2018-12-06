@@ -2579,12 +2579,7 @@ impl Default for lbfgs_parameter_t {
 // new
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
-fn owlqn_project_new(
-    d: &mut [f64],
-    sign: &[f64],
-    start: usize,
-    end: usize,
-) {
+fn owlqn_project_new(d: &mut [f64], sign: &[f64], start: usize, end: usize) {
     let mut i = start;
     while i < end {
         if d[i] * sign[i] <= 0.0 {
@@ -2607,38 +2602,44 @@ unsafe extern "C" fn owlqn_pseudo_gradient(
     start: libc::c_int,
     end: libc::c_int,
 ) {
-    let mut i: libc::c_int = 0;
-    /* Compute the negative of gradients. */
-    i = 0i32;
-    while i < start {
-        *pg.offset(i as isize) = *g.offset(i as isize);
-        i += 1
+    // quick wrapper
+    assert!(start >= 0);
+    assert!(end >= 0);
+    let start = start as usize;
+    let end = end as usize;
+    let n = n as usize;
+
+    let x = unsafe { ::std::slice::from_raw_parts(x, n) };
+    let g = unsafe { ::std::slice::from_raw_parts(g, n) };
+    let mut pg = unsafe { ::std::slice::from_raw_parts_mut(pg, n) };
+
+    // Compute the negative of gradients.
+    for i in 0..start {
+        pg[i] = g[i];
     }
 
     // Compute the psuedo-gradients.
-    i = start;
-    while i < end {
-        if *x.offset(i as isize) < 0.0f64 {
-            /* Differentiable. */
-            *pg.offset(i as isize) = *g.offset(i as isize) - c
-        } else if 0.0f64 < *x.offset(i as isize) {
-            /* Differentiable. */
-            *pg.offset(i as isize) = *g.offset(i as isize) + c
-        } else if *g.offset(i as isize) < -c {
-            /* Take the right partial derivative. */
-            *pg.offset(i as isize) = *g.offset(i as isize) + c
-        } else if c < *g.offset(i as isize) {
-            /* Take the left partial derivative. */
-            *pg.offset(i as isize) = *g.offset(i as isize) - c
+    for i in start..end {
+        if x[i] < 0.0 {
+            // Differentiable.
+            pg[i] = g[i] - c;
+        } else if (0.0 < x[i]) {
+            pg[i] = g[i] + c;
         } else {
-            *pg.offset(i as isize) = 0.0f64
+            if (g[i] < -c) {
+                // Take the right partial derivative.
+                pg[i] = g[i] + c;
+            } else if (c < g[i]) {
+                // Take the left partial derivative.
+                pg[i] = g[i] - c;
+            } else {
+                pg[i] = 0.;
+            }
         }
-        i += 1
     }
-    i = end;
-    while i < n {
-        *pg.offset(i as isize) = *g.offset(i as isize);
-        i += 1
+
+    for i in end..n {
+        pg[i] = g[i];
     }
 }
 
@@ -2846,8 +2847,7 @@ pub unsafe extern "C" fn lbfgs(
     let mut lm_arr: Vec<IterationData> = Vec::with_capacity(m as usize);
 
     // Initialize the limited memory.
-    let _m = m as usize;
-    for i in 0.._m {
+    for i in 0..(m as usize) {
         lm_arr.push(IterationData {
             alpha: 0.0,
             ys: 0.0,
@@ -2882,7 +2882,7 @@ pub unsafe extern "C" fn lbfgs(
     }
     // Compute the direction;
     // we assume the initial hessian matrix H_0 as the identity matrix.
-    if param.orthantwise_c == 0.0f64 {
+    if param.orthantwise_c == 0.0 {
         vecncpy(d, g, n);
     } else {
         vecncpy(d, pg, n);
@@ -2890,7 +2890,7 @@ pub unsafe extern "C" fn lbfgs(
 
     // Make sure that the initial variables are not a minimizer.
     vec2norm(&mut xnorm, x, n);
-    if param.orthantwise_c == 0.0f64 {
+    if param.orthantwise_c == 0.0 {
         vec2norm(&mut gnorm, g, n);
     } else {
         vec2norm(&mut gnorm, pg, n);
