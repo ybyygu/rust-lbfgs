@@ -60,40 +60,6 @@
 // licence.
 // header:1 ends here
 
-// memory
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*memory][memory:1]]
-/* *
- * Allocate an array for variables.
- *
- *  This function allocates an array of variables for the convenience of
- *  ::lbfgs function; the function has a requreiemt for a variable array
- *  when libLBFGS is built with SSE/SSE2 optimization routines. A user does
- *  not have to use this function for libLBFGS built without SSE/SSE2
- *  optimization.
- *
- *  @param  n           The number of variables.
- */
-#[no_mangle]
-pub unsafe extern "C" fn lbfgs_malloc(mut n: libc::c_int) -> *mut lbfgsfloatval_t {
-    /*defined(USE_SSE)*/
-    return vecalloc(
-        (::std::mem::size_of::<lbfgsfloatval_t>() as libc::c_ulong)
-            .wrapping_mul(n as libc::c_ulong),
-    ) as *mut lbfgsfloatval_t;
-}
-
-//
-//  Free an array of variables.
-//
-//  @param  x           The array of variables allocated by ::lbfgs_malloc
-//                      function.
-#[no_mangle]
-pub unsafe extern "C" fn lbfgs_free(mut x: *mut lbfgsfloatval_t) {
-    vecfree(x as *mut libc::c_void);
-}
-// memory:1 ends here
-
 // base
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
