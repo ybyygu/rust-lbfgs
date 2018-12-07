@@ -1822,7 +1822,7 @@ unsafe extern "C" fn update_trial_interval(
 pub mod backtracking {
     // dependencies
     use super::Evaluate;
-    use super::LbfgsMath;
+    use super::LbfgsMath ;
     use super::LineSearchCondition;
     use super::LineSearchParam;
     use super::LineSearching;
@@ -1925,89 +1925,25 @@ pub mod backtracking {
         }
     }
 
-    // // backtracking Owlqn variant
-    // pub struct BacktrackingOwlqn<'a> {
-    //     /// `prob` holds input variables `x`, gradient `gx` arrays of length
-    //     /// n, and function value `fx`. on input it must contain the base point
-    //     /// for the line search. on output it contains data on x + stp*s.
-    //     prob: &'a mut Problem,
+    // backtracking Owlqn variant
+    pub struct BacktrackingOwlqn<'a> {
+        /// `prob` holds input variables `x`, gradient `gx` arrays of length
+        /// n, and function value `fx`. on input it must contain the base point
+        /// for the line search. on output it contains data on x + stp*s.
+        prob: &'a mut Problem,
 
-    //     param: LineSearchParam,
-    // }
+        param: LineSearchParam,
+    }
 
-    // impl<'a> LineSearching for BacktrackingOwlqn<'a> {
-    //     fn find(&mut self, stp: &mut f64, s: &[f64]) -> Result<usize> {
-    //         let mut width: f64 = 0.5f64;
-    //         let mut norm: f64 = 0.0f64;
-    //         let mut finit: f64 = *f;
-    //         let mut dgtest: f64 = 0.;
+    impl<'a, E> LineSearching<E> for BacktrackingOwlqn<'a> {
+        fn find(&mut self, stp: &mut f64, s: &[f64], mut eval_fn: E) -> Result<usize> {
+            // quick wrapper
+            let param = &self.param;
+            let x = &self.prob.x;
 
-    //         // Check the input parameters for errors.
-    //         if *stp <= 0.0f64 {
-    //             bail!("LBFGSERR_INVALIDPARAMETERS");
-    //         }
-
-    //         // Choose the orthant for the new point.
-    //         let mut i = 0;
-    //         while i < n {
-    //             *wp.offset(i as isize) = if *xp.offset(i as isize) == 0.0f64 {
-    //                 -*gp.offset(i as isize)
-    //             } else {
-    //                 *xp.offset(i as isize)
-    //             };
-    //             i += 1
-    //         }
-
-    //         let mut count = 0;
-    //         loop {
-    //             // Update the current point.
-    //             veccpy(x, xp, n);
-    //             vecadd(x, s, *stp, n);
-
-    //             /* The current point is projected onto the orthant. */
-    //             owlqn_project(x, wp, param.orthantwise_start, param.orthantwise_end);
-    //             /* Evaluate the function and gradient values. */
-    //             *f = (*cd).proc_evaluate.expect("non-null function pointer")(
-    //                 (*cd).instance,
-    //                 x,
-    //                 g,
-    //                 (*cd).n,
-    //                 *stp,
-    //             );
-    //             /* Compute the L1 norm of the variables and add it to the object value. */
-    //             norm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
-    //             *f += norm * param.orthantwise_c;
-    //             count += 1;
-    //             dgtest = 0.0f64;
-    //             i = 0i32;
-    //             while i < n {
-    //                 dgtest +=
-    //                     (*x.offset(i as isize) - *xp.offset(i as isize)) * *gp.offset(i as isize);
-    //                 i += 1
-    //             }
-    //             /* The sufficient decrease condition. */
-    //             if *f <= finit + param.ftol * dgtest {
-    //                 return Ok(count);
-    //             }
-
-    //             /* The step is the minimum value. */
-    //             if *stp < param.min_step {
-    //                 bail!("LBFGSERR_MINIMUMSTEP");
-    //             }
-    //             /* The step is the maximum value. */
-    //             if *stp > param.max_step {
-    //                 bail!("LBFGSERR_MAXIMUMSTEP");
-    //             }
-
-    //             /* Maximum number of iteration. */
-    //             if param.max_linesearch <= count {
-    //                 bail!("LBFGSERR_MAXIMUMLINESEARCH");
-    //             }
-
-    //             *stp *= width
-    //         }
-    //     }
-    // }
+            unimplemented!()
+        }
+    }
 }
 // new:1 ends here
 
@@ -2030,10 +1966,10 @@ unsafe extern "C" fn line_search_backtracking(
     let mut width: f64 = 0.;
     let mut dg: f64 = 0.;
     let mut finit: f64 = 0.;
-    let mut dginit: f64 = 0.0f64;
+    let mut dginit: f64 = 0.0;
     let mut dgtest: f64 = 0.;
-    let dec: f64 = 0.5f64;
-    let inc: f64 = 2.1f64;
+    let dec: f64 = 0.5;
+    let inc: f64 = 2.1;
 
     // Check the input parameters for errors.
     if *stp <= 0.0 {
@@ -2052,7 +1988,7 @@ unsafe extern "C" fn line_search_backtracking(
     finit = *f;
     dgtest = param.ftol * dginit;
 
-    let mut count: libc::c_int = 0i32;
+    let mut count = 0;
     loop {
         veccpy(x, xp, n);
         vecadd(x, s, *stp, n);
@@ -2078,91 +2014,13 @@ unsafe extern "C" fn line_search_backtracking(
             } else if param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_WOLFE as libc::c_int {
                 // Exit with the regular Wolfe condition.
                 return count;
-            } else if dg > - param.wolfe * dginit {
+            } else if dg > -param.wolfe * dginit {
                 width = dec
             } else {
                 return count;
             }
         }
         if *stp < param.min_step {
-            /* The step is the minimum value. */
-            return LBFGSERR_MINIMUMSTEP as libc::c_int;
-        } else if *stp > param.max_step {
-            /* The step is the maximum value. */
-            return LBFGSERR_MAXIMUMSTEP as libc::c_int;
-        } else if param.max_linesearch <= count {
-            /* Maximum number of iteration. */
-            return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
-        } else {
-            *stp *= width
-        }
-    }
-}
-
-unsafe extern "C" fn line_search_backtracking_owlqn(
-    n: libc::c_int,
-    mut x: *mut f64,
-    mut f: *mut f64,
-    mut g: *mut f64,
-    mut s: *mut f64,
-    mut stp: *mut f64,
-    mut xp: *const f64,
-    mut gp: *const f64,
-    mut wp: *mut f64,
-    mut cd: *mut callback_data_t,
-    param: &lbfgs_parameter_t,
-) -> libc::c_int {
-    let mut i: libc::c_int = 0;
-    let mut count: libc::c_int = 0i32;
-    let mut width: f64 = 0.5f64;
-    let mut norm: f64 = 0.0f64;
-    let mut finit: f64 = *f;
-    let mut dgtest: f64 = 0.;
-
-    // Check the input parameters for errors.
-    if *stp <= 0.0f64 {
-        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
-    }
-
-    // Choose the orthant for the new point.
-    i = 0i32;
-    while i < n {
-        *wp.offset(i as isize) = if *xp.offset(i as isize) == 0.0f64 {
-            -*gp.offset(i as isize)
-        } else {
-            *xp.offset(i as isize)
-        };
-        i += 1
-    }
-
-    loop {
-        // Update the current point.
-        veccpy(x, xp, n);
-        vecadd(x, s, *stp, n);
-        /* The current point is projected onto the orthant. */
-        owlqn_project(x, wp, param.orthantwise_start, param.orthantwise_end);
-        /* Evaluate the function and gradient values. */
-        *f = (*cd).proc_evaluate.expect("non-null function pointer")(
-            (*cd).instance,
-            x,
-            g,
-            (*cd).n,
-            *stp,
-        );
-        /* Compute the L1 norm of the variables and add it to the object value. */
-        norm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
-        *f += norm * param.orthantwise_c;
-        count += 1;
-        dgtest = 0.0f64;
-        i = 0i32;
-        while i < n {
-            dgtest += (*x.offset(i as isize) - *xp.offset(i as isize)) * *gp.offset(i as isize);
-            i += 1
-        }
-        if *f <= finit + param.ftol * dgtest {
-            /* The sufficient decrease condition. */
-            return count;
-        } else if *stp < param.min_step {
             /* The step is the minimum value. */
             return LBFGSERR_MINIMUMSTEP as libc::c_int;
         } else if *stp > param.max_step {
@@ -2579,7 +2437,7 @@ impl Default for lbfgs_parameter_t {
 // new
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
-fn owlqn_project_new(d: &mut [f64], sign: &[f64], start: usize, end: usize) {
+fn owlqn_project(d: &mut [f64], sign: &[f64], start: usize, end: usize) {
     let mut i = start;
     while i < end {
         if d[i] * sign[i] <= 0.0 {
@@ -2593,6 +2451,97 @@ fn owlqn_project_new(d: &mut [f64], sign: &[f64], start: usize, end: usize) {
 // old
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+unsafe extern "C" fn line_search_backtracking_owlqn(
+    n: libc::c_int,
+    mut x: *mut f64,
+    mut f: *mut f64,
+    mut g: *mut f64,
+    mut s: *mut f64,
+    mut stp: *mut f64,
+    mut xp: *const f64,
+    mut gp: *const f64,
+    mut wp: *mut f64,
+    mut cd: *mut callback_data_t,
+    param: &lbfgs_parameter_t,
+) -> libc::c_int {
+    let mut i: libc::c_int = 0;
+    let mut count: libc::c_int = 0i32;
+    let mut width: f64 = 0.5f64;
+    let mut finit: f64 = *f;
+
+    // Check the input parameters for errors.
+    if *stp <= 0.0f64 {
+        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
+    }
+
+    // quick wrapper
+    let n = n as usize;
+    let s = unsafe { ::std::slice::from_raw_parts(s, n) };
+    let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
+    let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
+    let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
+    let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
+    let wp = unsafe { ::std::slice::from_raw_parts_mut(wp, n) };
+
+    // Choose the orthant for the new point.
+    // FIXME: float == 0.0??
+    for i in 0..n {
+        wp[i] = if xp[i] == 0.0 { -gp[i] } else { xp[i] };
+    }
+
+    loop {
+        // Update the current point.
+        // veccpy(x, xp, n);
+        x.veccpy(xp);
+        // vecadd(x, s, *stp, n);
+        x.vecadd(s, *stp);
+
+        // The current point is projected onto the orthant.
+        owlqn_project(x, wp, param.orthantwise_start as usize, param.orthantwise_end as usize);
+
+        // Evaluate the function and gradient values.
+        *f = (*cd).proc_evaluate.expect("non-null function pointer")(
+            (*cd).instance,
+            x.as_ptr(),
+            g.as_mut_ptr(),
+            (*cd).n,
+            *stp,
+        );
+
+        // Compute the L1 norm of the variables and add it to the object value.
+        let norm = owlqn_x1norm(x.as_ptr(), param.orthantwise_start, param.orthantwise_end);
+        *f += norm * param.orthantwise_c;
+
+        count += 1;
+
+        let mut dgtest = 0.0f64;
+        for i in 0..n {
+            dgtest += (x[i] - xp[i]) * gp[i];
+        }
+
+        if *f <= finit + param.ftol * dgtest {
+            // The sufficient decrease condition.
+            return count;
+        }
+
+        if *stp < param.min_step {
+            // The step is the minimum value.
+            return LBFGSERR_MINIMUMSTEP as libc::c_int;
+        }
+
+        if *stp > param.max_step {
+            // The step is the maximum value.
+            return LBFGSERR_MAXIMUMSTEP as libc::c_int;
+        }
+        if param.max_linesearch <= count {
+            // Maximum number of iteration.
+            return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
+        }
+
+        *stp *= width
+    }
+}
+
 unsafe extern "C" fn owlqn_pseudo_gradient(
     mut pg: *mut lbfgsfloatval_t,
     mut x: *const lbfgsfloatval_t,
@@ -2640,21 +2589,6 @@ unsafe extern "C" fn owlqn_pseudo_gradient(
 
     for i in end..n {
         pg[i] = g[i];
-    }
-}
-
-unsafe extern "C" fn owlqn_project(
-    mut d: *mut lbfgsfloatval_t,
-    mut sign: *const lbfgsfloatval_t,
-    start: libc::c_int,
-    end: libc::c_int,
-) {
-    let mut i = start as isize;
-    while i < end as isize {
-        if *d.offset(i) * *sign.offset(i) <= 0.0 {
-            *d.offset(i) = 0.0
-        }
-        i += 1
     }
 }
 // old:1 ends here
