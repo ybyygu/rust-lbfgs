@@ -166,48 +166,6 @@ pub const LBFGS_CONVERGENCE: unnamed = 0;
 /* * L-BFGS reaches convergence. */
 pub const LBFGS_SUCCESS: unnamed = 0;
 
-// Line search algorithms.
-pub type unnamed_0 = libc::c_uint;
-/* *
- * Backtracking method with strong Wolfe condition.
- *  The backtracking method finds the step length such that it satisfies
- *  both the Armijo condition (LBFGS_LINESEARCH_BACKTRACKING_ARMIJO)
- *  and the following condition,
- *    - |g(x + a * d)^T d| <= lbfgs_parameter_t::wolfe * |g(x)^T d|,
- *
- *  where x is the current point, d is the current search direction, and
- *  a is the step length.
- */
-
-pub const LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE: unnamed_0 = 3;
-//
-// Backtracking method with regular Wolfe condition.
-//  The backtracking method finds the step length such that it satisfies
-//  both the Armijo condition (LBFGS_LINESEARCH_BACKTRACKING_ARMIJO)
-//  and the curvature condition,
-//    - g(x + a * d)^T d >= lbfgs_parameter_t::wolfe * g(x)^T d,
-//
-//  where x is the current point, d is the current search direction, and
-//  a is the step length.
-
-pub const LBFGS_LINESEARCH_BACKTRACKING_WOLFE: unnamed_0 = 2;
-/* * The backtracking method with the defualt (regular Wolfe) condition. */
-pub const LBFGS_LINESEARCH_BACKTRACKING: unnamed_0 = 2;
-/* *
- * Backtracking method with the Armijo condition.
- *  The backtracking method finds the step length such that it satisfies
- *  the sufficient decrease (Armijo) condition,
- *    - f(x + a * d) <= f(x) + lbfgs_parameter_t::ftol * a * g(x)^T d,
- *
- *  where x is the current point, d is the current search direction, and
- *  a is the step length.
- */
-pub const LBFGS_LINESEARCH_BACKTRACKING_ARMIJO: unnamed_0 = 1;
-/* * MoreThuente method proposd by More and Thuente. */
-pub const LBFGS_LINESEARCH_MORETHUENTE: unnamed_0 = 0;
-/* * The default algorithm (MoreThuente method). */
-pub const LBFGS_LINESEARCH_DEFAULT: unnamed_0 = 0;
-
 /* *
  * Callback interface to provide objective function and gradient evaluations.
  *
@@ -561,8 +519,113 @@ unsafe extern "C" fn vecfree(mut memblock: *mut libc::c_void) {
 // new
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+/// Line search algorithms.
+#[derive(Debug, Copy, Clone)]
+pub enum LineSearchAlgorithm {
+    /// MoreThuente method proposd by More and Thuente.
+    MoreThuente,
+
+    ///
+    /// Backtracking method with the Armijo condition.
+    ///
+    /// The backtracking method finds the step length such that it satisfies
+    /// the sufficient decrease (Armijo) condition,
+    ///   - f(x + a * d) <= f(x) + ftol * a * g(x)^T d,
+    ///
+    /// where x is the current point, d is the current search direction, and
+    /// a is the step length.
+    ///
+    BacktrackingArmijo,
+
+    /// The backtracking method with the defualt (regular Wolfe) condition.
+    Backtracking,
+
+    /// Backtracking method with strong Wolfe condition.
+    ///
+    /// The backtracking method finds the step length such that it satisfies
+    /// both the Armijo condition (BacktrackingArmijo)
+    /// and the following condition,
+    /// FIXME: gtol vs wolfe?
+    ///   - |g(x + a * d)^T d| <= lbfgs_parameter_t::wolfe * |g(x)^T d|,
+    ///
+    /// where x is the current point, d is the current search direction, and
+    /// a is the step length.
+    ///
+    BacktrackingStrongWolfe,
+
+    ///
+    /// Backtracking method with regular Wolfe condition.
+    ///
+    /// The backtracking method finds the step length such that it satisfies
+    /// both the Armijo condition (BacktrackingArmijo)
+    /// and the curvature condition,
+    /// FIXME: gtol vs wolfe?
+    ///   - g(x + a * d)^T d >= lbfgs_parameter_t::wolfe * g(x)^T d,
+    ///
+    /// where x is the current point, d is the current search direction, and a
+    /// is the step length.
+    ///
+    BacktrackingWolfe,
+}
+
+impl Default for LineSearchAlgorithm {
+    /// The default algorithm (MoreThuente method).
+    fn default() -> Self {
+        LineSearchAlgorithm::MoreThuente
+    }
+}
+// new:1 ends here
+
+// old
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+pub type unnamed_0 = libc::c_uint;
+/// Backtracking method with strong Wolfe condition.
+///  The backtracking method finds the step length such that it satisfies
+///  both the Armijo condition (LBFGS_LINESEARCH_BACKTRACKING_ARMIJO)
+///  and the following condition,
+///    - |g(x + a * d)^T d| <= lbfgs_parameter_t::wolfe * |g(x)^T d|,
+///
+///  where x is the current point, d is the current search direction, and
+///  a is the step length.
+
+pub const LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE: unnamed_0 = 3;
+//
+// Backtracking method with regular Wolfe condition.
+//  The backtracking method finds the step length such that it satisfies
+//  both the Armijo condition (LBFGS_LINESEARCH_BACKTRACKING_ARMIJO)
+//  and the curvature condition,
+//    - g(x + a * d)^T d >= lbfgs_parameter_t::wolfe * g(x)^T d,
+//
+//  where x is the current point, d is the current search direction, and
+//  a is the step length.
+
+pub const LBFGS_LINESEARCH_BACKTRACKING_WOLFE: unnamed_0 = 2;
+/* * The backtracking method with the defualt (regular Wolfe) condition. */
+pub const LBFGS_LINESEARCH_BACKTRACKING: unnamed_0 = 2;
+/* *
+ * Backtracking method with the Armijo condition.
+ *  The backtracking method finds the step length such that it satisfies
+ *  the sufficient decrease (Armijo) condition,
+ *    - f(x + a * d) <= f(x) + lbfgs_parameter_t::ftol * a * g(x)^T d,
+ *
+ *  where x is the current point, d is the current search direction, and
+ *  a is the step length.
+ */
+pub const LBFGS_LINESEARCH_BACKTRACKING_ARMIJO: unnamed_0 = 1;
+/* * MoreThuente method proposd by More and Thuente. */
+pub const LBFGS_LINESEARCH_MORETHUENTE: unnamed_0 = 0;
+/* * The default algorithm (MoreThuente method). */
+pub const LBFGS_LINESEARCH_DEFAULT: unnamed_0 = 0;
+// old:1 ends here
+
+// new
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
 #[derive(Debug, Copy, Clone)]
 pub struct LineSearchParam {
+    algorithm: LineSearchAlgorithm,
+
     /// ftol and gtol are nonnegative input variables. (in this reverse
     /// communication implementation gtol is defined in a common statement.)
     ///
@@ -577,13 +640,12 @@ pub struct LineSearchParam {
 
     /// A parameter to control the accuracy of the line search routine.
     ///
-    ///  The default value is \c 0.9. If the function and gradient
-    ///  evaluations are inexpensive with respect to the cost of the
-    ///  iteration (which is sometimes the case when solving very large
-    ///  problems) it may be advantageous to set this parameter to a small
-    ///  value. A typical small value is \c 0.1. This parameter shuold be
-    ///  greater than the \ref ftol parameter (\c 1e-4) and smaller than
-    ///  \c 1.0.
+    /// The default value is 0.9. If the function and gradient evaluations are
+    /// inexpensive with respect to the cost of the iteration (which is
+    /// sometimes the case when solving very large problems) it may be
+    /// advantageous to set this parameter to a small value. A typical small
+    /// value is 0.1. This parameter shuold be greater than the \ref ftol
+    /// parameter (1e-4) and smaller than 1.0.
     gtol: f64,
 
     /// xtol is a nonnegative input variable. termination occurs when the
@@ -613,15 +675,11 @@ pub struct LineSearchParam {
     ///  be increased).
     max_step: f64,
 
+    /// The maximum number of trials for the line search.
     ///
-    /// The maximum number of iterations.
+    /// This parameter controls the number of function and gradients evaluations
+    /// per iteration for the line search routine. The default value is 40.
     ///
-    /// The lbfgs() function terminates an optimization process with
-    /// ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
-    /// exceedes this parameter. Setting this parameter to zero continues an
-    /// optimization process until a convergence or error.
-    ///
-    /// The default value is 0.
     max_linesearch: usize,
 
     condition: LineSearchCondition,
@@ -650,8 +708,11 @@ impl Default for LineSearchParam {
             min_step: 1e-20,
             max_step: 1e20,
             max_linesearch: 40,
+
+            // FIXME: only useful for backtracking
             wolfe: 0.9,
             condition: LineSearchCondition::StrongWolf,
+            algorithm: LineSearchAlgorithm::default(),
         }
     }
 }
@@ -971,6 +1032,7 @@ mod mcsrch {
                 // vecdot(&mut dg, g, s, n);
                 dg = self.prob.gx.vecdot(s);
 
+                // FIXME: wolfe constant?
                 ftest1 = finit + *stp * dgtest;
                 count += 1;
 
@@ -1859,6 +1921,7 @@ pub mod backtracking {
                     // Check the Wolfe condition.
                     // vecdot(&mut dg, g, s, n);
                     dg = self.prob.gx.vecdot(s);
+                    // FIXME: param.gtol vs param.wolfe?
                     if dg < param.wolfe * dginit {
                         width = inc
                     } else if param.condition == LineSearchCondition::Wolfe {
@@ -2048,7 +2111,7 @@ pub struct LbfgsParam {
     /// function. The library stops iterations when the following condition is
     /// met: (f' - f) / f < delta, where f' is the objective value of \ref past
     /// iterations ago, and f is the objective value of the current iteration.
-    /// The default value is 0.
+    /// The default value is 1e-5.
     ///
     pub delta: f64,
 
@@ -2272,15 +2335,6 @@ pub struct lbfgs_parameter_t {
     ///
     pub linesearch: libc::c_int,
 
-    ///
-    /// The maximum number of iterations.
-    ///
-    /// The lbfgs() function terminates an optimization process with
-    /// ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
-    /// exceedes this parameter. Setting this parameter to zero continues an
-    /// optimization process until a convergence or error.
-    ///
-    /// The default value is 0.
     pub max_linesearch: libc::c_int,
 
     /// The minimum step of the line search routine.
