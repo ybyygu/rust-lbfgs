@@ -2196,8 +2196,10 @@ impl LbfgsParam {
             bail!("LBFGSERR_INVALID_FTOL");
         }
 
-        if self.linesearch.condition == LineSearchCondition::Wolfe
-            || self.linesearch.condition == LineSearchCondition::StrongWolf
+        // FIXME: review needed
+        use self::LineSearchAlgorithm::*;
+        if self.linesearch.algorithm == BacktrackingWolfe
+            || self.linesearch.algorithm == BacktrackingStrongWolfe
         {
             if self.linesearch.wolfe <= self.linesearch.ftol || 1.0 <= self.linesearch.wolfe {
                 bail!("LBFGSERR_INVALID_WOLFE");
@@ -2215,9 +2217,9 @@ impl LbfgsParam {
         }
 
         // FIXME: take care below
-        // if self.orthantwise_c < 0.0 {
-        //     bail!("LBFGSERR_INVALID_ORTHANTWISE");
-        // }
+        if self.orthantwise_c < 0.0 {
+            bail!("LBFGSERR_INVALID_ORTHANTWISE");
+        }
         // if self.orthantwise_start < 0 || n < self.orthantwise_start {
         //     bail!("LBFGSERR_INVALID_ORTHANTWISE_START");
         // }
@@ -2228,23 +2230,6 @@ impl LbfgsParam {
 
         // if n < self.orthantwise_end {
         //     bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
-        // }
-
-        // FIXME: take care below
-        // if self.orthantwise_c != 0.0 {
-        //     match self.linesearch {
-        //         2 => linesearch = Some(line_search_backtracking_owlqn),
-        //         _ => {
-        //             // Only the backtracking method is available.
-        //             bail!("LBFGSERR_INVALID_LINESEARCH");
-        //         }
-        //     }
-        // } else {
-        //     match self.linesearch {
-        //         0 => linesearch = Some(line_search_morethuente),
-        //         1 | 2 | 3 => linesearch = Some(line_search_backtracking),
-        //         _ => bail!("LBFGSERR_INVALID_LINESEARCH"),
-        //     }
         // }
 
         Ok(())
@@ -2515,44 +2500,10 @@ pub unsafe extern "C" fn lbfgs(
     cd.proc_evaluate = proc_evaluate;
     cd.proc_progress = proc_progress;
 
+    // FIXME: remove expect
     // Check the input parameters for errors.
-    if n <= 0i32 {
-        return LBFGSERR_INVALID_N as libc::c_int;
-    } else if param.epsilon < 0.0 {
-        return LBFGSERR_INVALID_EPSILON as libc::c_int;
-    } else if param.delta < 0.0 {
-        return LBFGSERR_INVALID_DELTA as libc::c_int;
-    } else if param.linesearch.min_step < 0.0 {
-        return LBFGSERR_INVALID_MINSTEP as libc::c_int;
-    } else if param.linesearch.max_step < param.linesearch.min_step {
-        return LBFGSERR_INVALID_MAXSTEP as libc::c_int;
-    } else if param.linesearch.ftol < 0.0 {
-        return LBFGSERR_INVALID_FTOL as libc::c_int;
-    }
+    param.validate().expect("invalid input parameters");
 
-    use crate::LineSearchAlgorithm::*;
-    match param.linesearch.algorithm {
-        BacktrackingWolfe | BacktrackingStrongWolfe => {
-            if param.linesearch.wolfe <= param.linesearch.ftol || 1.0 <= param.linesearch.wolfe {
-                return LBFGSERR_INVALID_WOLFE as libc::c_int;
-            }
-        }
-        _ => {
-            if param.linesearch.gtol < 0.0 {
-                return LBFGSERR_INVALID_GTOL as libc::c_int;
-            }
-            if param.linesearch.xtol < 0.0 {
-                return LBFGSERR_INVALID_XTOL as libc::c_int;
-            }
-            if param.linesearch.max_linesearch <= 0 {
-                return LBFGSERR_INVALID_MAXLINESEARCH as libc::c_int;
-            }
-        }
-    }
-
-    if param.orthantwise_c < 0.0 {
-        return LBFGSERR_INVALID_ORTHANTWISE as libc::c_int;
-    }
     if param.orthantwise_start < 0 || n < param.orthantwise_start {
         return LBFGSERR_INVALID_ORTHANTWISE_START as libc::c_int;
     }
@@ -2563,6 +2514,7 @@ pub unsafe extern "C" fn lbfgs(
         return LBFGSERR_INVALID_ORTHANTWISE_END as libc::c_int;
     }
 
+    use self::LineSearchAlgorithm::*;
     if param.orthantwise_c != 0.0 {
         match param.linesearch.algorithm {
             // FIXME: review below
