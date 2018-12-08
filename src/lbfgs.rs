@@ -263,7 +263,7 @@ pub trait LbfgsMath<T> {
     fn vec2norminv(&self) -> T;
 
     /// norm = sum(..., |x|, ...)
-    fn owlqn_x1norm(&self, start: usize) -> T;
+    fn owlqn_x1norm(&self, start: usize, end: usize) -> T;
 }
 
 impl LbfgsMath<f64> for [f64] {
@@ -318,8 +318,12 @@ impl LbfgsMath<f64> for [f64] {
         1.0 / self.vec2norm()
     }
 
-    fn owlqn_x1norm(&self, start: usize) -> f64 {
-        self.iter().skip(start).map(|v| v.abs()).sum()
+    fn owlqn_x1norm(&self, start: usize, end: usize) -> f64 {
+        let mut s = 0.0;
+        for i in start..end {
+            s += self[i].abs();
+        }
+        s
     }
 }
 
@@ -367,128 +371,8 @@ fn test_lbfgs_math() {
     //     let v = owlqn_x1norm(x, 0, 3);
     //     println!("{:#?}", v);
     // }
-    let v = z.owlqn_x1norm(1);
+    let v = z.owlqn_x1norm(1, 3);
     assert_eq!(v, 16.0);
-}
-
-// x(k+1) = x(k) + alpha_k * d_k
-// y += c*x
-unsafe extern "C" fn vecadd(
-    mut y: *mut lbfgsfloatval_t,
-    x: *const lbfgsfloatval_t,
-    c: lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    // convert pointer to native data type
-    let n = n as usize;
-
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
-
-    arr_y.vecadd(&arr_x, c);
-}
-
-unsafe extern "C" fn vecdot(
-    mut s: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    mut y: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    // convert pointer to native data type
-    let n = n as usize;
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let arr_y = unsafe { ::std::slice::from_raw_parts(y, n) };
-
-    *s = arr_x.vecdot(arr_y);
-}
-
-/// y *= c
-unsafe extern "C" fn vecscale(mut y: *mut lbfgsfloatval_t, c: lbfgsfloatval_t, n: libc::c_int) {
-    // convert pointer to native data type
-    let n = n as usize;
-    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
-    arr_y.vecscale(c);
-}
-
-/// y = -x
-unsafe extern "C" fn vecncpy(
-    mut y: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let n = n as usize;
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
-
-    arr_y.vecncpy(&arr_x);
-}
-
-/// z = x - y
-unsafe extern "C" fn vecdiff(
-    mut z: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    mut y: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let n = n as usize;
-
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let arr_y = unsafe { ::std::slice::from_raw_parts(y, n) };
-    let mut arr_z = unsafe { ::std::slice::from_raw_parts_mut(z, n) };
-
-    arr_z.vecdiff(&arr_x, &arr_y);
-}
-
-/// s = ||x||
-unsafe extern "C" fn vec2norm(
-    mut s: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    vecdot(s, x, x, n);
-    *s = (*s).sqrt();
-}
-
-/// y = x
-unsafe extern "C" fn veccpy(
-    mut y: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    let n = n as usize;
-
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let mut arr_y = unsafe { ::std::slice::from_raw_parts_mut(y, n) };
-
-    arr_y.veccpy(&arr_x);
-}
-
-unsafe extern "C" fn vec2norminv(
-    mut s: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    n: libc::c_int,
-) {
-    vec2norm(s, x, n);
-    *s = 1.0 / *s;
-}
-
-/// norm = sum(|x|, ...)
-unsafe extern "C" fn owlqn_x1norm(
-    mut x: *const lbfgsfloatval_t,
-    start: libc::c_int,
-    n: libc::c_int,
-) -> lbfgsfloatval_t {
-    // let mut i: libc::c_int = 0;
-    // let mut norm: lbfgsfloatval_t = 0.0f64;
-    // i = start;
-    // while i < n {
-    //     norm += (*x.offset(i as isize)).abs();
-    //     i += 1
-    // }
-    // return norm;
-
-    let arr_x = unsafe { ::std::slice::from_raw_parts(x, n as usize) };
-    arr_x.owlqn_x1norm(start as usize)
 }
 // vector operations:1 ends here
 
@@ -613,21 +497,21 @@ pub type line_search_proc = Option<
         // The number of variables.
         n: libc::c_int,
         // The array of variables.
-        x: *mut lbfgsfloatval_t,
+        x: &mut [f64],
         // Evaluated function value
         f: *mut lbfgsfloatval_t,
         // Evaluated gradient array
-        g: *mut lbfgsfloatval_t,
+        g: &mut [f64],
         // Search direction array
-        s: *mut lbfgsfloatval_t,
+        s: &[f64],
         // Step size
         stp: *mut lbfgsfloatval_t,
         // Variable vector of previous step
-        xp: *const lbfgsfloatval_t,
+        xp: &[f64],
         // Gradient vector of previous step
-        gp: *const lbfgsfloatval_t,
+        gp: &[f64],
         // work array?
-        wp: *mut lbfgsfloatval_t,
+        wp: &mut [f64],
         // callback struct
         cd: *mut callback_data_t,
         // LBFGS parameter
@@ -1118,16 +1002,27 @@ mod mcsrch {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 unsafe extern "C" fn line_search_morethuente(
+    // The number of variables.
     n: libc::c_int,
-    mut x: *mut lbfgsfloatval_t,
-    mut f: *mut lbfgsfloatval_t,
-    mut g: *mut lbfgsfloatval_t,
-    mut s: *mut lbfgsfloatval_t,
-    mut stp: *mut lbfgsfloatval_t,
-    mut xp: *const lbfgsfloatval_t,
-    mut gp: *const lbfgsfloatval_t,
-    mut wa: *mut lbfgsfloatval_t,
-    mut cd: *mut callback_data_t,
+    // The array of variables.
+    x: &mut [f64],
+    // Evaluated function value
+    f: *mut lbfgsfloatval_t,
+    // Evaluated gradient array
+    g: &mut [f64],
+    // Search direction array
+    s: &[f64],
+    // Step size
+    stp: *mut lbfgsfloatval_t,
+    // Variable vector of previous step
+    xp: &[f64],
+    // Gradient vector of previous step
+    gp: &[f64],
+    // work array?
+    wa: &mut [f64],
+    // callback struct
+    cd: *mut callback_data_t,
+    // LBFGS parameter
     param: &LbfgsParam,
 ) -> libc::c_int {
     // quick wrapper
@@ -1135,11 +1030,11 @@ unsafe extern "C" fn line_search_morethuente(
     let param = &param.linesearch;
     // FIXME: remove
     let n = n as usize;
-    let s = unsafe { ::std::slice::from_raw_parts(s, n) };
-    let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
-    let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
-    let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
-    let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
+    // let s = unsafe { ::std::slice::from_raw_parts(s, n) };
+    // let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
+    // let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
+    // let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
+    // let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
 
     // Check the input parameters for errors.
     if *stp <= 0.0 {
@@ -1970,16 +1865,27 @@ pub mod backtracking {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 unsafe extern "C" fn line_search_backtracking(
+    // The number of variables.
     n: libc::c_int,
-    mut x: *mut f64,
-    mut f: *mut f64,
-    mut g: *mut f64,
-    mut s: *mut f64,
-    mut stp: *mut f64,
-    mut xp: *const f64,
-    mut gp: *const f64,
-    mut wp: *mut f64,
-    mut cd: *mut callback_data_t,
+    // The array of variables.
+    x: &mut [f64],
+    // Evaluated function value
+    f: *mut lbfgsfloatval_t,
+    // Evaluated gradient array
+    g: &mut [f64],
+    // Search direction array
+    s: &[f64],
+    // Step size
+    stp: *mut lbfgsfloatval_t,
+    // Variable vector of previous step
+    xp: &[f64],
+    // Gradient vector of previous step
+    gp: &[f64],
+    // work array?
+    wp: &mut [f64],
+    // callback struct
+    cd: *mut callback_data_t,
+    // LBFGS parameter
     param: &LbfgsParam,
 ) -> libc::c_int {
     // quick wrapper
@@ -1987,12 +1893,12 @@ unsafe extern "C" fn line_search_backtracking(
 
     // FIXME: remove
     let n = n as usize;
-    let s = unsafe { ::std::slice::from_raw_parts(s, n) };
-    let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
-    let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
-    let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
-    let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
-    let wp = unsafe { ::std::slice::from_raw_parts_mut(wp, n) };
+    // let s = unsafe { ::std::slice::from_raw_parts(s, n) };
+    // let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
+    // let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
+    // let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
+    // let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
+    // let wp = unsafe { ::std::slice::from_raw_parts_mut(wp, n) };
 
     let mut width: f64 = 0.;
     let dec: f64 = 0.5;
@@ -2276,16 +2182,27 @@ fn owlqn_project(d: &mut [f64], sign: &[f64], start: usize, end: usize) {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 unsafe extern "C" fn line_search_backtracking_owlqn(
+    // The number of variables.
     n: libc::c_int,
-    mut x: *mut f64,
-    mut f: *mut f64,
-    mut g: *mut f64,
-    mut s: *mut f64,
-    mut stp: *mut f64,
-    mut xp: *const f64,
-    mut gp: *const f64,
-    mut wp: *mut f64,
-    mut cd: *mut callback_data_t,
+    // The array of variables.
+    x: &mut [f64],
+    // Evaluated function value
+    f: *mut lbfgsfloatval_t,
+    // Evaluated gradient array
+    g: &mut [f64],
+    // Search direction array
+    s: &[f64],
+    // Step size
+    stp: *mut lbfgsfloatval_t,
+    // Variable vector of previous step
+    xp: &[f64],
+    // Gradient vector of previous step
+    gp: &[f64],
+    // work array?
+    wp: &mut [f64],
+    // callback struct
+    cd: *mut callback_data_t,
+    // LBFGS parameter
     _param: &LbfgsParam,
 ) -> libc::c_int {
     let mut i: libc::c_int = 0;
@@ -2299,12 +2216,12 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
 
     // quick wrapper
     let n = n as usize;
-    let s = unsafe { ::std::slice::from_raw_parts(s, n) };
-    let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
-    let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
-    let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
-    let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
-    let wp = unsafe { ::std::slice::from_raw_parts_mut(wp, n) };
+    // let s = unsafe { ::std::slice::from_raw_parts(s, n) };
+    // let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
+    // let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
+    // let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
+    // let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
+    // let wp = unsafe { ::std::slice::from_raw_parts_mut(wp, n) };
 
     // Choose the orthant for the new point.
     // FIXME: float == 0.0??
@@ -2324,7 +2241,12 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
         x.vecadd(s, *stp);
 
         // The current point is projected onto the orthant.
-        owlqn_project(x, wp, _param.orthantwise_start as usize, _param.orthantwise_end as usize);
+        owlqn_project(
+            x,
+            wp,
+            _param.orthantwise_start as usize,
+            _param.orthantwise_end as usize,
+        );
 
         // Evaluate the function and gradient values.
         *f = (*cd).proc_evaluate.expect("non-null function pointer")(
@@ -2336,7 +2258,10 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
         );
 
         // Compute the L1 norm of the variables and add it to the object value.
-        let norm = owlqn_x1norm(x.as_ptr(), _param.orthantwise_start, _param.orthantwise_end);
+        let norm = x.owlqn_x1norm(
+            _param.orthantwise_start as usize,
+            _param.orthantwise_end as usize,
+        );
         *f += norm * _param.orthantwise_c;
 
         count += 1;
@@ -2370,25 +2295,14 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
 }
 
 unsafe extern "C" fn owlqn_pseudo_gradient(
-    mut pg: *mut lbfgsfloatval_t,
-    mut x: *const lbfgsfloatval_t,
-    mut g: *const lbfgsfloatval_t,
-    n: libc::c_int,
-    c: lbfgsfloatval_t,
-    start: libc::c_int,
-    end: libc::c_int,
+    pg: &mut [f64],
+    x: &[f64],
+    g: &[f64],
+    n: usize,
+    c: f64,
+    start: usize,
+    end: usize,
 ) {
-    // quick wrapper
-    assert!(start >= 0);
-    assert!(end >= 0);
-    let start = start as usize;
-    let end = end as usize;
-    let n = n as usize;
-
-    let x = unsafe { ::std::slice::from_raw_parts(x, n) };
-    let g = unsafe { ::std::slice::from_raw_parts(g, n) };
-    let mut pg = unsafe { ::std::slice::from_raw_parts_mut(pg, n) };
-
     // Compute the negative of gradients.
     for i in 0..start {
         pg[i] = g[i];
@@ -2528,7 +2442,7 @@ where
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 #[no_mangle]
 pub unsafe extern "C" fn lbfgs(
-    arr_x: &mut [f64],
+    x: &mut [f64],
     ptr_fx: &mut f64,
     mut proc_evaluate: lbfgs_evaluate_t,
     mut proc_progress: lbfgs_progress_t,
@@ -2546,7 +2460,7 @@ pub unsafe extern "C" fn lbfgs(
     let mut linesearch: line_search_proc = Some(line_search_morethuente);
 
     // Construct a callback data.
-    let n = arr_x.len() as i32;
+    let n = x.len();
     let mut cd: callback_data_t = tag_callback_data {
         n: 0,
         instance: 0 as *mut libc::c_void,
@@ -2554,7 +2468,7 @@ pub unsafe extern "C" fn lbfgs(
         proc_progress: None,
     };
 
-    cd.n = n;
+    cd.n = n as i32;
     cd.instance = instance;
     cd.proc_evaluate = proc_evaluate;
     cd.proc_progress = proc_progress;
@@ -2563,13 +2477,13 @@ pub unsafe extern "C" fn lbfgs(
     param.validate()?;
 
     // FIXME: make param immutable
-    if param.orthantwise_start < 0 || n < param.orthantwise_start {
+    if param.orthantwise_start < 0 || (n as i32) < param.orthantwise_start {
         bail!("LBFGSERR_INVALID_ORTHANTWISE_START");
     }
     if param.orthantwise_end < 0 {
-        param.orthantwise_end = n
+        param.orthantwise_end = n as i32
     }
-    if n < param.orthantwise_end {
+    if (n as i32) < param.orthantwise_end {
         bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
     }
 
@@ -2593,25 +2507,15 @@ pub unsafe extern "C" fn lbfgs(
     }
 
     // Allocate working space.
-    let mut xp_arr: Vec<f64> = Vec::with_capacity(n as usize);
-    let xp = xp_arr.as_mut_ptr();
-
-    let mut g_arr: Vec<f64> = Vec::with_capacity(n as usize);
-    let g = g_arr.as_mut_ptr();
-
-    let mut gp_arr: Vec<f64> = Vec::with_capacity(n as usize);
-    let gp = gp_arr.as_mut_ptr();
-
-    let mut d_arr: Vec<f64> = Vec::with_capacity(n as usize);
-    let d = d_arr.as_mut_ptr();
-
-    let mut w_arr: Vec<f64> = Vec::with_capacity(n as usize);
-    let w = w_arr.as_mut_ptr();
+    let mut xp = vec![0.0; n];
+    let mut g = vec![0.0; n];
+    let mut gp = g.clone();
+    let mut d = vec![0.0; n];
+    let mut w = vec![0.0; n];
 
     // FIXME: check param.orthantwise_c or not?
     // Allocate working space for OW-LQN.
-    let mut pg_arr: Vec<f64> = Vec::with_capacity(n as usize);
-    let pg = pg_arr.as_mut_ptr();
+    let mut pg = vec![0.0; n];
 
     // Allocate limited memory storage.
     let mut lm_arr: Vec<IterationData> = Vec::with_capacity(m);
@@ -2621,8 +2525,8 @@ pub unsafe extern "C" fn lbfgs(
         lm_arr.push(IterationData {
             alpha: 0.0,
             ys: 0.0,
-            s: vec![0.0; n as usize],
-            y: vec![0.0; n as usize],
+            s: vec![0.0; n],
+            y: vec![0.0; n],
         });
     }
 
@@ -2637,40 +2541,47 @@ pub unsafe extern "C" fn lbfgs(
 
     // Evaluate the function value and its gradient.
     let mut xnorm = 0.;
-    let mut x = arr_x.as_mut_ptr();
+    // let mut x = arr_x.as_mut_ptr();
 
-    fx = cd.proc_evaluate.expect("non-null function pointer")(cd.instance, x, g, cd.n, 0.0);
+    fx = cd.proc_evaluate.expect("non-null function pointer")(
+        cd.instance,
+        x.as_mut_ptr(),
+        g.as_mut_ptr(),
+        cd.n,
+        0.0,
+    );
     if 0.0 != param.orthantwise_c {
         // Compute the L1 norm of the variable and add it to the object value.
-        xnorm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
+        // xnorm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
+        xnorm = x.owlqn_x1norm(param.orthantwise_start as usize, param.orthantwise_end as usize);
+
         fx += xnorm * param.orthantwise_c;
         owlqn_pseudo_gradient(
-            pg,
-            x,
-            g,
+            &mut pg,
+            &x,
+            &g,
             n,
             param.orthantwise_c,
-            param.orthantwise_start,
-            param.orthantwise_end,
+            param.orthantwise_start as usize,
+            param.orthantwise_end as usize,
         );
     }
     // Compute the direction;
     // we assume the initial hessian matrix H_0 as the identity matrix.
     if param.orthantwise_c == 0.0 {
-        vecncpy(d, g, n);
+        d.vecncpy(&g);
     } else {
-        vecncpy(d, pg, n);
+        d.vecncpy(&pg);
     }
 
     // Make sure that the initial variables are not a minimizer.
-    let mut gnorm = 0.;
-    vec2norm(&mut xnorm, x, n);
-    if param.orthantwise_c == 0.0 {
-        vec2norm(&mut gnorm, g, n);
+    // vec2norm(&mut xnorm, x, n);
+    xnorm = x.vec2norm().max(1.0);
+    let mut gnorm = if param.orthantwise_c == 0.0 {
+        g.vec2norm()
     } else {
-        vec2norm(&mut gnorm, pg, n);
-    }
-    xnorm = xnorm.max(1.0);
+        pg.vec2norm()
+    };
 
     if gnorm / xnorm <= param.epsilon {
         bail!("LBFGS_ALREADY_MINIMIZED");
@@ -2678,8 +2589,7 @@ pub unsafe extern "C" fn lbfgs(
 
     // Compute the initial step:
     // step = 1.0 / sqrt(vecdot(d, d, n))
-    let mut step = 0.;
-    vec2norminv(&mut step, d, n);
+    let mut step = d.vec2norminv();
     let mut k: usize = 1;
     let mut end = 0;
 
@@ -2688,49 +2598,51 @@ pub unsafe extern "C" fn lbfgs(
     info!("start lbfgs loop...");
     loop {
         // Store the current position and gradient vectors.
-        veccpy(xp, x, n);
-        veccpy(gp, g, n);
+        xp.veccpy(&x);
+        gp.veccpy(&g);
+
         // Search for an optimal step.
         if param.orthantwise_c == 0.0 {
             ls = linesearch.expect("non-null function pointer")(
-                n, x, &mut fx, g, d, &mut step, xp, gp, w, &mut cd, &param,
+                n as i32, x, &mut fx, &mut g, &d, &mut step, &xp, &gp, &mut w, &mut cd, &param,
             )
         } else {
             ls = linesearch.expect("non-null function pointer")(
-                n, x, &mut fx, g, d, &mut step, xp, pg, w, &mut cd, &param,
+                n as i32, x, &mut fx, &mut g, &d, &mut step, &xp, &pg, &mut w, &mut cd, &param,
             );
             owlqn_pseudo_gradient(
-                pg,
-                x,
-                g,
+                &mut pg,
+                &x,
+                &g,
                 n,
                 param.orthantwise_c,
-                param.orthantwise_start,
-                param.orthantwise_end,
+                param.orthantwise_start as usize,
+                param.orthantwise_end as usize,
             );
         }
         if ls < 0 {
             error!("line search failed, revert to the previous point!");
-            /* Revert to the previous point. */
-            veccpy(x, xp, n);
-            veccpy(g, gp, n);
+            // Revert to the previous point.
+            x.veccpy(&xp);
+            g.veccpy(&gp);
+
             ret = ls;
             break;
         }
-        /* Compute x and g norms. */
-        vec2norm(&mut xnorm, x, n);
-        if param.orthantwise_c == 0.0 {
-            vec2norm(&mut gnorm, g, n);
+        // Compute x and g norms.
+        xnorm = x.vec2norm();
+        gnorm = if param.orthantwise_c == 0.0 {
+            g.vec2norm()
         } else {
-            vec2norm(&mut gnorm, pg, n);
-        }
+            pg.vec2norm()
+        };
 
         // Report the progress.
         if cd.proc_progress.is_some() {
             ret = cd.proc_progress.expect("non-null function pointer")(
                 cd.instance,
-                x,
-                g,
+                x.as_ptr(),
+                g.as_ptr(),
                 fx,
                 xnorm,
                 gnorm,
@@ -2788,15 +2700,16 @@ pub unsafe extern "C" fn lbfgs(
         // y_{k+1} = g_{k+1} - g_{k}.
         // it = &mut *lm.offset(end as isize) as *mut iteration_data_t;
         let mut it = &mut lm_arr[end];
-        vecdiff((*it).s.as_mut_ptr(), x, xp, n);
-        vecdiff((*it).y.as_mut_ptr(), g, gp, n);
+        it.s.vecdiff(&x, &xp);
+        it.y.vecdiff(&g, &gp);
 
         // Compute scalars ys and yy:
         // ys = y^t \cdot s = 1 / \rho.
         // yy = y^t \cdot y.
         // Notice that yy is used for scaling the hessian matrix H_0 (Cholesky factor).
-        vecdot(&mut ys, (*it).y.as_mut_ptr(), (*it).s.as_mut_ptr(), n);
-        vecdot(&mut yy, (*it).y.as_mut_ptr(), (*it).y.as_mut_ptr(), n);
+        ys = it.y.vecdot(&it.s);
+        yy = it.y.vecdot(&it.y);
+
         (*it).ys = ys;
 
         // Recursive formula to compute dir = -(H \cdot g).
@@ -2812,9 +2725,9 @@ pub unsafe extern "C" fn lbfgs(
         // Compute the steepest direction.
         if param.orthantwise_c == 0.0f64 {
             // Compute the negative of gradients.
-            vecncpy(d, g, n);
+            d.vecncpy(&g);
         } else {
-            vecncpy(d, pg, n);
+            d.vecncpy(&pg);
         }
 
         let mut i = 0;
@@ -2826,13 +2739,13 @@ pub unsafe extern "C" fn lbfgs(
             let mut it = &mut lm_arr[j as usize];
 
             // \alpha_{j} = \rho_{j} s^{t}_{j} \cdot q_{k+1}.
-            vecdot(&mut (*it).alpha, (*it).s.as_mut_ptr(), d, n);
+            it.alpha = it.s.vecdot(&d);
             it.alpha /= it.ys;
             // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
-            vecadd(d, (*it).y.as_mut_ptr(), -(*it).alpha, n);
+            d.vecadd(&it.y, -it.alpha);
             i += 1
         }
-        vecscale(d, ys / yy, n);
+        d.vecscale(ys / yy);
 
         let mut i = 0;
         while i < bound {
@@ -2840,10 +2753,12 @@ pub unsafe extern "C" fn lbfgs(
             let it = &mut lm_arr[j as usize];
             // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
             let mut beta = 0.;
-            vecdot(&mut beta, (*it).y.as_mut_ptr(), d, n);
+            beta = it.y.vecdot(&d);
+
             beta /= (*it).ys;
             // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
-            vecadd(d, (*it).s.as_mut_ptr(), (*it).alpha - beta, n);
+            d.vecadd(&it.s, it.alpha - beta);
+
             // if (++j == m) j = 0;
             j = (j + 1) % m;
             i += 1
@@ -2851,12 +2766,12 @@ pub unsafe extern "C" fn lbfgs(
 
         // Constrain the search direction for orthant-wise updates.
         if param.orthantwise_c != 0.0 {
-            let mut i = param.orthantwise_start;
-            while i < param.orthantwise_end {
-                if *d.offset(i as isize) * *pg.offset(i as isize) >= 0i32 as libc::c_double {
-                    *d.offset(i as isize) = 0i32 as lbfgsfloatval_t
+            let j = param.orthantwise_start as usize;
+            let k = param.orthantwise_end as usize;
+            for i in j..k {
+                if d[i] * pg[i] >= 0.0 {
+                    d[i] = 0.0;
                 }
-                i += 1
             }
         }
 
