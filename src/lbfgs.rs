@@ -67,17 +67,6 @@ use quicli::prelude::*;
 
 use libc;
 
-extern "C" {
-    #[no_mangle]
-    fn malloc(_: libc::c_ulong) -> *mut libc::c_void;
-    #[no_mangle]
-    fn free(__ptr: *mut libc::c_void);
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: libc::c_ulong) -> *mut libc::c_void;
-    #[no_mangle]
-    fn memcpy(_: *mut libc::c_void, _: *const libc::c_void, _: libc::c_ulong) -> *mut libc::c_void;
-}
-
 pub type size_t = libc::c_ulong;
 
 pub type lbfgsfloatval_t = libc::c_double;
@@ -165,6 +154,21 @@ pub const LBFGS_STOP: unnamed = 1;
 pub const LBFGS_CONVERGENCE: unnamed = 0;
 /* * L-BFGS reaches convergence. */
 pub const LBFGS_SUCCESS: unnamed = 0;
+// base:1 ends here
+
+// old
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tag_callback_data {
+    pub n: libc::c_int,
+    pub instance: *mut libc::c_void,
+    pub proc_evaluate: lbfgs_evaluate_t,
+    pub proc_progress: lbfgs_progress_t,
+}
+
+pub type callback_data_t = tag_callback_data;
 
 /* *
  * Callback interface to provide objective function and gradient evaluations.
@@ -226,21 +230,6 @@ pub type lbfgs_progress_t = Option<
         _: libc::c_int,
     ) -> libc::c_int,
 >;
-// base:1 ends here
-
-// old
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tag_callback_data {
-    pub n: libc::c_int,
-    pub instance: *mut libc::c_void,
-    pub proc_evaluate: lbfgs_evaluate_t,
-    pub proc_progress: lbfgs_progress_t,
-}
-
-pub type callback_data_t = tag_callback_data;
 // old:1 ends here
 
 // vector operations
@@ -500,19 +489,6 @@ unsafe extern "C" fn owlqn_x1norm(
 
     let arr_x = unsafe { ::std::slice::from_raw_parts(x, n as usize) };
     arr_x.owlqn_x1norm(start as usize)
-}
-
-// TODO: clean up
-unsafe extern "C" fn vecalloc(mut size: size_t) -> *mut libc::c_void {
-    let mut memblock: *mut libc::c_void = malloc(size);
-    if !memblock.is_null() {
-        memset(memblock, 0i32, size);
-    }
-    return memblock;
-}
-
-unsafe extern "C" fn vecfree(mut memblock: *mut libc::c_void) {
-    free(memblock);
 }
 // vector operations:1 ends here
 
