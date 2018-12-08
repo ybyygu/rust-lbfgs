@@ -8,7 +8,7 @@ version = "0.0.8"
 authors = ["Wenping Guo <ybyygu@gmail.com>"]
 
 [dependencies]
-quicli = "*"
+quicli = "0.3"
 libc = "*"
 
 [dev-dependencies]
