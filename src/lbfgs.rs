@@ -2436,9 +2436,9 @@ pub trait Evaluate {
 }
 // problem:1 ends here
 
-// iteration data
+// common
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*iteration%20data][iteration data:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*common][common:1]]
 #[derive(Clone)]
 struct IterationData {
     pub alpha: f64,
@@ -2452,7 +2452,55 @@ struct IterationData {
     /// vecdot(y, s)
     pub ys: f64,
 }
-// iteration data:1 ends here
+
+/// Store optimization progress data
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct ProgressData<'a> {
+    /// The current values of variables
+    pub arr_x: &'a [f64],
+    /// The current gradient values of variables.
+    pub grd_x: &'a [f64],
+    /// The current value of the objective function.
+    pub fx: f64,
+    /// The Euclidean norm of the variables
+    pub xnorm: f64,
+    /// The Euclidean norm of the gradients.
+    pub gnorm: f64,
+    /// The line-search step used for this iteration.
+    pub step: f64,
+    /// The iteration count.
+    pub niter: usize,
+    /// The number of evaluations called for this iteration.
+    pub ncall: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct LBFGS<F, G>
+where
+    F: FnMut(&mut Problem) -> Result<()>,
+    G: FnMut(&ProgressData) -> bool,
+{
+    pub param: LbfgsParam,
+    evaluate: Option<F>,
+    progress: Option<G>,
+}
+
+impl<F, G> Default for LBFGS<F, G>
+where
+    F: FnMut(&mut Problem) -> Result<()>,
+    G: FnMut(&ProgressData) -> bool,
+{
+    fn default() -> Self {
+        LBFGS {
+            param: LbfgsParam::default(),
+            evaluate: None,
+            progress: None,
+        }
+    }
+}
+// common:1 ends here
 
 // old
 
@@ -2460,20 +2508,18 @@ struct IterationData {
 #[no_mangle]
 pub unsafe extern "C" fn lbfgs(
     arr_x: &mut [f64],
-    ptr_fx: &mut lbfgsfloatval_t,
+    ptr_fx: &mut f64,
     mut proc_evaluate: lbfgs_evaluate_t,
     mut proc_progress: lbfgs_progress_t,
     mut instance: *mut libc::c_void,
     param: &LbfgsParam,
-) -> libc::c_int {
+) -> Result<i32> {
     let n = arr_x.len() as i32;
     let mut x = arr_x.as_mut_ptr();
 
     // FIXME: make param immutable
     let mut param = param.clone();
 
-    let mut current_block: u64;
-    let mut ret: libc::c_int = 0;
     let mut ls: libc::c_int = 0;
     let mut step: lbfgsfloatval_t = 0.;
 
@@ -2504,33 +2550,33 @@ pub unsafe extern "C" fn lbfgs(
     // Check the input parameters for errors.
     param.validate().expect("invalid input parameters");
 
+    // FIXME: make param immutable
     if param.orthantwise_start < 0 || n < param.orthantwise_start {
-        return LBFGSERR_INVALID_ORTHANTWISE_START as libc::c_int;
+        bail!("LBFGSERR_INVALID_ORTHANTWISE_START");
     }
     if param.orthantwise_end < 0 {
         param.orthantwise_end = n
     }
     if n < param.orthantwise_end {
-        return LBFGSERR_INVALID_ORTHANTWISE_END as libc::c_int;
+        bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
     }
 
     use self::LineSearchAlgorithm::*;
     if param.orthantwise_c != 0.0 {
         match param.linesearch.algorithm {
             // FIXME: review below
+            // Only the backtracking method is available.
             _ => linesearch = Some(line_search_backtracking_owlqn),
-            // _ => {
-            //     // Only the backtracking method is available.
-            //     return LBFGSERR_INVALID_LINESEARCH as libc::c_int;
-            // }
         }
     } else {
         match param.linesearch.algorithm {
             MoreThuente => linesearch = Some(line_search_morethuente),
             BacktrackingArmijo | BacktrackingWolfe | BacktrackingStrongWolfe => {
                 linesearch = Some(line_search_backtracking)
-            }
-            _ => return LBFGSERR_INVALID_LINESEARCH as libc::c_int,
+            },
+            _ => {
+                bail!("LBFGSERR_INVALID_LINESEARCH");
+            },
         }
     }
 
@@ -2610,7 +2656,7 @@ pub unsafe extern "C" fn lbfgs(
     xnorm = xnorm.max(1.0);
 
     if gnorm / xnorm <= param.epsilon {
-        ret = LBFGS_ALREADY_MINIMIZED as libc::c_int
+        bail!("LBFGS_ALREADY_MINIMIZED");
     }
 
     // Compute the initial step:
@@ -2619,6 +2665,8 @@ pub unsafe extern "C" fn lbfgs(
     let mut k: usize = 1;
     let mut end = 0;
 
+    // FIXME: return code
+    let mut ret = 0;
     info!("start lbfgs loop...");
     loop {
         // Store the current position and gradient vectors.
@@ -2686,7 +2734,7 @@ pub unsafe extern "C" fn lbfgs(
         if gnorm / xnorm <= param.epsilon {
             info!("lbfgs converged");
             // Convergence.
-            ret = LBFGS_SUCCESS as libc::c_int;
+            ret = LBFGS_SUCCESS;
             break;
         }
 
@@ -2800,112 +2848,7 @@ pub unsafe extern "C" fn lbfgs(
     // Return the final value of the objective function.
     *ptr_fx = fx;
 
-    return ret;
+    // return ret;
+    Ok(ret)
 }
 // old:1 ends here
-
-// new
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
-/// Store optimization progress data
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct ProgressData<'a> {
-    /// The current values of variables
-    pub arr_x: &'a [f64],
-    /// The current gradient values of variables.
-    pub grd_x: &'a [f64],
-    /// The current value of the objective function.
-    pub fx: f64,
-    /// The Euclidean norm of the variables
-    pub xnorm: f64,
-    /// The Euclidean norm of the gradients.
-    pub gnorm: f64,
-    /// The line-search step used for this iteration.
-    pub step: f64,
-    /// The iteration count.
-    pub niter: usize,
-    /// The number of evaluations called for this iteration.
-    pub ncall: usize,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct LBFGS<F, G>
-where
-    F: FnMut(&mut Problem) -> Result<()>,
-    G: FnMut(&ProgressData) -> bool,
-{
-    pub param: LbfgsParam,
-    evaluate: Option<F>,
-    progress: Option<G>,
-}
-
-impl<F, G> Default for LBFGS<F, G>
-where
-    F: FnMut(&mut Problem) -> Result<()>,
-    G: FnMut(&ProgressData) -> bool,
-{
-    fn default() -> Self {
-        LBFGS {
-            param: LbfgsParam::default(),
-            evaluate: None,
-            progress: None,
-        }
-    }
-}
-
-/// Create lbfgs optimizer with epsilon convergence
-impl<F, G> LBFGS<F, G>
-where
-    F: FnMut(&mut Problem) -> Result<()>,
-    G: FnMut(&ProgressData) -> bool,
-{
-    pub fn with_epsilon(epsilon: f64) -> Self {
-        assert!(epsilon.is_sign_positive());
-
-        let mut lbfgs = LBFGS::default();
-
-        lbfgs.param.epsilon = epsilon;
-
-        lbfgs
-    }
-
-    /// Set progress monitor
-    pub fn set_progress_monitor(&mut self, prgr_fn: G) {
-        self.progress = Some(prgr_fn);
-    }
-
-    /// Check the input parameters for errors.
-    pub fn validate(&self) -> Result<()> {
-        Ok(())
-    }
-
-    /// Start the L-BFGS optimization; this will invoke the callback functions
-    /// evaluate() and progress() when necessary.
-    ///
-    /// # Parameters
-    ///
-    /// - arr_x  : The array of input variables.
-    /// - eval_fn: A closure to evaluate on arr_x
-    ///
-    /// # Return
-    ///
-    /// * on success, return final evaluated `Problem`.
-    ///
-    pub fn run(&mut self, prob: &mut Problem, mut eval_fn: F) -> Result<()> {
-        // Check the input parameters for errors.
-        self.validate()?;
-
-        // evaluate the problem to get value and gradient.
-        eval_fn(prob)?;
-
-        // Allocate working space.
-        let prob_prev = prob.clone();
-
-        let xnorm = prob.x.vec2norm();
-
-        unimplemented!()
-    }
-}
-// new:1 ends here

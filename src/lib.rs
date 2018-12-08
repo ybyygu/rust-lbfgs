@@ -20,8 +20,9 @@ use quicli::prelude::*;
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct LBFGS<F, G>
-where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-      G: FnMut(&Progress) -> bool,
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    G: FnMut(&Progress) -> bool,
 {
     pub param: LbfgsParam,
     evaluate: Option<F>,
@@ -29,12 +30,13 @@ where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 }
 
 impl<F, G> Default for LBFGS<F, G>
-where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-      G: FnMut(&Progress) -> bool,
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    G: FnMut(&Progress) -> bool,
 {
     fn default() -> Self {
         LBFGS {
-            param   : LbfgsParam::default(),
+            param: LbfgsParam::default(),
             evaluate: None,
             progress: None,
         }
@@ -43,8 +45,9 @@ where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 
 /// Create lbfgs optimizer with epsilon convergence
 impl<F, G> LBFGS<F, G>
-where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-      G: FnMut(&Progress) -> bool,
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    G: FnMut(&Progress) -> bool,
 {
     pub fn new(epsilon: f64) -> Self {
         assert!(epsilon.is_sign_positive());
@@ -58,8 +61,9 @@ where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 }
 
 impl<F, G> LBFGS<F, G>
-where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-      G: FnMut(&Progress) -> bool,
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    G: FnMut(&Progress) -> bool,
 {
     /// Start the L-BFGS optimization; this will invoke the callback functions
     /// evaluate() and progress() when necessary.
@@ -68,8 +72,7 @@ where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
     /// - arr_x  : The array of variables, which will be updated during optimization.
     /// - eval_fn: A closure to evaluate arr_x
     /// - prgr_fn: A closure to monitor progress
-    pub fn run(&mut self, arr_x: &mut [f64], eval_fn: F, prgr_fn: G) -> Result<f64>
-    {
+    pub fn run(&mut self, arr_x: &mut [f64], eval_fn: F, prgr_fn: G) -> Result<f64> {
         self.evaluate = Some(eval_fn);
         self.progress = Some(prgr_fn);
 
@@ -80,21 +83,18 @@ where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 
         // call external lbfgs function
         let mut fx = 0.0;
-        let ret = unsafe {
-            lbfgs(arr_x,
-                  &mut fx,
-                  Some(evaluate_wrapper::<F, G>),
-                  Some(progress_wrapper::<F, G>),
-                  instance,
-                  &self.param
-            )
+        unsafe {
+            lbfgs(
+                arr_x,
+                &mut fx,
+                Some(evaluate_wrapper::<F, G>),
+                Some(progress_wrapper::<F, G>),
+                instance,
+                &self.param,
+            )?
         };
 
-        if ret == 0 {
-            Ok(fx)
-        } else {
-            bail!("lbfgs failed with status code = {}", ret);
-        }
+        Ok(fx)
     }
 }
 // lbfgs:1 ends here
