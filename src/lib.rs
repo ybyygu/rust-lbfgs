@@ -11,7 +11,7 @@ use libc::{c_int, c_void};
 use quicli::prelude::*;
 
 /// See http://www.chokkan.org/software/liblbfgs/structlbfgs__parameter__t.html for documentation.
-pub type LBFGSParameter = lbfgs_parameter_t;
+/// pub type LbfgsParam = lbfgs_parameter_t;
 // base:1 ends here
 
 // lbfgs
@@ -23,7 +23,7 @@ pub struct LBFGS<F, G>
 where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
       G: FnMut(&Progress) -> bool,
 {
-    pub param: LBFGSParameter,
+    pub param: LbfgsParam,
     evaluate: Option<F>,
     progress: Option<G>,
 }
@@ -34,7 +34,7 @@ where F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     fn default() -> Self {
         LBFGS {
-            param   : LBFGSParameter::default(),
+            param   : LbfgsParam::default(),
             evaluate: None,
             progress: None,
         }

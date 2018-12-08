@@ -88,7 +88,7 @@ fn test_lbfgs() {
 
     // OWL-QN
     lbfgs.param.orthantwise_c = 1.0;
-    lbfgs.param.linesearch = 2;
+    //lbfgs.param.linesearch.algorithm = ;
     lbfgs.param.orthantwise_start = 0;
     lbfgs.param.orthantwise_end = 99;
     let fx = lbfgs.run(&mut x, evaluate, progress).expect("lbfgs run");

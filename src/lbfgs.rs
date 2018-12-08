@@ -495,109 +495,6 @@ unsafe extern "C" fn owlqn_x1norm(
 // new
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
-/// Line search algorithms.
-#[derive(Debug, Copy, Clone)]
-pub enum LineSearchAlgorithm {
-    /// MoreThuente method proposd by More and Thuente.
-    MoreThuente,
-
-    ///
-    /// Backtracking method with the Armijo condition.
-    ///
-    /// The backtracking method finds the step length such that it satisfies
-    /// the sufficient decrease (Armijo) condition,
-    ///   - f(x + a * d) <= f(x) + ftol * a * g(x)^T d,
-    ///
-    /// where x is the current point, d is the current search direction, and
-    /// a is the step length.
-    ///
-    BacktrackingArmijo,
-
-    /// The backtracking method with the defualt (regular Wolfe) condition.
-    Backtracking,
-
-    /// Backtracking method with strong Wolfe condition.
-    ///
-    /// The backtracking method finds the step length such that it satisfies
-    /// both the Armijo condition (BacktrackingArmijo)
-    /// and the following condition,
-    /// FIXME: gtol vs wolfe?
-    ///   - |g(x + a * d)^T d| <= lbfgs_parameter_t::wolfe * |g(x)^T d|,
-    ///
-    /// where x is the current point, d is the current search direction, and
-    /// a is the step length.
-    ///
-    BacktrackingStrongWolfe,
-
-    ///
-    /// Backtracking method with regular Wolfe condition.
-    ///
-    /// The backtracking method finds the step length such that it satisfies
-    /// both the Armijo condition (BacktrackingArmijo)
-    /// and the curvature condition,
-    /// FIXME: gtol vs wolfe?
-    ///   - g(x + a * d)^T d >= lbfgs_parameter_t::wolfe * g(x)^T d,
-    ///
-    /// where x is the current point, d is the current search direction, and a
-    /// is the step length.
-    ///
-    BacktrackingWolfe,
-}
-
-impl Default for LineSearchAlgorithm {
-    /// The default algorithm (MoreThuente method).
-    fn default() -> Self {
-        LineSearchAlgorithm::MoreThuente
-    }
-}
-// new:1 ends here
-
-// old
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
-pub type unnamed_0 = libc::c_uint;
-/// Backtracking method with strong Wolfe condition.
-///  The backtracking method finds the step length such that it satisfies
-///  both the Armijo condition (LBFGS_LINESEARCH_BACKTRACKING_ARMIJO)
-///  and the following condition,
-///    - |g(x + a * d)^T d| <= lbfgs_parameter_t::wolfe * |g(x)^T d|,
-///
-///  where x is the current point, d is the current search direction, and
-///  a is the step length.
-
-pub const LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE: unnamed_0 = 3;
-//
-// Backtracking method with regular Wolfe condition.
-//  The backtracking method finds the step length such that it satisfies
-//  both the Armijo condition (LBFGS_LINESEARCH_BACKTRACKING_ARMIJO)
-//  and the curvature condition,
-//    - g(x + a * d)^T d >= lbfgs_parameter_t::wolfe * g(x)^T d,
-//
-//  where x is the current point, d is the current search direction, and
-//  a is the step length.
-
-pub const LBFGS_LINESEARCH_BACKTRACKING_WOLFE: unnamed_0 = 2;
-/* * The backtracking method with the defualt (regular Wolfe) condition. */
-pub const LBFGS_LINESEARCH_BACKTRACKING: unnamed_0 = 2;
-/* *
- * Backtracking method with the Armijo condition.
- *  The backtracking method finds the step length such that it satisfies
- *  the sufficient decrease (Armijo) condition,
- *    - f(x + a * d) <= f(x) + lbfgs_parameter_t::ftol * a * g(x)^T d,
- *
- *  where x is the current point, d is the current search direction, and
- *  a is the step length.
- */
-pub const LBFGS_LINESEARCH_BACKTRACKING_ARMIJO: unnamed_0 = 1;
-/* * MoreThuente method proposd by More and Thuente. */
-pub const LBFGS_LINESEARCH_MORETHUENTE: unnamed_0 = 0;
-/* * The default algorithm (MoreThuente method). */
-pub const LBFGS_LINESEARCH_DEFAULT: unnamed_0 = 0;
-// old:1 ends here
-
-// new
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
 #[derive(Debug, Copy, Clone)]
 pub struct LineSearchParam {
     algorithm: LineSearchAlgorithm,
@@ -734,9 +631,112 @@ pub type line_search_proc = Option<
         // callback struct
         cd: *mut callback_data_t,
         // LBFGS parameter
-        param: &lbfgs_parameter_t,
+        param: &LbfgsParam,
     ) -> libc::c_int,
 >;
+// old:1 ends here
+
+// new
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+/// Line search algorithms.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum LineSearchAlgorithm {
+    /// MoreThuente method proposd by More and Thuente.
+    MoreThuente,
+
+    ///
+    /// Backtracking method with the Armijo condition.
+    ///
+    /// The backtracking method finds the step length such that it satisfies
+    /// the sufficient decrease (Armijo) condition,
+    ///   - f(x + a * d) <= f(x) + ftol * a * g(x)^T d,
+    ///
+    /// where x is the current point, d is the current search direction, and
+    /// a is the step length.
+    ///
+    BacktrackingArmijo,
+
+    /// The backtracking method with the defualt (regular Wolfe) condition.
+    Backtracking,
+
+    /// Backtracking method with strong Wolfe condition.
+    ///
+    /// The backtracking method finds the step length such that it satisfies
+    /// both the Armijo condition (BacktrackingArmijo)
+    /// and the following condition,
+    /// FIXME: gtol vs wolfe?
+    ///   - |g(x + a * d)^T d| <= lbfgs_parameter_t::wolfe * |g(x)^T d|,
+    ///
+    /// where x is the current point, d is the current search direction, and
+    /// a is the step length.
+    ///
+    BacktrackingStrongWolfe,
+
+    ///
+    /// Backtracking method with regular Wolfe condition.
+    ///
+    /// The backtracking method finds the step length such that it satisfies
+    /// both the Armijo condition (BacktrackingArmijo)
+    /// and the curvature condition,
+    /// FIXME: gtol vs wolfe?
+    ///   - g(x + a * d)^T d >= lbfgs_parameter_t::wolfe * g(x)^T d,
+    ///
+    /// where x is the current point, d is the current search direction, and a
+    /// is the step length.
+    ///
+    BacktrackingWolfe,
+}
+
+impl Default for LineSearchAlgorithm {
+    /// The default algorithm (MoreThuente method).
+    fn default() -> Self {
+        LineSearchAlgorithm::MoreThuente
+    }
+}
+// new:1 ends here
+
+// old
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+pub type unnamed_0 = libc::c_uint;
+/// Backtracking method with strong Wolfe condition.
+///  The backtracking method finds the step length such that it satisfies
+///  both the Armijo condition (LBFGS_LINESEARCH_BACKTRACKING_ARMIJO)
+///  and the following condition,
+///    - |g(x + a * d)^T d| <= lbfgs_parameter_t::wolfe * |g(x)^T d|,
+///
+///  where x is the current point, d is the current search direction, and
+///  a is the step length.
+
+pub const LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE: unnamed_0 = 3;
+//
+// Backtracking method with regular Wolfe condition.
+//  The backtracking method finds the step length such that it satisfies
+//  both the Armijo condition (LBFGS_LINESEARCH_BACKTRACKING_ARMIJO)
+//  and the curvature condition,
+//    - g(x + a * d)^T d >= lbfgs_parameter_t::wolfe * g(x)^T d,
+//
+//  where x is the current point, d is the current search direction, and
+//  a is the step length.
+
+pub const LBFGS_LINESEARCH_BACKTRACKING_WOLFE: unnamed_0 = 2;
+/* * The backtracking method with the defualt (regular Wolfe) condition. */
+pub const LBFGS_LINESEARCH_BACKTRACKING: unnamed_0 = 2;
+/* *
+ * Backtracking method with the Armijo condition.
+ *  The backtracking method finds the step length such that it satisfies
+ *  the sufficient decrease (Armijo) condition,
+ *    - f(x + a * d) <= f(x) + lbfgs_parameter_t::ftol * a * g(x)^T d,
+ *
+ *  where x is the current point, d is the current search direction, and
+ *  a is the step length.
+ */
+pub const LBFGS_LINESEARCH_BACKTRACKING_ARMIJO: unnamed_0 = 1;
+/* * MoreThuente method proposd by More and Thuente. */
+pub const LBFGS_LINESEARCH_MORETHUENTE: unnamed_0 = 0;
+/* * The default algorithm (MoreThuente method). */
+pub const LBFGS_LINESEARCH_DEFAULT: unnamed_0 = 0;
 // old:1 ends here
 
 // Original documentation by J. Nocera (lbfgs.f)
@@ -864,9 +864,9 @@ pub type line_search_proc = Option<
 
 // Original documentation by J. Nocera (lbfgs.f):1 ends here
 
-// src
+// new
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
 /// The purpose of mcsrch is to find a step which satisfies a sufficient
 /// decrease condition and a curvature condition.
 mod mcsrch {
@@ -1112,11 +1112,11 @@ mod mcsrch {
         }
     }
 }
-// src:1 ends here
+// new:1 ends here
 
-// lbfgs.c
+// old
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs.c][lbfgs.c:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 unsafe extern "C" fn line_search_morethuente(
     n: libc::c_int,
     mut x: *mut lbfgsfloatval_t,
@@ -1128,8 +1128,10 @@ unsafe extern "C" fn line_search_morethuente(
     mut gp: *const lbfgsfloatval_t,
     mut wa: *mut lbfgsfloatval_t,
     mut cd: *mut callback_data_t,
-    param: &lbfgs_parameter_t,
+    param: &LbfgsParam,
 ) -> libc::c_int {
+    let param = &param.linesearch;
+
     // Check the input parameters for errors.
     if *stp <= 0.0 {
         return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
@@ -1195,8 +1197,8 @@ unsafe extern "C" fn line_search_morethuente(
         if brackt
             && (*stp <= stmin
                 || stmax <= *stp
-                || param.max_linesearch <= count + 1i32
-                || uinfo != 0i32) || brackt && stmax - stmin <= param.xtol * stmax
+                || param.max_linesearch <= count + 1
+                || uinfo != 0) || brackt && stmax - stmin <= param.xtol * stmax
         {
             *stp = stx
         }
@@ -1237,7 +1239,7 @@ unsafe extern "C" fn line_search_morethuente(
             return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
         } else if *f <= ftest1 && dg.abs() <= param.gtol * -dginit {
             /* The sufficient decrease condition and the directional derivative condition hold. */
-            return count;
+            return count as i32;
         } else {
             // In the first stage we seek a step for which the modified
             // function has a nonpositive value and nonnegative derivative.
@@ -1313,7 +1315,7 @@ unsafe extern "C" fn line_search_morethuente(
         }
     }
 }
-// lbfgs.c:1 ends here
+// old:1 ends here
 
 // new
 
@@ -1966,8 +1968,11 @@ unsafe extern "C" fn line_search_backtracking(
     mut gp: *const f64,
     mut wp: *mut f64,
     mut cd: *mut callback_data_t,
-    param: &lbfgs_parameter_t,
+    param: &LbfgsParam,
 ) -> libc::c_int {
+    // quick wrapper
+    let param = &param.linesearch;
+
     let mut width: f64 = 0.;
     let mut dg: f64 = 0.;
     let mut finit: f64 = 0.;
@@ -1994,6 +1999,8 @@ unsafe extern "C" fn line_search_backtracking(
     dgtest = param.ftol * dginit;
 
     let mut count = 0;
+
+    use crate::LineSearchAlgorithm::*;
     loop {
         veccpy(x, xp, n);
         vecadd(x, s, *stp, n);
@@ -2008,35 +2015,36 @@ unsafe extern "C" fn line_search_backtracking(
         count += 1;
         if *f > finit + *stp * dgtest {
             width = dec
-        } else if param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_ARMIJO as libc::c_int {
+        } else if param.algorithm == BacktrackingArmijo {
             // Exit with the Armijo condition.
-            return count;
+            return count as i32;
         } else {
             // Check the Wolfe condition.
             vecdot(&mut dg, g, s, n);
             if dg < param.wolfe * dginit {
                 width = inc
-            } else if param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_WOLFE as libc::c_int {
+            } else if param.algorithm == BacktrackingWolfe {
                 // Exit with the regular Wolfe condition.
-                return count;
+                return count as i32;
             } else if dg > -param.wolfe * dginit {
                 width = dec
             } else {
-                return count;
+                return count as i32;
             }
         }
         if *stp < param.min_step {
             /* The step is the minimum value. */
             return LBFGSERR_MINIMUMSTEP as libc::c_int;
-        } else if *stp > param.max_step {
+        }
+        if *stp > param.max_step {
             /* The step is the maximum value. */
             return LBFGSERR_MAXIMUMSTEP as libc::c_int;
-        } else if param.max_linesearch <= count {
+        }
+        if param.max_linesearch <= count {
             /* Maximum number of iteration. */
             return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
-        } else {
-            *stp *= width
         }
+        *stp *= width
     }
 }
 // old:1 ends here
@@ -2135,7 +2143,7 @@ pub struct LbfgsParam {
     /// computing the L1 norm. Setting b (0 < b < N), one can protect
     /// variables, x_1, ..., x_{b-1} (e.g., a bias term of logistic
     /// regression) from being regularized. The default value is zero.
-    pub orthantwise_start: isize,
+    pub orthantwise_start: i32,
 
     /// End index for computing L1 norm of the variables.
     ///
@@ -2143,7 +2151,7 @@ pub struct LbfgsParam {
     /// (i.e., \ref orthantwise_c != 0). This parameter e (0 < e <= N)
     /// specifies the index number at which the library stops computing the
     /// L1 norm of the variables x,
-    pub orthantwise_end: isize,
+    pub orthantwise_end: i32,
 }
 
 impl Default for LbfgsParam {
@@ -2458,10 +2466,9 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
     mut gp: *const f64,
     mut wp: *mut f64,
     mut cd: *mut callback_data_t,
-    param: &lbfgs_parameter_t,
+    _param: &LbfgsParam,
 ) -> libc::c_int {
     let mut i: libc::c_int = 0;
-    let mut count: libc::c_int = 0i32;
     let mut width: f64 = 0.5f64;
     let mut finit: f64 = *f;
 
@@ -2485,6 +2492,10 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
         wp[i] = if xp[i] == 0.0 { -gp[i] } else { xp[i] };
     }
 
+    let mut count = 0;
+    // FIXME: review
+    // quick wrapper
+    let param = &_param.linesearch;
     loop {
         // Update the current point.
         // veccpy(x, xp, n);
@@ -2493,7 +2504,7 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
         x.vecadd(s, *stp);
 
         // The current point is projected onto the orthant.
-        owlqn_project(x, wp, param.orthantwise_start as usize, param.orthantwise_end as usize);
+        owlqn_project(x, wp, _param.orthantwise_start as usize, _param.orthantwise_end as usize);
 
         // Evaluate the function and gradient values.
         *f = (*cd).proc_evaluate.expect("non-null function pointer")(
@@ -2505,8 +2516,8 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
         );
 
         // Compute the L1 norm of the variables and add it to the object value.
-        let norm = owlqn_x1norm(x.as_ptr(), param.orthantwise_start, param.orthantwise_end);
-        *f += norm * param.orthantwise_c;
+        let norm = owlqn_x1norm(x.as_ptr(), _param.orthantwise_start, _param.orthantwise_end);
+        *f += norm * _param.orthantwise_c;
 
         count += 1;
 
@@ -2517,7 +2528,7 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
 
         if *f <= finit + param.ftol * dgtest {
             // The sufficient decrease condition.
-            return count;
+            return count as i32;
         }
 
         if *stp < param.min_step {
@@ -2654,7 +2665,7 @@ pub unsafe extern "C" fn lbfgs(
     mut proc_evaluate: lbfgs_evaluate_t,
     mut proc_progress: lbfgs_progress_t,
     mut instance: *mut libc::c_void,
-    param: &lbfgs_parameter_t,
+    param: &LbfgsParam,
 ) -> libc::c_int {
     let n = arr_x.len() as i32;
     let mut x = arr_x.as_mut_ptr();
@@ -2664,13 +2675,10 @@ pub unsafe extern "C" fn lbfgs(
 
     let mut current_block: u64;
     let mut ret: libc::c_int = 0;
-    let mut k: libc::c_int = 0;
     let mut ls: libc::c_int = 0;
-    let mut end: libc::c_int = 0;
-    let mut bound: libc::c_int = 0;
     let mut step: lbfgsfloatval_t = 0.;
 
-    let m: libc::c_int = param.m;
+    let m = param.m;
     let mut ys = 0.;
     let mut yy = 0.;
     let mut xnorm = 0.;
@@ -2696,58 +2704,66 @@ pub unsafe extern "C" fn lbfgs(
     // Check the input parameters for errors.
     if n <= 0i32 {
         return LBFGSERR_INVALID_N as libc::c_int;
-    } else if param.epsilon < 0.0f64 {
+    } else if param.epsilon < 0.0 {
         return LBFGSERR_INVALID_EPSILON as libc::c_int;
-    } else if param.past < 0i32 {
-        return LBFGSERR_INVALID_TESTPERIOD as libc::c_int;
-    } else if param.delta < 0.0f64 {
+    } else if param.delta < 0.0 {
         return LBFGSERR_INVALID_DELTA as libc::c_int;
-    } else if param.min_step < 0.0f64 {
+    } else if param.linesearch.min_step < 0.0 {
         return LBFGSERR_INVALID_MINSTEP as libc::c_int;
-    } else if param.max_step < param.min_step {
+    } else if param.linesearch.max_step < param.linesearch.min_step {
         return LBFGSERR_INVALID_MAXSTEP as libc::c_int;
-    } else if param.ftol < 0.0f64 {
+    } else if param.linesearch.ftol < 0.0 {
         return LBFGSERR_INVALID_FTOL as libc::c_int;
     }
 
-    if param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_WOLFE as libc::c_int
-        || param.linesearch == LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE as libc::c_int
-    {
-        if param.wolfe <= param.ftol || 1.0f64 <= param.wolfe {
-            return LBFGSERR_INVALID_WOLFE as libc::c_int;
+    use crate::LineSearchAlgorithm::*;
+    match param.linesearch.algorithm {
+        BacktrackingWolfe | BacktrackingStrongWolfe => {
+            if param.linesearch.wolfe <= param.linesearch.ftol || 1.0 <= param.linesearch.wolfe {
+                return LBFGSERR_INVALID_WOLFE as libc::c_int;
+            }
+        }
+        _ => {
+            if param.linesearch.gtol < 0.0 {
+                return LBFGSERR_INVALID_GTOL as libc::c_int;
+            }
+            if param.linesearch.xtol < 0.0 {
+                return LBFGSERR_INVALID_XTOL as libc::c_int;
+            }
+            if param.linesearch.max_linesearch <= 0 {
+                return LBFGSERR_INVALID_MAXLINESEARCH as libc::c_int;
+            }
         }
     }
 
-    if param.gtol < 0.0 {
-        return LBFGSERR_INVALID_GTOL as libc::c_int;
-    } else if param.xtol < 0.0 {
-        return LBFGSERR_INVALID_XTOL as libc::c_int;
-    } else if param.max_linesearch <= 0 {
-        return LBFGSERR_INVALID_MAXLINESEARCH as libc::c_int;
-    } else if param.orthantwise_c < 0.0 {
+    if param.orthantwise_c < 0.0 {
         return LBFGSERR_INVALID_ORTHANTWISE as libc::c_int;
-    } else if param.orthantwise_start < 0 || n < param.orthantwise_start {
+    }
+    if param.orthantwise_start < 0 || n < param.orthantwise_start {
         return LBFGSERR_INVALID_ORTHANTWISE_START as libc::c_int;
     }
-
     if param.orthantwise_end < 0 {
         param.orthantwise_end = n
     }
     if n < param.orthantwise_end {
         return LBFGSERR_INVALID_ORTHANTWISE_END as libc::c_int;
     }
+
     if param.orthantwise_c != 0.0 {
-        match param.linesearch {
-            2 => linesearch = Some(line_search_backtracking_owlqn),
-            _ => {
-                // Only the backtracking method is available.
-                return LBFGSERR_INVALID_LINESEARCH as libc::c_int;
-            }
+        match param.linesearch.algorithm {
+            // FIXME: review below
+            _ => linesearch = Some(line_search_backtracking_owlqn),
+            // _ => {
+            //     // Only the backtracking method is available.
+            //     return LBFGSERR_INVALID_LINESEARCH as libc::c_int;
+            // }
         }
     } else {
-        match param.linesearch {
-            0 => linesearch = Some(line_search_morethuente),
-            1 | 2 | 3 => linesearch = Some(line_search_backtracking),
+        match param.linesearch.algorithm {
+            MoreThuente => linesearch = Some(line_search_morethuente),
+            BacktrackingArmijo | BacktrackingWolfe | BacktrackingStrongWolfe => {
+                linesearch = Some(line_search_backtracking)
+            }
             _ => return LBFGSERR_INVALID_LINESEARCH as libc::c_int,
         }
     }
@@ -2774,10 +2790,10 @@ pub unsafe extern "C" fn lbfgs(
     let pg = pg_arr.as_mut_ptr();
 
     // Allocate limited memory storage.
-    let mut lm_arr: Vec<IterationData> = Vec::with_capacity(m as usize);
+    let mut lm_arr: Vec<IterationData> = Vec::with_capacity(m);
 
     // Initialize the limited memory.
-    for i in 0..(m as usize) {
+    for i in 0..m {
         lm_arr.push(IterationData {
             alpha: 0.0,
             ys: 0.0,
@@ -2834,8 +2850,8 @@ pub unsafe extern "C" fn lbfgs(
     // Compute the initial step:
     // step = 1.0 / sqrt(vecdot(d, d, n))
     vec2norminv(&mut step, d, n);
-    k = 1;
-    end = 0;
+    let mut k: usize = 1;
+    let mut end = 0;
 
     info!("start lbfgs loop...");
     loop {
@@ -2888,7 +2904,7 @@ pub unsafe extern "C" fn lbfgs(
                 gnorm,
                 step,
                 cd.n,
-                k,
+                k as i32,
                 ls,
             );
             if 0 != ret {
@@ -2939,7 +2955,7 @@ pub unsafe extern "C" fn lbfgs(
         // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
         // y_{k+1} = g_{k+1} - g_{k}.
         // it = &mut *lm.offset(end as isize) as *mut iteration_data_t;
-        let mut it = &mut lm_arr[end as usize];
+        let mut it = &mut lm_arr[end];
         vecdiff((*it).s.as_mut_ptr(), x, xp, n);
         vecdiff((*it).y.as_mut_ptr(), g, gp, n);
 
@@ -2957,10 +2973,10 @@ pub unsafe extern "C" fn lbfgs(
         // Updating Quasi-Newton Matrices with Limited Storage.
         // Mathematics of Computation, Vol. 35, No. 151,
         // pp. 773--782, 1980.
-        bound = if m <= k { m } else { k };
+        let bound = if m <= k { m } else { k };
 
         k += 1;
-        end = (end + 1i32) % m;
+        end = (end + 1) % m;
         // Compute the steepest direction.
         if param.orthantwise_c == 0.0f64 {
             // Compute the negative of gradients.
@@ -2973,7 +2989,7 @@ pub unsafe extern "C" fn lbfgs(
         let mut j = end;
         while i < bound {
             // if (--j == -1) j = m-1;
-            j = (j + m - 1i32) % m;
+            j = (j + m - 1) % m;
             // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
             let mut it = &mut lm_arr[j as usize];
 
@@ -2996,7 +3012,7 @@ pub unsafe extern "C" fn lbfgs(
             // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
             vecadd(d, (*it).s.as_mut_ptr(), (*it).alpha - beta, n);
             // if (++j == m) j = 0;
-            j = (j + 1i32) % m;
+            j = (j + 1) % m;
             i += 1
         }
 
