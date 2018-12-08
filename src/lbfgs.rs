@@ -1130,7 +1130,16 @@ unsafe extern "C" fn line_search_morethuente(
     mut cd: *mut callback_data_t,
     param: &LbfgsParam,
 ) -> libc::c_int {
+    // quick wrapper
+
     let param = &param.linesearch;
+    // FIXME: remove
+    let n = n as usize;
+    let s = unsafe { ::std::slice::from_raw_parts(s, n) };
+    let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
+    let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
+    let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
+    let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
 
     // Check the input parameters for errors.
     if *stp <= 0.0 {
@@ -1138,8 +1147,8 @@ unsafe extern "C" fn line_search_morethuente(
     }
 
     // Compute the initial gradient in the search direction.
-    let mut dginit = 0.0;
-    vecdot(&mut dginit, g, s, n);
+    // vecdot(&mut dginit, g, s, n);
+    let mut dginit = g.vecdot(s);
 
     // Make sure that s points to a descent direction.
     if 0.0 < dginit {
@@ -1181,7 +1190,7 @@ unsafe extern "C" fn line_search_morethuente(
             stmax = if stx >= sty { stx } else { sty }
         } else {
             stmin = stx;
-            stmax = *stp + 4.0f64 * (*stp - stx)
+            stmax = *stp + 4.0 * (*stp - stx)
         }
 
         // Clip the step in the range of [stpmin, stpmax].
@@ -1204,20 +1213,23 @@ unsafe extern "C" fn line_search_morethuente(
         }
 
         // Compute the current value of x: x <- x + (*stp) * s.
-        veccpy(x, xp, n);
-        vecadd(x, s, *stp, n);
+        // veccpy(x, xp, n);
+        x.veccpy(xp);
+        // vecadd(x, s, *stp, n);
+        x.vecadd(s, *stp);
 
         // Evaluate the function and gradient values.
+        // FIXME: improve
         *f = (*cd).proc_evaluate.expect("non-null function pointer")(
             (*cd).instance,
-            x,
-            g,
+            x.as_mut_ptr(),
+            g.as_mut_ptr(),
             (*cd).n,
             *stp,
         );
 
-        let mut dg = 0.;
-        vecdot(&mut dg, g, s, n);
+        // vecdot(&mut dg, g, s, n);
+        let mut dg = g.vecdot(s);
         let ftest1 = finit + *stp * dgtest;
         count += 1;
 
@@ -1306,8 +1318,8 @@ unsafe extern "C" fn line_search_morethuente(
                 continue;
             }
 
-            if 0.66f64 * prev_width <= (sty - stx).abs() {
-                *stp = stx + 0.5f64 * (sty - stx)
+            if 0.66 * prev_width <= (sty - stx).abs() {
+                *stp = stx + 0.5 * (sty - stx)
             }
 
             prev_width = width;
@@ -1973,11 +1985,16 @@ unsafe extern "C" fn line_search_backtracking(
     // quick wrapper
     let param = &param.linesearch;
 
+    // FIXME: remove
+    let n = n as usize;
+    let s = unsafe { ::std::slice::from_raw_parts(s, n) };
+    let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
+    let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
+    let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
+    let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
+    let wp = unsafe { ::std::slice::from_raw_parts_mut(wp, n) };
+
     let mut width: f64 = 0.;
-    let mut dg: f64 = 0.;
-    let mut finit: f64 = 0.;
-    let mut dginit: f64 = 0.0;
-    let mut dgtest: f64 = 0.;
     let dec: f64 = 0.5;
     let inc: f64 = 2.1;
 
@@ -1987,7 +2004,8 @@ unsafe extern "C" fn line_search_backtracking(
     }
 
     // Compute the initial gradient in the search direction.
-    vecdot(&mut dginit, g, s, n);
+    // vecdot(&mut dginit, g, s, n);
+    let mut dginit = g.vecdot(s);
 
     // Make sure that s points to a descent direction.
     if 0.0 < dginit {
@@ -1995,23 +2013,27 @@ unsafe extern "C" fn line_search_backtracking(
     }
 
     // The initial value of the objective function.
-    finit = *f;
-    dgtest = param.ftol * dginit;
-
-    let mut count = 0;
+    let mut finit = *f;
+    let mut dgtest = param.ftol * dginit;
 
     use crate::LineSearchAlgorithm::*;
+    let mut count = 0;
     loop {
-        veccpy(x, xp, n);
-        vecadd(x, s, *stp, n);
+        // veccpy(x, xp, n);
+        x.veccpy(xp);
+        // vecadd(x, s, *stp, n);
+        x.vecadd(s, *stp);
+
+        // FIXME: improve below
         // Evaluate the function and gradient values.
         *f = (*cd).proc_evaluate.expect("non-null function pointer")(
             (*cd).instance,
-            x,
-            g,
+            x.as_mut_ptr(),
+            g.as_mut_ptr(),
             (*cd).n,
             *stp,
         );
+
         count += 1;
         if *f > finit + *stp * dgtest {
             width = dec
@@ -2020,7 +2042,8 @@ unsafe extern "C" fn line_search_backtracking(
             return count as i32;
         } else {
             // Check the Wolfe condition.
-            vecdot(&mut dg, g, s, n);
+            // vecdot(&mut dg, g, s, n);
+            let dg = g.vecdot(s);
             if dg < param.wolfe * dginit {
                 width = inc
             } else if param.algorithm == BacktrackingWolfe {
@@ -2121,36 +2144,34 @@ pub struct LbfgsParam {
     ///  This parameter should be set to zero for standard minimization
     ///  problems. Setting this parameter to a positive value activates
     ///  Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) method, which
-    ///  minimizes the objective function F(x) combined with the L1 norm |x|
-    ///  of the variables, {F(x) + C |x|}. This parameter is the coeefficient
-    ///  for the |x|, i.e., C. As the L1 norm |x| is not differentiable at
-    ///  zero, the library modifies function and gradient evaluations from
-    ///  a client program suitably; a client program thus have only to return
-    ///  the function value F(x) and gradients G(x) as usual. The default value
-    ///  is zero.
+    ///  minimizes the objective function F(x) combined with the L1 norm |x| of
+    ///  the variables, {F(x) + C |x|}. This parameter is the coeefficient for
+    ///  the |x|, i.e., C. As the L1 norm |x| is not differentiable at zero, the
+    ///  library modifies function and gradient evaluations from a client
+    ///  program suitably; a client program thus have only to return the
+    ///  function value F(x) and gradients G(x) as usual. The default value is
+    ///  zero.
     pub orthantwise_c: f64,
 
     /// Start index for computing L1 norm of the variables.
     ///
-    /// This parameter is valid only for OWL-QN method
-    /// (i.e., \ref orthantwise_c != 0). This parameter b (0 <= b < N)
-    /// specifies the index number from which the library computes the
-    /// L1 norm of the variables x,
+    /// This parameter is valid only for OWL-QN method (i.e., orthantwise_c !=
+    /// 0). This parameter b (0 <= b < N) specifies the index number from which
+    /// the library computes the L1 norm of the variables x,
     ///
     ///     |x| := |x_{b}| + |x_{b+1}| + ... + |x_{N}| .
     ///
-    /// In other words, variables x_1, ..., x_{b-1} are not used for
-    /// computing the L1 norm. Setting b (0 < b < N), one can protect
-    /// variables, x_1, ..., x_{b-1} (e.g., a bias term of logistic
-    /// regression) from being regularized. The default value is zero.
+    /// In other words, variables x_1, ..., x_{b-1} are not used for computing
+    /// the L1 norm. Setting b (0 < b < N), one can protect variables, x_1, ...,
+    /// x_{b-1} (e.g., a bias term of logistic regression) from being
+    /// regularized. The default value is zero.
     pub orthantwise_start: i32,
 
     /// End index for computing L1 norm of the variables.
     ///
-    /// This parameter is valid only for OWL-QN method
-    /// (i.e., \ref orthantwise_c != 0). This parameter e (0 < e <= N)
-    /// specifies the index number at which the library stops computing the
-    /// L1 norm of the variables x,
+    /// This parameter is valid only for OWL-QN method (i.e., \ref orthantwise_c
+    /// != 0). This parameter e (0 < e <= N) specifies the index number at which
+    /// the library stops computing the L1 norm of the variables x,
     pub orthantwise_end: i32,
 }
 
@@ -2514,26 +2535,18 @@ pub unsafe extern "C" fn lbfgs(
     mut instance: *mut libc::c_void,
     param: &LbfgsParam,
 ) -> Result<i32> {
-    let n = arr_x.len() as i32;
-    let mut x = arr_x.as_mut_ptr();
-
     // FIXME: make param immutable
     let mut param = param.clone();
 
     let mut ls: libc::c_int = 0;
-    let mut step: lbfgsfloatval_t = 0.;
 
     let m = param.m;
     let mut ys = 0.;
     let mut yy = 0.;
-    let mut xnorm = 0.;
-    let mut gnorm = 0.;
-    let mut beta = 0.;
-    let mut fx = 0.0;
-    let mut rate = 0.0;
     let mut linesearch: line_search_proc = Some(line_search_morethuente);
 
     // Construct a callback data.
+    let n = arr_x.len() as i32;
     let mut cd: callback_data_t = tag_callback_data {
         n: 0,
         instance: 0 as *mut libc::c_void,
@@ -2546,9 +2559,8 @@ pub unsafe extern "C" fn lbfgs(
     cd.proc_evaluate = proc_evaluate;
     cd.proc_progress = proc_progress;
 
-    // FIXME: remove expect
     // Check the input parameters for errors.
-    param.validate().expect("invalid input parameters");
+    param.validate()?;
 
     // FIXME: make param immutable
     if param.orthantwise_start < 0 || n < param.orthantwise_start {
@@ -2573,10 +2585,10 @@ pub unsafe extern "C" fn lbfgs(
             MoreThuente => linesearch = Some(line_search_morethuente),
             BacktrackingArmijo | BacktrackingWolfe | BacktrackingStrongWolfe => {
                 linesearch = Some(line_search_backtracking)
-            },
+            }
             _ => {
                 bail!("LBFGSERR_INVALID_LINESEARCH");
-            },
+            }
         }
     }
 
@@ -2618,11 +2630,15 @@ pub unsafe extern "C" fn lbfgs(
     let mut pf = vec![0.0; param.past as usize];
 
     // Store the initial value of the objective function.
+    let mut fx = 0.0;
     if pf.len() > 0 {
         pf[0] = fx;
     }
 
     // Evaluate the function value and its gradient.
+    let mut xnorm = 0.;
+    let mut x = arr_x.as_mut_ptr();
+
     fx = cd.proc_evaluate.expect("non-null function pointer")(cd.instance, x, g, cd.n, 0.0);
     if 0.0 != param.orthantwise_c {
         // Compute the L1 norm of the variable and add it to the object value.
@@ -2647,6 +2663,7 @@ pub unsafe extern "C" fn lbfgs(
     }
 
     // Make sure that the initial variables are not a minimizer.
+    let mut gnorm = 0.;
     vec2norm(&mut xnorm, x, n);
     if param.orthantwise_c == 0.0 {
         vec2norm(&mut gnorm, g, n);
@@ -2661,6 +2678,7 @@ pub unsafe extern "C" fn lbfgs(
 
     // Compute the initial step:
     // step = 1.0 / sqrt(vecdot(d, d, n))
+    let mut step = 0.;
     vec2norminv(&mut step, d, n);
     let mut k: usize = 1;
     let mut end = 0;
@@ -2746,7 +2764,7 @@ pub unsafe extern "C" fn lbfgs(
             if param.past <= k {
                 // Compute the relative improvement from the past.
                 // rate = (*pf.offset((k % param.past) as isize) - fx) / fx;
-                rate = (pf[(k % param.past) as usize] - fx) / fx;
+                let rate = (pf[(k % param.past) as usize] - fx) / fx;
                 // The stopping criterion.
                 if rate < param.delta {
                     ret = LBFGS_STOP as libc::c_int;
@@ -2821,6 +2839,7 @@ pub unsafe extern "C" fn lbfgs(
             // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
             let it = &mut lm_arr[j as usize];
             // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
+            let mut beta = 0.;
             vecdot(&mut beta, (*it).y.as_mut_ptr(), d, n);
             beta /= (*it).ys;
             // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
@@ -2848,7 +2867,6 @@ pub unsafe extern "C" fn lbfgs(
     // Return the final value of the objective function.
     *ptr_fx = fx;
 
-    // return ret;
     Ok(ret)
 }
 // old:1 ends here
