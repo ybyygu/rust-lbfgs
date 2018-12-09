@@ -67,8 +67,6 @@ use quicli::prelude::*;
 
 use libc;
 
-pub type size_t = libc::c_ulong;
-
 pub type lbfgsfloatval_t = libc::c_double;
 
 /* *
@@ -492,32 +490,28 @@ trait LineSearching<E> {
 // old
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
-pub type line_search_proc = Option<
-    unsafe extern "C" fn(
-        // The number of variables.
-        n: libc::c_int,
-        // The array of variables.
-        x: &mut [f64],
-        // Evaluated function value
-        f: *mut lbfgsfloatval_t,
-        // Evaluated gradient array
-        g: &mut [f64],
-        // Search direction array
-        s: &[f64],
-        // Step size
-        stp: *mut lbfgsfloatval_t,
-        // Variable vector of previous step
-        xp: &[f64],
-        // Gradient vector of previous step
-        gp: &[f64],
-        // work array?
-        wp: &mut [f64],
-        // callback struct
-        cd: *mut callback_data_t,
-        // LBFGS parameter
-        param: &LbfgsParam,
-    ) -> libc::c_int,
->;
+pub type line_search_proc = unsafe extern "C" fn(
+    // The array of variables.
+    x: &mut [f64],
+    // Evaluated function value
+    f: &mut f64,
+    // Evaluated gradient array
+    g: &mut [f64],
+    // Search direction array
+    s: &[f64],
+    // Step size
+    stp: &mut f64,
+    // Variable vector of previous step
+    xp: &[f64],
+    // Gradient vector of previous step
+    gp: &[f64],
+    // work array?
+    wp: &mut [f64],
+    // callback struct
+    cd: *mut callback_data_t,
+    // LBFGS parameter
+    param: &LbfgsParam,
+) -> Result<i32>;
 // old:1 ends here
 
 // new
@@ -1002,18 +996,16 @@ mod mcsrch {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 unsafe extern "C" fn line_search_morethuente(
-    // The number of variables.
-    n: libc::c_int,
     // The array of variables.
     x: &mut [f64],
     // Evaluated function value
-    f: *mut lbfgsfloatval_t,
+    f: &mut f64,
     // Evaluated gradient array
     g: &mut [f64],
     // Search direction array
     s: &[f64],
     // Step size
-    stp: *mut lbfgsfloatval_t,
+    stp: &mut f64,
     // Variable vector of previous step
     xp: &[f64],
     // Gradient vector of previous step
@@ -1024,30 +1016,24 @@ unsafe extern "C" fn line_search_morethuente(
     cd: *mut callback_data_t,
     // LBFGS parameter
     param: &LbfgsParam,
-) -> libc::c_int {
+) -> Result<i32> {
     // quick wrapper
 
     let param = &param.linesearch;
     // FIXME: remove
-    let n = n as usize;
-    // let s = unsafe { ::std::slice::from_raw_parts(s, n) };
-    // let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
-    // let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
-    // let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
-    // let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
+    let n = x.len();
 
     // Check the input parameters for errors.
     if *stp <= 0.0 {
-        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
+        bail!("LBFGSERR_INVALIDPARAMETERS");
     }
 
     // Compute the initial gradient in the search direction.
-    // vecdot(&mut dginit, g, s, n);
     let mut dginit = g.vecdot(s);
 
     // Make sure that s points to a descent direction.
     if 0.0 < dginit {
-        return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+        bail!("LBFGSERR_INCREASEGRADIENT");
     }
 
     // Initialize local variables.
@@ -1074,7 +1060,7 @@ unsafe extern "C" fn line_search_morethuente(
     let mut dgy = dginit;
     let mut dgx = dgy;
 
-    let mut count = 0;
+    let mut count = 0usize;
     let mut stmin = 0.;
     let mut stmax = 0.;
     loop {
@@ -1108,9 +1094,7 @@ unsafe extern "C" fn line_search_morethuente(
         }
 
         // Compute the current value of x: x <- x + (*stp) * s.
-        // veccpy(x, xp, n);
         x.veccpy(xp);
-        // vecadd(x, s, *stp, n);
         x.vecadd(s, *stp);
 
         // Evaluate the function and gradient values.
@@ -1123,30 +1107,30 @@ unsafe extern "C" fn line_search_morethuente(
             *stp,
         );
 
-        // vecdot(&mut dg, g, s, n);
         let mut dg = g.vecdot(s);
         let ftest1 = finit + *stp * dgtest;
         count += 1;
 
         // Test for errors and convergence.
         if brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0i32) {
-            /* Rounding errors prevent further progress. */
-            return LBFGSERR_ROUNDING_ERROR as libc::c_int;
+            // Rounding errors prevent further progress.
+            bail!("LBFGSERR_ROUNDING_ERROR");
         } else if *stp == param.max_step && *f <= ftest1 && dg <= dgtest {
-            /* The step is the maximum value. */
-            return LBFGSERR_MAXIMUMSTEP as libc::c_int;
+            // The step is the maximum value.
+            bail!("LBFGSERR_MAXIMUMSTEP");
         } else if *stp == param.min_step && (ftest1 < *f || dgtest <= dg) {
-            /* The step is the minimum value. */
-            return LBFGSERR_MINIMUMSTEP as libc::c_int;
+            // The step is the minimum value.
+            bail!("LBFGSERR_MINIMUMSTEP");
         } else if brackt && stmax - stmin <= param.xtol * stmax {
-            /* Relative width of the interval of uncertainty is at most xtol. */
-            return LBFGSERR_WIDTHTOOSMALL as libc::c_int;
+            // Relative width of the interval of uncertainty is at most xtol.
+            bail!("LBFGSERR_WIDTHTOOSMALL");
         } else if param.max_linesearch <= count {
-            /* Maximum number of iteration. */
-            return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
+            // Maximum number of iteration.
+            bail!("LBFGSERR_MAXIMUMLINESEARCH");
+            // return Ok(LBFGSERR_MAXIMUMLINESEARCH);
         } else if *f <= ftest1 && dg.abs() <= param.gtol * -dginit {
-            /* The sufficient decrease condition and the directional derivative condition hold. */
-            return count as i32;
+            // The sufficient decrease condition and the directional derivative condition hold.
+            return Ok(count as i32);
         } else {
             // In the first stage we seek a step for which the modified
             // function has a nonpositive value and nonnegative derivative.
@@ -1865,18 +1849,16 @@ pub mod backtracking {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 unsafe extern "C" fn line_search_backtracking(
-    // The number of variables.
-    n: libc::c_int,
     // The array of variables.
     x: &mut [f64],
     // Evaluated function value
-    f: *mut lbfgsfloatval_t,
+    f: &mut f64,
     // Evaluated gradient array
     g: &mut [f64],
     // Search direction array
     s: &[f64],
     // Step size
-    stp: *mut lbfgsfloatval_t,
+    stp: &mut f64,
     // Variable vector of previous step
     xp: &[f64],
     // Gradient vector of previous step
@@ -1887,18 +1869,12 @@ unsafe extern "C" fn line_search_backtracking(
     cd: *mut callback_data_t,
     // LBFGS parameter
     param: &LbfgsParam,
-) -> libc::c_int {
+) -> Result<i32> {
     // quick wrapper
     let param = &param.linesearch;
 
     // FIXME: remove
-    let n = n as usize;
-    // let s = unsafe { ::std::slice::from_raw_parts(s, n) };
-    // let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
-    // let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
-    // let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
-    // let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
-    // let wp = unsafe { ::std::slice::from_raw_parts_mut(wp, n) };
+    let n = x.len();
 
     let mut width: f64 = 0.;
     let dec: f64 = 0.5;
@@ -1906,16 +1882,15 @@ unsafe extern "C" fn line_search_backtracking(
 
     // Check the input parameters for errors.
     if *stp <= 0.0 {
-        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
+        bail!("LBFGSERR_INVALIDPARAMETERS");
     }
 
     // Compute the initial gradient in the search direction.
-    // vecdot(&mut dginit, g, s, n);
     let mut dginit = g.vecdot(s);
 
     // Make sure that s points to a descent direction.
     if 0.0 < dginit {
-        return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+        bail!("LBFGSERR_INCREASEGRADIENT");
     }
 
     // The initial value of the objective function.
@@ -1923,11 +1898,9 @@ unsafe extern "C" fn line_search_backtracking(
     let mut dgtest = param.ftol * dginit;
 
     use crate::LineSearchAlgorithm::*;
-    let mut count = 0;
+    let mut count = 0usize;
     loop {
-        // veccpy(x, xp, n);
         x.veccpy(xp);
-        // vecadd(x, s, *stp, n);
         x.vecadd(s, *stp);
 
         // FIXME: improve below
@@ -1945,33 +1918,32 @@ unsafe extern "C" fn line_search_backtracking(
             width = dec
         } else if param.algorithm == BacktrackingArmijo {
             // Exit with the Armijo condition.
-            return count as i32;
+            return Ok(count as i32);
         } else {
             // Check the Wolfe condition.
-            // vecdot(&mut dg, g, s, n);
             let dg = g.vecdot(s);
             if dg < param.wolfe * dginit {
                 width = inc
             } else if param.algorithm == BacktrackingWolfe {
                 // Exit with the regular Wolfe condition.
-                return count as i32;
+                return Ok(count as i32);
             } else if dg > -param.wolfe * dginit {
                 width = dec
             } else {
-                return count as i32;
+                return Ok(count as i32);
             }
         }
         if *stp < param.min_step {
-            /* The step is the minimum value. */
-            return LBFGSERR_MINIMUMSTEP as libc::c_int;
+            // The step is the minimum value.
+            bail!("LBFGSERR_MINIMUMSTEP");
         }
         if *stp > param.max_step {
-            /* The step is the maximum value. */
-            return LBFGSERR_MAXIMUMSTEP as libc::c_int;
+            // The step is the maximum value.
+            bail!("LBFGSERR_MAXIMUMSTEP");
         }
         if param.max_linesearch <= count {
-            /* Maximum number of iteration. */
-            return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
+            // Maximum number of iteration.
+            bail!("LBFGSERR_MAXIMUMLINESEARCH");
         }
         *stp *= width
     }
@@ -2182,18 +2154,16 @@ fn owlqn_project(d: &mut [f64], sign: &[f64], start: usize, end: usize) {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 unsafe extern "C" fn line_search_backtracking_owlqn(
-    // The number of variables.
-    n: libc::c_int,
     // The array of variables.
     x: &mut [f64],
     // Evaluated function value
-    f: *mut lbfgsfloatval_t,
+    f: &mut f64,
     // Evaluated gradient array
     g: &mut [f64],
     // Search direction array
     s: &[f64],
     // Step size
-    stp: *mut lbfgsfloatval_t,
+    stp: &mut f64,
     // Variable vector of previous step
     xp: &[f64],
     // Gradient vector of previous step
@@ -2204,24 +2174,18 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
     cd: *mut callback_data_t,
     // LBFGS parameter
     _param: &LbfgsParam,
-) -> libc::c_int {
+) -> Result<i32> {
     let mut i: libc::c_int = 0;
     let mut width: f64 = 0.5f64;
     let mut finit: f64 = *f;
 
     // Check the input parameters for errors.
-    if *stp <= 0.0f64 {
-        return LBFGSERR_INVALIDPARAMETERS as libc::c_int;
+    if *stp <= 0.0 {
+        bail!("LBFGSERR_INVALIDPARAMETERS");
     }
 
-    // quick wrapper
-    let n = n as usize;
-    // let s = unsafe { ::std::slice::from_raw_parts(s, n) };
-    // let x = unsafe { ::std::slice::from_raw_parts_mut(x, n) };
-    // let g = unsafe { ::std::slice::from_raw_parts_mut(g, n) };
-    // let xp = unsafe { ::std::slice::from_raw_parts(xp, n) };
-    // let gp = unsafe { ::std::slice::from_raw_parts(gp, n) };
-    // let wp = unsafe { ::std::slice::from_raw_parts_mut(wp, n) };
+    // FIXME: remove n
+    let n = x.len();
 
     // Choose the orthant for the new point.
     // FIXME: float == 0.0??
@@ -2229,15 +2193,13 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
         wp[i] = if xp[i] == 0.0 { -gp[i] } else { xp[i] };
     }
 
-    let mut count = 0;
+    let mut count = 0usize;
     // FIXME: review
     // quick wrapper
     let param = &_param.linesearch;
     loop {
         // Update the current point.
-        // veccpy(x, xp, n);
         x.veccpy(xp);
-        // vecadd(x, s, *stp, n);
         x.vecadd(s, *stp);
 
         // The current point is projected onto the orthant.
@@ -2273,21 +2235,21 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
 
         if *f <= finit + param.ftol * dgtest {
             // The sufficient decrease condition.
-            return count as i32;
+            return Ok(count as i32);
         }
 
         if *stp < param.min_step {
             // The step is the minimum value.
-            return LBFGSERR_MINIMUMSTEP as libc::c_int;
+            bail!("LBFGSERR_MINIMUMSTEP");
         }
 
         if *stp > param.max_step {
             // The step is the maximum value.
-            return LBFGSERR_MAXIMUMSTEP as libc::c_int;
+            bail!("LBFGSERR_MAXIMUMSTEP");
         }
         if param.max_linesearch <= count {
             // Maximum number of iteration.
-            return LBFGSERR_MAXIMUMLINESEARCH as libc::c_int;
+            bail!("LBFGSERR_MAXIMUMLINESEARCH");
         }
 
         *stp *= width
@@ -2298,7 +2260,6 @@ unsafe extern "C" fn owlqn_pseudo_gradient(
     pg: &mut [f64],
     x: &[f64],
     g: &[f64],
-    n: usize,
     c: f64,
     start: usize,
     end: usize,
@@ -2328,7 +2289,7 @@ unsafe extern "C" fn owlqn_pseudo_gradient(
         }
     }
 
-    for i in end..n {
+    for i in end..g.len() {
         pg[i] = g[i];
     }
 }
@@ -2452,14 +2413,12 @@ pub unsafe extern "C" fn lbfgs(
     // FIXME: make param immutable
     let mut param = param.clone();
 
-    let mut ls: libc::c_int = 0;
-
     let m = param.m;
     let mut ys = 0.;
     let mut yy = 0.;
-    let mut linesearch: line_search_proc = Some(line_search_morethuente);
 
     // Construct a callback data.
+    // FIXME: remove n
     let n = x.len();
     let mut cd: callback_data_t = tag_callback_data {
         n: 0,
@@ -2487,24 +2446,25 @@ pub unsafe extern "C" fn lbfgs(
         bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
     }
 
+    // Assign line search algorithm.
     use self::LineSearchAlgorithm::*;
-    if param.orthantwise_c != 0.0 {
-        match param.linesearch.algorithm {
+    let linesearch: line_search_proc = {
+        if param.orthantwise_c != 0.0 {
             // FIXME: review below
-            // Only the backtracking method is available.
-            _ => linesearch = Some(line_search_backtracking_owlqn),
-        }
-    } else {
-        match param.linesearch.algorithm {
-            MoreThuente => linesearch = Some(line_search_morethuente),
-            BacktrackingArmijo | BacktrackingWolfe | BacktrackingStrongWolfe => {
-                linesearch = Some(line_search_backtracking)
+            warn!("Only the backtracking method is available.");
+            line_search_backtracking_owlqn
+        } else {
+            match param.linesearch.algorithm {
+                MoreThuente => line_search_morethuente,
+                BacktrackingArmijo | BacktrackingWolfe | BacktrackingStrongWolfe => {
+                    line_search_backtracking
+                }
+                _ => {
+                    bail!("LBFGSERR_INVALID_LINESEARCH");
+                }
             }
-            _ => {
-                bail!("LBFGSERR_INVALID_LINESEARCH");
-            }
         }
-    }
+    };
 
     // Allocate working space.
     let mut xp = vec![0.0; n];
@@ -2553,14 +2513,16 @@ pub unsafe extern "C" fn lbfgs(
     if 0.0 != param.orthantwise_c {
         // Compute the L1 norm of the variable and add it to the object value.
         // xnorm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
-        xnorm = x.owlqn_x1norm(param.orthantwise_start as usize, param.orthantwise_end as usize);
+        xnorm = x.owlqn_x1norm(
+            param.orthantwise_start as usize,
+            param.orthantwise_end as usize,
+        );
 
         fx += xnorm * param.orthantwise_c;
         owlqn_pseudo_gradient(
             &mut pg,
             &x,
             &g,
-            n,
             param.orthantwise_c,
             param.orthantwise_start as usize,
             param.orthantwise_end as usize,
@@ -2575,7 +2537,6 @@ pub unsafe extern "C" fn lbfgs(
     }
 
     // Make sure that the initial variables are not a minimizer.
-    // vec2norm(&mut xnorm, x, n);
     xnorm = x.vec2norm().max(1.0);
     let mut gnorm = if param.orthantwise_c == 0.0 {
         g.vec2norm()
@@ -2595,6 +2556,8 @@ pub unsafe extern "C" fn lbfgs(
 
     // FIXME: return code
     let mut ret = 0;
+    let mut ls = 0i32;
+
     info!("start lbfgs loop...");
     loop {
         // Store the current position and gradient vectors.
@@ -2603,25 +2566,27 @@ pub unsafe extern "C" fn lbfgs(
 
         // Search for an optimal step.
         if param.orthantwise_c == 0.0 {
-            ls = linesearch.expect("non-null function pointer")(
-                n as i32, x, &mut fx, &mut g, &d, &mut step, &xp, &gp, &mut w, &mut cd, &param,
-            )
+            ls = linesearch(
+                x, &mut fx, &mut g, &d, &mut step, &xp, &gp, &mut w, &mut cd, &param,
+            )?;
         } else {
-            ls = linesearch.expect("non-null function pointer")(
-                n as i32, x, &mut fx, &mut g, &d, &mut step, &xp, &pg, &mut w, &mut cd, &param,
-            );
+            ls = linesearch(
+                x, &mut fx, &mut g, &d, &mut step, &xp, &pg, &mut w, &mut cd, &param,
+            )?;
             owlqn_pseudo_gradient(
                 &mut pg,
                 &x,
                 &g,
-                n,
                 param.orthantwise_c,
                 param.orthantwise_start as usize,
                 param.orthantwise_end as usize,
             );
         }
+
+        // FIXME: to be better
+        // Recover from failed line search?
         if ls < 0 {
-            error!("line search failed, revert to the previous point!");
+            warn!("line search failed, revert to the previous point!");
             // Revert to the previous point.
             x.veccpy(&xp);
             g.veccpy(&gp);
@@ -2629,6 +2594,7 @@ pub unsafe extern "C" fn lbfgs(
             ret = ls;
             break;
         }
+
         // Compute x and g norms.
         xnorm = x.vec2norm();
         gnorm = if param.orthantwise_c == 0.0 {
