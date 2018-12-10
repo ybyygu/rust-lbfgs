@@ -3,12 +3,14 @@
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
 #![allow(nonstandard_style)]
 
+use quicli::prelude::*;
+type Result<T> = ::std::result::Result<T, Error>;
+
 pub mod lbfgs;
 use crate::lbfgs::*;
 
 use std::ptr::null_mut;
 use libc::{c_int, c_void};
-use quicli::prelude::*;
 
 /// See http://www.chokkan.org/software/liblbfgs/structlbfgs__parameter__t.html for documentation.
 /// pub type LbfgsParam = lbfgs_parameter_t;

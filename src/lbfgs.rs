@@ -64,6 +64,7 @@
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
 use quicli::prelude::*;
+type Result<T> = ::std::result::Result<T, Error>;
 
 use libc;
 
@@ -755,7 +756,8 @@ mod mcsrch {
     use super::Evaluate;
     use super::LineSearching;
     use super::Problem;
-    use quicli::prelude::{bail, Result};
+    use quicli::prelude::*;
+    type Result<T> = ::std::result::Result<T, Error>;
 
     /// A struct represents MCSRCH subroutine in original lbfgs.f by J. Nocera
     struct Mcsrch<'a> {
@@ -1227,10 +1229,9 @@ mod mcstep {
         quard_minimizer2,
     };
 
-    use quicli::prelude::{
-        bail,
-        Result
-    };
+    use quicli::prelude::*;
+    type Result<T> = ::std::result::Result<T, Error>;
+
 
     ///
     /// Update a safeguarded trial value and interval for line search.
@@ -1724,7 +1725,8 @@ pub mod backtracking {
     use super::LineSearchParam;
     use super::LineSearching;
     use super::Problem;
-    use quicli::prelude::{bail, Result};
+    use quicli::prelude::*;
+    type Result<T> = ::std::result::Result<T, Error>;
 
     pub struct BackTracking<'a> {
         /// `prob` holds input variables `x`, gradient `gx` arrays of length
