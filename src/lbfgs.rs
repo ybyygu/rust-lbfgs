@@ -496,8 +496,6 @@ pub type line_search_proc = unsafe extern "C" fn(
     xp: &[f64],
     // Gradient vector of previous step
     gp: &[f64],
-    // work array?
-    wp: &mut [f64],
     // callback struct
     cd: *mut callback_data_t,
     // LBFGS parameter
@@ -1002,8 +1000,6 @@ unsafe extern "C" fn line_search_morethuente(
     xp: &[f64],
     // Gradient vector of previous step
     gp: &[f64],
-    // work array?
-    wa: &mut [f64],
     // callback struct
     cd: *mut callback_data_t,
     // LBFGS parameter
@@ -1858,8 +1854,6 @@ unsafe extern "C" fn line_search_backtracking(
     xp: &[f64],
     // Gradient vector of previous step
     gp: &[f64],
-    // work array?
-    wp: &mut [f64],
     // callback struct
     cd: *mut callback_data_t,
     // LBFGS parameter
@@ -2133,20 +2127,6 @@ impl LbfgsParam {
 // new
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
-fn owlqn_project(d: &mut [f64], sign: &[f64], start: usize, end: usize) {
-    let mut i = start;
-    while i < end {
-        if d[i] * sign[i] <= 0.0 {
-            d[i] = 0.0
-        }
-        i += 1
-    }
-}
-// new:1 ends here
-
-// old
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 unsafe extern "C" fn line_search_backtracking_owlqn(
     // The array of variables.
     x: &mut [f64],
@@ -2162,8 +2142,6 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
     xp: &[f64],
     // Gradient vector of previous step
     gp: &[f64],
-    // work array?
-    wp: &mut [f64],
     // callback struct
     cd: *mut callback_data_t,
     // LBFGS parameter
@@ -2181,28 +2159,26 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
     // FIXME: remove n
     let n = x.len();
 
-    // Choose the orthant for the new point.
-    // FIXME: float == 0.0??
-    for i in 0..n {
-        wp[i] = if xp[i] == 0.0 { -gp[i] } else { xp[i] };
-    }
-
-    let mut count = 0usize;
     // FIXME: review
     // quick wrapper
     let param = &_param.linesearch;
+    let start = _param.orthantwise_start as usize;
+    let end = _param.orthantwise_end as usize;
+    let mut count = 0usize;
     loop {
         // Update the current point.
         x.veccpy(xp);
         x.vecadd(s, *stp);
 
+        // Choose the orthant for the new point.
         // The current point is projected onto the orthant.
-        owlqn_project(
-            x,
-            wp,
-            _param.orthantwise_start as usize,
-            _param.orthantwise_end as usize,
-        );
+        for i in start..end {
+            // FIXME: float == 0.0??
+            let sign = if xp[i] == 0.0 { -gp[i] } else { xp[i] };
+            if x[i] * sign <= 0.0 {
+                x[i] = 0.0
+            }
+        }
 
         // Evaluate the function and gradient values.
         *f = (*cd).proc_evaluate.expect("non-null function pointer")(
@@ -2249,7 +2225,11 @@ unsafe extern "C" fn line_search_backtracking_owlqn(
         *stp *= width
     }
 }
+// new:1 ends here
 
+// pseduo gradient
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*pseduo%20gradient][pseduo gradient:1]]
 unsafe extern "C" fn owlqn_pseudo_gradient(
     pg: &mut [f64],
     x: &[f64],
@@ -2287,7 +2267,7 @@ unsafe extern "C" fn owlqn_pseudo_gradient(
         pg[i] = g[i];
     }
 }
-// old:1 ends here
+// pseduo gradient:1 ends here
 
 // problem
 
@@ -2465,7 +2445,6 @@ pub unsafe extern "C" fn lbfgs(
     let mut g = vec![0.0; n];
     let mut gp = g.clone();
     let mut d = vec![0.0; n];
-    let mut w = vec![0.0; n];
 
     // FIXME: check param.orthantwise_c or not?
     // Allocate working space for OW-LQN.
@@ -2563,11 +2542,11 @@ pub unsafe extern "C" fn lbfgs(
         // Search for an optimal step.
         if param.orthantwise_c == 0.0 {
             ls = linesearch(
-                x, &mut fx, &mut g, &d, &mut step, &xp, &gp, &mut w, &mut cd, &param,
+                x, &mut fx, &mut g, &d, &mut step, &xp, &gp, &mut cd, &param,
             )?;
         } else {
             ls = linesearch(
-                x, &mut fx, &mut g, &d, &mut step, &xp, &pg, &mut w, &mut cd, &param,
+                x, &mut fx, &mut g, &d, &mut step, &xp, &pg, &mut cd, &param,
             )?;
             owlqn_pseudo_gradient(
                 &mut pg,
