@@ -438,20 +438,11 @@ pub struct LineSearchParam {
     ///
     max_linesearch: usize,
 
-    condition: LineSearchCondition,
-
     /// A coefficient for the Wolfe condition.
     /// *  This parameter is valid only when the backtracking line-search
     /// *  algorithm is used with the Wolfe condition,
     /// *  The default value is 0.9. This parameter should be greater the ftol parameter and smaller than 1.0.
     wolfe: f64,
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum LineSearchCondition {
-    Armijo,
-    Wolfe,
-    StrongWolf,
 }
 
 // TODO: better defaults
@@ -467,7 +458,6 @@ impl Default for LineSearchParam {
 
             // FIXME: only useful for backtracking
             wolfe: 0.9,
-            condition: LineSearchCondition::StrongWolf,
             algorithm: LineSearchAlgorithm::default(),
         }
     }
@@ -1721,9 +1711,9 @@ pub mod backtracking {
     // dependencies
     use super::Evaluate;
     use super::LbfgsMath ;
-    use super::LineSearchCondition;
     use super::LineSearchParam;
     use super::LineSearching;
+    use super::LineSearchAlgorithm::*;
     use super::Problem;
     use quicli::prelude::*;
     type Result<T> = ::std::result::Result<T, Error>;
@@ -1784,7 +1774,7 @@ pub mod backtracking {
                     width = dec
                 } else {
                     // The sufficient decrease condition (Armijo condition).
-                    if param.condition == LineSearchCondition::Armijo {
+                    if param.algorithm == BacktrackingArmijo {
                         // Exit with the Armijo condition.
                         return Ok(count);
                     }
@@ -1795,7 +1785,7 @@ pub mod backtracking {
                     // FIXME: param.gtol vs param.wolfe?
                     if dg < param.wolfe * dginit {
                         width = inc
-                    } else if param.condition == LineSearchCondition::Wolfe {
+                    } else if param.algorithm == BacktrackingWolfe {
                         // Exit with the regular Wolfe condition.
                         return Ok(count);
                     } else if dg > -param.wolfe * dginit {
@@ -1850,6 +1840,9 @@ pub mod backtracking {
 // old
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+use crate::lbfgs::LineSearchAlgorithm::BacktrackingArmijo;
+use crate::lbfgs::LineSearchAlgorithm::BacktrackingWolfe;
+
 unsafe extern "C" fn line_search_backtracking(
     // The array of variables.
     x: &mut [f64],
@@ -1899,7 +1892,6 @@ unsafe extern "C" fn line_search_backtracking(
     let mut finit = *f;
     let mut dgtest = param.ftol * dginit;
 
-    use crate::LineSearchAlgorithm::*;
     let mut count = 0usize;
     loop {
         x.veccpy(xp);
@@ -2337,24 +2329,10 @@ pub trait Evaluate {
 // common
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*common][common:1]]
-#[derive(Clone)]
-struct IterationData {
-    pub alpha: f64,
-
-    /// [n]
-    pub s: Vec<f64>,
-
-    /// [n]
-    pub y: Vec<f64>,
-
-    /// vecdot(y, s)
-    pub ys: f64,
-}
-
 /// Store optimization progress data
 #[repr(C)]
 #[derive(Debug, Clone)]
-pub struct ProgressData<'a> {
+pub struct Progress<'a> {
     /// The current values of variables
     pub arr_x: &'a [f64],
     /// The current gradient values of variables.
@@ -2378,7 +2356,7 @@ pub struct ProgressData<'a> {
 pub struct LBFGS<F, G>
 where
     F: FnMut(&mut Problem) -> Result<()>,
-    G: FnMut(&ProgressData) -> bool,
+    G: FnMut(&Progress) -> bool,
 {
     pub param: LbfgsParam,
     evaluate: Option<F>,
@@ -2388,7 +2366,7 @@ where
 impl<F, G> Default for LBFGS<F, G>
 where
     F: FnMut(&mut Problem) -> Result<()>,
-    G: FnMut(&ProgressData) -> bool,
+    G: FnMut(&Progress) -> bool,
 {
     fn default() -> Self {
         LBFGS {
@@ -2397,6 +2375,20 @@ where
             progress: None,
         }
     }
+}
+
+#[derive(Clone)]
+struct IterationData {
+    pub alpha: f64,
+
+    /// [n]
+    pub s: Vec<f64>,
+
+    /// [n]
+    pub y: Vec<f64>,
+
+    /// vecdot(y, s)
+    pub ys: f64,
 }
 // common:1 ends here
 
@@ -2512,6 +2504,7 @@ pub unsafe extern "C" fn lbfgs(
         cd.n,
         0.0,
     );
+
     if 0.0 != param.orthantwise_c {
         // Compute the L1 norm of the variable and add it to the object value.
         // xnorm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
@@ -2530,6 +2523,7 @@ pub unsafe extern "C" fn lbfgs(
             param.orthantwise_end as usize,
         );
     }
+
     // Compute the direction;
     // we assume the initial hessian matrix H_0 as the identity matrix.
     if param.orthantwise_c == 0.0 {
