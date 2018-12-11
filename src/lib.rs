@@ -8,6 +8,7 @@ type Result<T> = ::std::result::Result<T, Error>;
 
 pub mod lbfgs;
 pub mod math;
+pub mod line;
 pub use crate::lbfgs::*;
 // base:1 ends here
 
