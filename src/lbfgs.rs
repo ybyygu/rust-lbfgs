@@ -1745,6 +1745,32 @@ pub trait Evaluate {
 }
 // problem:1 ends here
 
+// progress
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*progress][progress:1]]
+/// Store optimization progress data, for progress monitor
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct Progress<'a> {
+    /// The current values of variables
+    pub x: &'a [f64],
+    /// The current gradient values of variables.
+    pub gx: &'a [f64],
+    /// The current value of the objective function.
+    pub fx: f64,
+    /// The Euclidean norm of the variables
+    pub xnorm: f64,
+    /// The Euclidean norm of the gradients.
+    pub gnorm: f64,
+    /// The line-search step used for this iteration.
+    pub step: f64,
+    /// The iteration count.
+    pub niter: usize,
+    /// The number of evaluations called for this iteration.
+    pub ncall: usize,
+}
+// progress:1 ends here
+
 // owlqn pseduo gradient
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*owlqn%20pseduo%20gradient][owlqn pseduo gradient:1]]
@@ -1791,28 +1817,6 @@ fn owlqn_pseudo_gradient(
 // common
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*common][common:1]]
-/// Store optimization progress data
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct Progress<'a> {
-    /// The current values of variables
-    pub arr_x: &'a [f64],
-    /// The current gradient values of variables.
-    pub grd_x: &'a [f64],
-    /// The current value of the objective function.
-    pub fx: f64,
-    /// The Euclidean norm of the variables
-    pub xnorm: f64,
-    /// The Euclidean norm of the gradients.
-    pub gnorm: f64,
-    /// The line-search step used for this iteration.
-    pub step: f64,
-    /// The iteration count.
-    pub niter: usize,
-    /// The number of evaluations called for this iteration.
-    pub ncall: usize,
-}
-
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct LBFGS<F, G>
@@ -1880,6 +1884,7 @@ where
         bail!("LBFGSERR_INVALID_ORTHANTWISE_START");
     }
     if param.orthantwise_end < 0 {
+        //bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
         param.orthantwise_end = n as i32
     }
     if (n as i32) < param.orthantwise_end {
@@ -2054,8 +2059,8 @@ where
         // Report the progress.
         if let Some(ref mut prgr_fn) = proc_progress {
             let prgr = Progress {
-                arr_x: &x,
-                grd_x: &g,
+                x: &x,
+                gx: &g,
                 fx,
                 xnorm,
                 gnorm,

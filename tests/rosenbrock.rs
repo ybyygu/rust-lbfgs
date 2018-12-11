@@ -62,7 +62,7 @@ fn test_lbfgs() {
     // # Return
     // - false to continue the optimization process. Returning true will cancel the optimization process.
     let progress = |prgr: &Progress| {
-        let x = &prgr.arr_x;
+        let x = &prgr.x;
 
         println!("Iteration {}:", &prgr.niter);
         println!("  fx = {}, x[0] = {}, x[1] = {}", &prgr.fx, x[0], x[1]);
