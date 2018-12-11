@@ -66,22 +66,18 @@
 use quicli::prelude::*;
 type Result<T> = ::std::result::Result<T, Error>;
 
-use libc;
+use crate::math::LbfgsMath;
+// base:1 ends here
 
-pub type lbfgsfloatval_t = libc::c_double;
+// TODO return value
 
-/* *
- * \addtogroup liblbfgs_api libLBFGS API
- * @{
- *
- *  The libLBFGS API.
- */
-/* *
- * Return values of lbfgs().
- *
- *  Roughly speaking, a negative value indicates an error.
- */
-pub type unnamed = libc::c_int;
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*return%20value][return value:1]]
+//
+//  Return values of lbfgs().
+//
+//   Roughly speaking, a negative value indicates an error.
+
+pub type unnamed = i32;
 /* * The current search direction increases the objective function value. */
 pub const LBFGSERR_INCREASEGRADIENT: unnamed = -994;
 /* * A logic error (negative line-search step) occurred. */
@@ -153,231 +149,11 @@ pub const LBFGS_STOP: unnamed = 1;
 pub const LBFGS_CONVERGENCE: unnamed = 0;
 /* * L-BFGS reaches convergence. */
 pub const LBFGS_SUCCESS: unnamed = 0;
-// base:1 ends here
+// return value:1 ends here
 
-// old
+// Common
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tag_callback_data {
-    pub n: libc::c_int,
-    pub instance: *mut libc::c_void,
-    pub proc_evaluate: lbfgs_evaluate_t,
-    pub proc_progress: lbfgs_progress_t,
-}
-
-pub type callback_data_t = tag_callback_data;
-
-/* *
- * Callback interface to provide objective function and gradient evaluations.
- *
- *  The lbfgs() function call this function to obtain the values of objective
- *  function and its gradients when needed. A client program must implement
- *  this function to evaluate the values of the objective function and its
- *  gradients, given current values of variables.
- *
- *  @param  instance    The user data sent for lbfgs() function by the client.
- *  @param  x           The current values of variables.
- *  @param  g           The gradient vector. The callback function must compute
- *                      the gradient values for the current variables.
- *  @param  n           The number of variables.
- *  @param  step        The current step of the line search routine.
- *  @retval lbfgsfloatval_t The value of the objective function for the current
- *                          variables.
- */
-pub type lbfgs_evaluate_t = Option<
-    unsafe extern "C" fn(
-        _: *mut libc::c_void,
-        _: *const lbfgsfloatval_t,
-        _: *mut lbfgsfloatval_t,
-        _: libc::c_int,
-        _: lbfgsfloatval_t,
-    ) -> lbfgsfloatval_t,
->;
-/* *
- * Callback interface to receive the progress of the optimization process.
- *
- *  The lbfgs() function call this function for each iteration. Implementing
- *  this function, a client program can store or display the current progress
- *  of the optimization process.
- *
- *  @param  instance    The user data sent for lbfgs() function by the client.
- *  @param  x           The current values of variables.
- *  @param  g           The current gradient values of variables.
- *  @param  fx          The current value of the objective function.
- *  @param  xnorm       The Euclidean norm of the variables.
- *  @param  gnorm       The Euclidean norm of the gradients.
- *  @param  step        The line-search step used for this iteration.
- *  @param  n           The number of variables.
- *  @param  k           The iteration count.
- *  @param  ls          The number of evaluations called for this iteration.
- *  @retval int         Zero to continue the optimization process. Returning a
- *                      non-zero value will cancel the optimization process.
- */
-pub type lbfgs_progress_t = Option<
-    unsafe extern "C" fn(
-        _: *mut libc::c_void,
-        _: *const lbfgsfloatval_t,
-        _: *const lbfgsfloatval_t,
-        _: lbfgsfloatval_t,
-        _: lbfgsfloatval_t,
-        _: lbfgsfloatval_t,
-        _: lbfgsfloatval_t,
-        _: libc::c_int,
-        _: libc::c_int,
-        _: libc::c_int,
-    ) -> libc::c_int,
->;
-// old:1 ends here
-
-// vector operations
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*vector%20operations][vector operations:1]]
-/// Abstracting lbfgs required math operations
-pub trait LbfgsMath<T> {
-    /// y += c*x
-    fn vecadd(&mut self, x: &[T], c: T);
-
-    /// vector dot product
-    /// s = x.dot(y)
-    fn vecdot(&self, other: &[T]) -> f64;
-
-    /// y = z
-    fn veccpy(&mut self, x: &[T]);
-
-    /// y = -x
-    fn vecncpy(&mut self, x: &[T]);
-
-    /// z = x - y
-    fn vecdiff(&mut self, x: &[T], y: &[T]);
-
-    /// y *= c
-    fn vecscale(&mut self, c: T);
-
-    /// ||x||
-    fn vec2norm(&self) -> T;
-
-    /// 1 / ||x||
-    fn vec2norminv(&self) -> T;
-
-    /// norm = sum(..., |x|, ...)
-    fn owlqn_x1norm(&self, start: usize, end: usize) -> T;
-}
-
-impl LbfgsMath<f64> for [f64] {
-    /// y += c*x
-    fn vecadd(&mut self, x: &[f64], c: f64) {
-        for (y, x) in self.iter_mut().zip(x) {
-            *y += c * x;
-        }
-    }
-
-    /// s = y.dot(x)
-    fn vecdot(&self, other: &[f64]) -> f64 {
-        self.iter().zip(other).map(|(x, y)| x * y).sum()
-    }
-
-    /// y *= c
-    fn vecscale(&mut self, c: f64) {
-        for y in self.iter_mut() {
-            *y *= c;
-        }
-    }
-
-    /// y = x
-    fn veccpy(&mut self, x: &[f64]) {
-        for (v, x) in self.iter_mut().zip(x) {
-            *v = *x;
-        }
-    }
-
-    /// y = -x
-    fn vecncpy(&mut self, x: &[f64]) {
-        for (v, x) in self.iter_mut().zip(x) {
-            *v = -x;
-        }
-    }
-
-    /// z = x - y
-    fn vecdiff(&mut self, x: &[f64], y: &[f64]) {
-        for ((z, x), y) in self.iter_mut().zip(x).zip(y) {
-            *z = x - y;
-        }
-    }
-
-    /// ||x||
-    fn vec2norm(&self) -> f64 {
-        let n2 = self.vecdot(&self);
-        n2.sqrt()
-    }
-
-    /// 1/||x||
-    fn vec2norminv(&self) -> f64 {
-        1.0 / self.vec2norm()
-    }
-
-    fn owlqn_x1norm(&self, start: usize, end: usize) -> f64 {
-        let mut s = 0.0;
-        for i in start..end {
-            s += self[i].abs();
-        }
-        s
-    }
-}
-
-#[test]
-fn test_lbfgs_math() {
-    // vector scaled add
-    let x = [1.0, 1.0, 1.0];
-    let c = 2.;
-
-    let mut y = [1.0, 2.0, 3.0];
-    y.vecadd(&x, c);
-
-    assert_eq!(3.0, y[0]);
-    assert_eq!(4.0, y[1]);
-    assert_eq!(5.0, y[2]);
-
-    // vector dot
-    let v = y.vecdot(&x);
-    assert_eq!(12.0, v);
-
-    // vector scale
-    y.vecscale(2.0);
-    assert_eq!(6.0, y[0]);
-    assert_eq!(8.0, y[1]);
-    assert_eq!(10.0, y[2]);
-
-    // vector diff
-    let mut z = y.clone();
-    z.vecdiff(&x, &y);
-    assert_eq!(-5.0, z[0]);
-    assert_eq!(-7.0, z[1]);
-    assert_eq!(-9.0, z[2]);
-
-    // vector copy
-    y.veccpy(&x);
-
-    // y = -x
-    y.vecncpy(&x);
-    assert_eq!(-1.0, y[0]);
-    assert_eq!(-1.0, y[1]);
-    assert_eq!(-1.0, y[2]);
-
-    // let x = z.as_ptr();
-    // unsafe {
-    //     let v = owlqn_x1norm(x, 0, 3);
-    //     println!("{:#?}", v);
-    // }
-    let v = z.owlqn_x1norm(1, 3);
-    assert_eq!(v, 16.0);
-}
-// vector operations:1 ends here
-
-// new
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*Common][Common:1]]
 #[derive(Debug, Copy, Clone)]
 pub struct LineSearchParam {
     algorithm: LineSearchAlgorithm,
@@ -463,7 +239,7 @@ impl Default for LineSearchParam {
     }
 }
 
-trait LineSearching<E> {
+pub trait LineSearching<E> {
     /// Apply line search algorithm to find satisfactory step size
     ///
     /// # Arguments
@@ -479,32 +255,7 @@ trait LineSearching<E> {
     where
         E: FnMut(&mut Problem) -> Result<()>;
 }
-// new:1 ends here
-
-// old
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
-pub type line_search_proc = unsafe extern "C" fn(
-    // The array of variables.
-    x: &mut [f64],
-    // Evaluated function value
-    f: &mut f64,
-    // Evaluated gradient array
-    g: &mut [f64],
-    // Search direction array
-    s: &[f64],
-    // Step size
-    stp: &mut f64,
-    // Variable vector of previous step
-    xp: &[f64],
-    // Gradient vector of previous step
-    gp: &[f64],
-    // callback struct
-    cd: *mut callback_data_t,
-    // LBFGS parameter
-    param: &LbfgsParam,
-) -> Result<i32>;
-// old:1 ends here
+// Common:1 ends here
 
 // Algorithm
 
@@ -945,7 +696,7 @@ mod mcsrch {
 // old
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
-unsafe extern "C" fn line_search_morethuente(
+fn line_search_morethuente<E>(
     // The array of variables.
     x: &mut [f64],
     // Evaluated function value
@@ -961,10 +712,13 @@ unsafe extern "C" fn line_search_morethuente(
     // Gradient vector of previous step
     gp: &[f64],
     // callback struct
-    cd: *mut callback_data_t,
+    mut cd: E,
     // LBFGS parameter
     param: &LbfgsParam,
-) -> Result<i32> {
+) -> Result<i32>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
     // quick wrapper
 
     let param = &param.linesearch;
@@ -987,7 +741,7 @@ unsafe extern "C" fn line_search_morethuente(
     // Initialize local variables.
     let mut brackt = false;
     let mut stage1 = 1;
-    let mut uinfo  = 0;
+    let mut uinfo = 0;
 
     let mut finit = *f;
     let dgtest = param.ftol * dginit;
@@ -1033,10 +787,8 @@ unsafe extern "C" fn line_search_morethuente(
         // If an unusual termination is to occur then let
         // stp be the lowest point obtained so far.
         if brackt
-            && (*stp <= stmin
-                || stmax <= *stp
-                || param.max_linesearch <= count + 1
-                || uinfo != 0) || brackt && stmax - stmin <= param.xtol * stmax
+            && (*stp <= stmin || stmax <= *stp || param.max_linesearch <= count + 1 || uinfo != 0)
+            || brackt && stmax - stmin <= param.xtol * stmax
         {
             *stp = stx
         }
@@ -1046,14 +798,8 @@ unsafe extern "C" fn line_search_morethuente(
         x.vecadd(s, *stp);
 
         // Evaluate the function and gradient values.
-        // FIXME: improve
-        *f = (*cd).proc_evaluate.expect("non-null function pointer")(
-            (*cd).instance,
-            x.as_mut_ptr(),
-            g.as_mut_ptr(),
-            (*cd).n,
-            *stp,
-        );
+        // FIXME: use stp or not?
+        *f = cd(x, g)?;
 
         let mut dg = g.vecdot(s);
         let ftest1 = finit + *stp * dgtest;
@@ -1075,15 +821,14 @@ unsafe extern "C" fn line_search_morethuente(
         } else if param.max_linesearch <= count {
             // Maximum number of iteration.
             bail!("LBFGSERR_MAXIMUMLINESEARCH");
-            // return Ok(LBFGSERR_MAXIMUMLINESEARCH);
+        // return Ok(LBFGSERR_MAXIMUMLINESEARCH);
         } else if *f <= ftest1 && dg.abs() <= param.gtol * -dginit {
             // The sufficient decrease condition and the directional derivative condition hold.
             return Ok(count as i32);
         } else {
             // In the first stage we seek a step for which the modified
             // function has a nonpositive value and nonnegative derivative.
-            if 0 != stage1 && *f <= ftest1 && param.ftol.min(param.gtol) * dginit <= dg
-            {
+            if 0 != stage1 && *f <= ftest1 && param.ftol.min(param.gtol) * dginit <= dg {
                 stage1 = 0;
             }
 
@@ -1227,7 +972,7 @@ mod mcstep {
     ) -> Result<i32> {
         let mut bound = 0;
         // fsigndiff
-        let mut dsign = (dt * (*dx / (*dx).abs()) < 0.0) as libc::c_int;
+        let dsign = (dt * (*dx / (*dx).abs()) < 0.0);
         // minimizer of an interpolated cubic.
         let mut mc = 0.;
         // minimizer of an interpolated quadratic.
@@ -1239,15 +984,12 @@ mod mcstep {
         if *brackt {
             if *t <= x.min(*y) || x.max(*y) <= *t {
                 // The trival value t is out of the interval.
-                // return LBFGSERR_OUTOFINTERVAL as libc::c_int;
                 bail!("LBFGSERR_OUTOFINTERVAL");
             } else if 0.0 <= *dx * (*t - *x) {
-                /* The function must decrease from x. */
-                // return LBFGSERR_INCREASEGRADIENT as libc::c_int;
+                // The function must decrease from x.
                 bail!("LBFGSERR_INCREASEGRADIENT");
             } else if tmax < tmin {
-                /* Incorrect tmin and tmax specified. */
-                // return LBFGSERR_INCORRECT_TMINMAX as libc::c_int;
+                // Incorrect tmin and tmax specified.
                 bail!("LBFGSERR_INCORRECT_TMINMAX");
             }
         }
@@ -1271,7 +1013,7 @@ mod mcstep {
             } else {
                 newt = mc + 0.5 * (mq - mc)
             }
-        } else if 0 != dsign {
+        } else if dsign {
             // Case 2: a lower function value and derivatives of
             // opposite sign. The minimum is brackt. If the cubic
             // minimizer is closer to x than the quadratic (secant) one,
@@ -1340,7 +1082,7 @@ mod mcstep {
             *dy = dt
         } else {
             /* Case c */
-            if 0 != dsign {
+            if dsign {
                 *y = *x;
                 *fy = *fx;
                 *dy = *dx
@@ -1492,174 +1234,6 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
 }
 // interpolation:1 ends here
 
-// unsafe
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*unsafe][unsafe:1]]
-unsafe extern "C" fn update_trial_interval(
-    x: *mut lbfgsfloatval_t,
-    fx: *mut lbfgsfloatval_t,
-    dx: *mut lbfgsfloatval_t,
-    y: *mut lbfgsfloatval_t,
-    fy: *mut lbfgsfloatval_t,
-    dy: *mut lbfgsfloatval_t,
-    t: *mut lbfgsfloatval_t,
-    ft: *const lbfgsfloatval_t,
-    dt: *const lbfgsfloatval_t,
-    tmin: lbfgsfloatval_t,
-    tmax: lbfgsfloatval_t,
-    brackt: *mut libc::c_int,
-) -> libc::c_int {
-    let mut bound: libc::c_int = 0;
-    let mut dsign: libc::c_int = (*dt * (*dx / (*dx).abs()) < 0.0f64) as libc::c_int;
-    // minimizer of an interpolated cubic.
-    let mut mc = 0.;
-    // minimizer of an interpolated quadratic.
-    let mut mq = 0.;
-    // new trial value.
-    let mut newt = 0.;
-
-    // Check the input parameters for errors.
-    if 0 != *brackt {
-        if *t <= if *x <= *y { *x } else { *y } || if *x >= *y { *x } else { *y } <= *t {
-            /* The trival value t is out of the interval. */
-            return LBFGSERR_OUTOFINTERVAL as libc::c_int;
-        } else if 0.0f64 <= *dx * (*t - *x) {
-            /* The function must decrease from x. */
-            return LBFGSERR_INCREASEGRADIENT as libc::c_int;
-        } else if tmax < tmin {
-            /* Incorrect tmin and tmax specified. */
-            return LBFGSERR_INCORRECT_TMINMAX as libc::c_int;
-        }
-    }
-
-    // Trial value selection.
-    let mut p = 0.;
-    let mut q = 0.;
-    let mut r = 0.;
-    let mut s = 0.;
-
-    if *fx < *ft {
-        // Case 1: a higher function value.
-        // The minimum is brackt. If the cubic minimizer is closer
-        // to x than the quadratic one, the cubic one is taken, else
-        // the average of the minimizers is taken.
-        *brackt = 1;
-        bound = 1;
-        cubic_minimizer(&mut mc, *x, *fx, *dx, *t, *ft, *dt);
-        quard_minimizer(&mut mq, *x, *fx, *dx, *t, *ft);
-        if (mc - *x).abs() < (mq - *x).abs() {
-            newt = mc
-        } else {
-            newt = mc + 0.5 * (mq - mc)
-        }
-    } else if 0 != dsign {
-        // Case 2: a lower function value and derivatives of
-        // opposite sign. The minimum is brackt. If the cubic
-        // minimizer is closer to x than the quadratic (secant) one,
-        // the cubic one is taken, else the quadratic one is taken.
-        *brackt = 1;
-        bound = 0;
-        cubic_minimizer(&mut mc, *x, *fx, *dx, *t, *ft, *dt);
-        quard_minimizer2(&mut mq, *x, *dx, *t, *dt);
-        if (mc - *t).abs() > (mq - *t).abs() {
-            newt = mc
-        } else {
-            newt = mq
-        }
-    } else if (*dt).abs() < (*dx).abs() {
-        // Case 3: a lower function value, derivatives of the
-        // same sign, and the magnitude of the derivative decreases.
-        // The cubic minimizer is only used if the cubic tends to
-        // infinity in the direction of the minimizer or if the minimum
-        // of the cubic is beyond t. Otherwise the cubic minimizer is
-        // defined to be either tmin or tmax. The quadratic (secant)
-        // minimizer is also computed and if the minimum is brackt
-        // then the the minimizer closest to x is taken, else the one
-        // farthest away is taken.
-        bound = 1;
-        cubic_minimizer2(&mut mc, *x, *fx, *dx, *t, *ft, *dt, tmin, tmax);
-        quard_minimizer2(&mut mq, *x, *dx, *t, *dt);
-        // a = *x - *t;
-        // mq = *t + *dt / (*dt - *dx) * a;
-        if 0 != *brackt {
-            if (*t - mc).abs() < (*t - mq).abs() {
-                newt = mc
-            } else {
-                newt = mq
-            }
-        } else if (*t - mc).abs() > (*t - mq).abs() {
-            newt = mc
-        } else {
-            newt = mq
-        }
-    } else {
-        // Case 4: a lower function value, derivatives of the
-        // same sign, and the magnitude of the derivative does
-        // not decrease. If the minimum is not brackt, the step
-        // is either tmin or tmax, else the cubic minimizer is taken.
-        bound = 0i32;
-        if 0 != *brackt {
-            cubic_minimizer(&mut newt, *t, *ft, *dt, *y, *fy, *dy);
-        } else if *x < *t {
-            newt = tmax
-        } else {
-            newt = tmin
-        }
-    }
-
-    // Update the interval of uncertainty. This update does not
-    // depend on the new step or the case analysis above.
-
-    // - Case a: if f(x) < f(t),
-    // x <- x, y <- t.
-    // - Case b: if f(t) <= f(x) && f'(t)*f'(x) > 0,
-    // x <- t, y <- y.
-    // - Case c: if f(t) <= f(x) && f'(t)*f'(x) < 0,
-    // x <- t, y <- x.
-    if *fx < *ft {
-        /* Case a */
-        *y = *t;
-        *fy = *ft;
-        *dy = *dt
-    } else {
-        /* Case c */
-        if 0 != dsign {
-            *y = *x;
-            *fy = *fx;
-            *dy = *dx
-        }
-        /* Cases b and c */
-        *x = *t;
-        *fx = *ft;
-        *dx = *dt
-    }
-
-    // Clip the new trial value in [tmin, tmax].
-    if tmax < newt {
-        newt = tmax
-    }
-    if newt < tmin {
-        newt = tmin
-    }
-
-    // Redefine the new trial value if it is close to the upper bound of the
-    // interval.
-    if 0 != *brackt && 0 != bound {
-        mq = *x + 0.66f64 * (*y - *x);
-        if *x < *y {
-            if mq < newt {
-                newt = mq
-            }
-        } else if newt < mq {
-            newt = mq
-        }
-    }
-    // Return the new trial value.
-    *t = newt;
-    return 0;
-}
-// unsafe:1 ends here
-
 // new
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
@@ -1798,7 +1372,7 @@ pub mod backtracking {
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 use crate::lbfgs::LineSearchAlgorithm::*;
 
-unsafe extern "C" fn line_search_backtracking(
+fn line_search_backtracking<E>(
     // The array of variables.
     x: &mut [f64],
     // Evaluated function value
@@ -1814,10 +1388,13 @@ unsafe extern "C" fn line_search_backtracking(
     // Gradient vector of previous step
     gp: &[f64],
     // callback struct
-    cd: *mut callback_data_t,
+    mut cd: E,
     // LBFGS parameter
     param: &LbfgsParam,
-) -> Result<i32> {
+) -> Result<i32>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
     // parameters for OWL-QN
     let owlqn_c = param.orthantwise_c;
     let owlqn_start = param.orthantwise_start as usize;
@@ -1845,14 +1422,13 @@ unsafe extern "C" fn line_search_backtracking(
 
     // Compute the initial gradient in the search direction.
     let mut dginit = 0.0;
-    if ! owlqn {
+    if !owlqn {
         dginit = g.vecdot(s);
 
         // Make sure that s points to a descent direction.
         if 0.0 < dginit {
             bail!("x LBFGSERR_INCREASEGRADIENT");
         }
-
     }
 
     // The initial value of the objective function.
@@ -1878,13 +1454,7 @@ unsafe extern "C" fn line_search_backtracking(
 
         // FIXME: improve below
         // Evaluate the function and gradient values.
-        *f = (*cd).proc_evaluate.expect("non-null function pointer")(
-            (*cd).instance,
-            x.as_ptr(),
-            g.as_mut_ptr(),
-            (*cd).n,
-            *stp,
-        );
+        *f = cd(x, g)?;
 
         count += 1;
         if owlqn {
@@ -1945,9 +1515,9 @@ unsafe extern "C" fn line_search_backtracking(
 }
 // old:1 ends here
 
-// new
+// lbfgs parameters
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs%20parameters][lbfgs parameters:1]]
 /// L-BFGS optimization parameters.
 ///
 /// Call lbfgs_parameter_t::default() function to initialize parameters to the
@@ -2129,7 +1699,7 @@ impl LbfgsParam {
         Ok(())
     }
 }
-// new:1 ends here
+// lbfgs parameters:1 ends here
 
 // problem
 
@@ -2287,35 +1857,22 @@ struct IterationData {
 // old lbfgs
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old%20lbfgs][old lbfgs:1]]
-#[no_mangle]
-pub unsafe extern "C" fn lbfgs(
+pub fn lbfgs<F, G>(
     x: &mut [f64],
     ptr_fx: &mut f64,
-    mut proc_evaluate: lbfgs_evaluate_t,
-    mut proc_progress: lbfgs_progress_t,
-    mut instance: *mut libc::c_void,
+    mut proc_evaluate: F,
+    mut proc_progress: Option<G>,
     param: &LbfgsParam,
-) -> Result<i32> {
+) -> Result<i32>
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    G: FnMut(&Progress) -> bool,
+{
     // FIXME: make param immutable
     let mut param = param.clone();
     let m = param.m;
-
-    // Construct a callback data.
     // FIXME: remove n
     let n = x.len();
-    let mut cd: callback_data_t = tag_callback_data {
-        n: 0,
-        instance: 0 as *mut libc::c_void,
-        proc_evaluate: None,
-        proc_progress: None,
-    };
-
-    cd.n = n as i32;
-    cd.instance = instance;
-    cd.proc_evaluate = proc_evaluate;
-    cd.proc_progress = proc_progress;
-
-    // Check the input parameters for errors.
     param.validate()?;
 
     // FIXME: make param immutable
@@ -2329,25 +1886,10 @@ pub unsafe extern "C" fn lbfgs(
         bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
     }
 
-    // Assign line search algorithm.
-    use self::LineSearchAlgorithm::*;
-    let linesearch: line_search_proc = {
-        if param.orthantwise_c != 0.0 {
-            // FIXME: review below
-            warn!("Only the backtracking method is available.");
-            line_search_backtracking
-        } else {
-            match param.linesearch.algorithm {
-                MoreThuente => line_search_morethuente,
-                BacktrackingArmijo | BacktrackingWolfe | BacktrackingStrongWolfe => {
-                    line_search_backtracking
-                }
-                _ => {
-                    bail!("LBFGSERR_INVALID_LINESEARCH");
-                }
-            }
-        }
-    };
+    // FIXME: review below
+    if param.orthantwise_c != 0.0 {
+        warn!("Only the backtracking method is available.");
+    }
 
     // Allocate working space.
     let mut xp = vec![0.0; n];
@@ -2383,13 +1925,7 @@ pub unsafe extern "C" fn lbfgs(
 
     // Evaluate the function value and its gradient.
 
-    fx = cd.proc_evaluate.expect("non-null function pointer")(
-        cd.instance,
-        x.as_mut_ptr(),
-        g.as_mut_ptr(),
-        cd.n,
-        0.0,
-    );
+    fx = proc_evaluate(&x, &mut g)?;
 
     if 0.0 != param.orthantwise_c {
         // Compute the L1 norm of the variable and add it to the object value.
@@ -2448,9 +1984,43 @@ pub unsafe extern "C" fn lbfgs(
 
         // Search for an optimal step.
         if param.orthantwise_c == 0.0 {
-            ls = linesearch(x, &mut fx, &mut g, &d, &mut step, &xp, &gp, &mut cd, &param)?;
+            if param.linesearch.algorithm == MoreThuente {
+                ls = line_search_morethuente(
+                    x,
+                    &mut fx,
+                    &mut g,
+                    &d,
+                    &mut step,
+                    &xp,
+                    &gp,
+                    &mut proc_evaluate,
+                    &param,
+                )?;
+            } else {
+                ls = line_search_backtracking(
+                    x,
+                    &mut fx,
+                    &mut g,
+                    &d,
+                    &mut step,
+                    &xp,
+                    &gp,
+                    &mut proc_evaluate,
+                    &param,
+                )?;
+            }
         } else {
-            ls = linesearch(x, &mut fx, &mut g, &d, &mut step, &xp, &pg, &mut cd, &param)?;
+            ls = line_search_backtracking(
+                x,
+                &mut fx,
+                &mut g,
+                &d,
+                &mut step,
+                &xp,
+                &pg,
+                &mut proc_evaluate,
+                &param,
+            )?;
             owlqn_pseudo_gradient(
                 &mut pg,
                 &x,
@@ -2482,20 +2052,21 @@ pub unsafe extern "C" fn lbfgs(
         };
 
         // Report the progress.
-        if cd.proc_progress.is_some() {
-            ret = cd.proc_progress.expect("non-null function pointer")(
-                cd.instance,
-                x.as_ptr(),
-                g.as_ptr(),
+        if let Some(ref mut prgr_fn) = proc_progress {
+            let prgr = Progress {
+                arr_x: &x,
+                grd_x: &g,
                 fx,
                 xnorm,
                 gnorm,
                 step,
-                cd.n,
-                k as i32,
-                ls,
-            );
-            if 0 != ret {
+                niter: k,
+                ncall: ls as usize,
+            };
+
+            let cancel = prgr_fn(&prgr);
+            if cancel {
+                info!("canceled by callback function.");
                 break;
             }
         }
@@ -2523,7 +2094,7 @@ pub unsafe extern "C" fn lbfgs(
                 let rate = (pf[(k % param.past) as usize] - fx) / fx;
                 // The stopping criterion.
                 if rate < param.delta {
-                    ret = LBFGS_STOP as libc::c_int;
+                    ret = LBFGS_STOP as i32;
                     break;
                 }
             }
@@ -2535,7 +2106,7 @@ pub unsafe extern "C" fn lbfgs(
         if param.max_iterations != 0 && param.max_iterations < k + 1 {
             // Maximum number of iterations.
             warn!("max_iterations reached!");
-            ret = LBFGSERR_MAXIMUMITERATION as libc::c_int;
+            ret = LBFGSERR_MAXIMUMITERATION as i32;
             break;
         }
 

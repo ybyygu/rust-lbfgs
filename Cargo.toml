@@ -9,7 +9,6 @@ authors = ["Wenping Guo <ybyygu@gmail.com>"]
 
 [dependencies]
 quicli = "0.4"
-libc = "*"
 
 [dev-dependencies]
 approx = "0.3"
