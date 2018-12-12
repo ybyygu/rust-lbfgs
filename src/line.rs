@@ -1300,11 +1300,10 @@ where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     // parameters for OWL-QN
+    let orthantwise = param.orthantwise;
     let owlqn_c = param.orthantwise_c;
     let owlqn_start = param.orthantwise_start as usize;
     let owlqn_end = param.orthantwise_end as usize;
-    // FIXME: float = 0.0
-    let owlqn = owlqn_c != 0.0;
 
     // quick wrapper
     let param = &param.linesearch;
@@ -1326,7 +1325,7 @@ where
 
     // Compute the initial gradient in the search direction.
     let mut dginit = 0.0;
-    if !owlqn {
+    if !orthantwise {
         dginit = g.vecdot(s);
 
         // Make sure that s points to a descent direction.
@@ -1344,7 +1343,7 @@ where
         x.veccpy(xp);
         x.vecadd(s, *stp);
 
-        if owlqn {
+        if orthantwise {
             // Choose the orthant for the new point.
             // The current point is projected onto the orthant.
             for i in owlqn_start..owlqn_end {
@@ -1361,7 +1360,7 @@ where
         *f = cd(x, g)?;
 
         count += 1;
-        if owlqn {
+        if orthantwise {
             // Compute the L1 norm of the variables and add it to the object value.
             let norm = x.owlqn_x1norm(owlqn_start, owlqn_end);
             *f += norm * owlqn_c;

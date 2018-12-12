@@ -219,18 +219,19 @@ pub struct LbfgsParam {
     ///
     pub linesearch: LineSearchParam,
 
+    /// Enable OWL-QN regulation or not
+    pub orthantwise: bool,
+
     /// Coeefficient for the L1 norm of variables.
     ///
-    ///  This parameter should be set to zero for standard minimization
-    ///  problems. Setting this parameter to a positive value activates
-    ///  Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) method, which
-    ///  minimizes the objective function F(x) combined with the L1 norm |x| of
-    ///  the variables, {F(x) + C |x|}. This parameter is the coeefficient for
-    ///  the |x|, i.e., C. As the L1 norm |x| is not differentiable at zero, the
-    ///  library modifies function and gradient evaluations from a client
-    ///  program suitably; a client program thus have only to return the
-    ///  function value F(x) and gradients G(x) as usual. The default value is
-    ///  zero.
+    ///  Setting this parameter to a positive value activates Orthant-Wise
+    ///  Limited-memory Quasi-Newton (OWL-QN) method, which minimizes the
+    ///  objective function F(x) combined with the L1 norm |x| of the variables,
+    ///  {F(x) + C |x|}. This parameter is the coeefficient for the |x|, i.e.,
+    ///  C. As the L1 norm |x| is not differentiable at zero, the library
+    ///  modifies function and gradient evaluations from a client program
+    ///  suitably; a client program thus have only to return the function value
+    ///  F(x) and gradients G(x) as usual. The default value is 1.
     pub orthantwise_c: f64,
 
     /// Start index for computing L1 norm of the variables.
@@ -267,7 +268,8 @@ impl Default for LbfgsParam {
             past: 0,
             delta: 1e-5,
             max_iterations: 0,
-            orthantwise_c: 0.0,
+            orthantwise: false,
+            orthantwise_c: 1.0,
             orthantwise_start: 0,
             orthantwise_end: -1,
             linesearch: LineSearchParam::default(),
@@ -496,8 +498,7 @@ where
         bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
     }
 
-    // FIXME: review below
-    if param.orthantwise_c != 0.0 {
+    if param.orthantwise {
         warn!("Only the backtracking method is available.");
     }
 
@@ -537,7 +538,7 @@ where
 
     fx = proc_evaluate(&x, &mut g)?;
 
-    if 0.0 != param.orthantwise_c {
+    if param.orthantwise {
         // Compute the L1 norm of the variable and add it to the object value.
         // xnorm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
         let xnorm = x.owlqn_x1norm(
@@ -558,18 +559,18 @@ where
 
     // Compute the direction;
     // we assume the initial hessian matrix H_0 as the identity matrix.
-    if param.orthantwise_c == 0.0 {
-        d.vecncpy(&g);
-    } else {
+    if param.orthantwise {
         d.vecncpy(&pg);
+    } else {
+        d.vecncpy(&g);
     }
 
     // Make sure that the initial variables are not a minimizer.
     let xnorm = x.vec2norm().max(1.0);
-    let mut gnorm = if param.orthantwise_c == 0.0 {
-        g.vec2norm()
-    } else {
+    let mut gnorm = if param.orthantwise {
         pg.vec2norm()
+    } else {
+        g.vec2norm()
     };
 
     if gnorm / xnorm <= param.epsilon {
@@ -594,7 +595,7 @@ where
         gp.veccpy(&g);
 
         // Search for an optimal step.
-        if param.orthantwise_c == 0.0 {
+        if !param.orthantwise {
             if param.linesearch.algorithm == MoreThuente {
                 ls = line_search_morethuente(
                     x,
@@ -656,7 +657,7 @@ where
 
         // Compute x and g norms.
         let xnorm = x.vec2norm();
-        let gnorm = if param.orthantwise_c == 0.0 {
+        let gnorm = if !param.orthantwise {
             g.vec2norm()
         } else {
             pg.vec2norm()
@@ -749,7 +750,7 @@ where
         k += 1;
         end = (end + 1) % m;
         // Compute the steepest direction.
-        if param.orthantwise_c == 0.0 {
+        if !param.orthantwise {
             // Compute the negative of gradients.
             d.vecncpy(&g);
         } else {
@@ -791,7 +792,7 @@ where
         }
 
         // Constrain the search direction for orthant-wise updates.
-        if param.orthantwise_c != 0.0 {
+        if param.orthantwise {
             let j = param.orthantwise_start as usize;
             let k = param.orthantwise_end as usize;
             for i in j..k {
