@@ -279,7 +279,7 @@ impl Default for LbfgsParam {
 
 impl LbfgsParam {
     // Check the input parameters for errors.
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&mut self, n: usize) -> Result<()> {
         if self.epsilon < 0.0 {
             bail!("LBFGSERR_INVALID_EPSILON");
         }
@@ -319,21 +319,26 @@ impl LbfgsParam {
             bail!("LBFGSERR_INVALID_MAXLINESEARCH");
         }
 
+        if self.orthantwise {
+            warn!("Only the backtracking method is available.");
+        }
+
         // FIXME: take care below
         if self.orthantwise_c < 0.0 {
             bail!("LBFGSERR_INVALID_ORTHANTWISE");
         }
-        // if self.orthantwise_start < 0 || n < self.orthantwise_start {
-        //     bail!("LBFGSERR_INVALID_ORTHANTWISE_START");
-        // }
 
-        // if self.orthantwise_end < 0 {
-        //     self.orthantwise_end = n;
-        // }
-
-        // if n < self.orthantwise_end {
-        //     bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
-        // }
+        // FIXME: make param immutable
+        if self.orthantwise_start < 0 || (n as i32) < self.orthantwise_start {
+            bail!("LBFGSERR_INVALID_ORTHANTWISE_START");
+        }
+        if self.orthantwise_end < 0 {
+            //bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
+            self.orthantwise_end = n as i32
+        }
+        if (n as i32) < self.orthantwise_end {
+            bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
+        }
 
         Ok(())
     }
@@ -484,23 +489,7 @@ where
     let m = param.m;
     // FIXME: remove n
     let n = x.len();
-    param.validate()?;
-
-    // FIXME: make param immutable
-    if param.orthantwise_start < 0 || (n as i32) < param.orthantwise_start {
-        bail!("LBFGSERR_INVALID_ORTHANTWISE_START");
-    }
-    if param.orthantwise_end < 0 {
-        //bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
-        param.orthantwise_end = n as i32
-    }
-    if (n as i32) < param.orthantwise_end {
-        bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
-    }
-
-    if param.orthantwise {
-        warn!("Only the backtracking method is available.");
-    }
+    param.validate(n)?;
 
     // Allocate working space.
     let mut xp = vec![0.0; n];
