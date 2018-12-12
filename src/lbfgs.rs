@@ -25,12 +25,12 @@
 //  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 //  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 //  THE SOFTWARE.
-
+//
 // This library is a C port of the FORTRAN implementation of Limited-memory
 // Broyden-Fletcher-Goldfarb-Shanno (L-BFGS) method written by Jorge Nocedal.
 // The original FORTRAN source code is available at:
 // http://www.ece.northwestern.edu/~nocedal/lbfgs.html
-
+//
 // The L-BFGS algorithm is described in:
 //     - Jorge Nocedal.
 //       Updating Quasi-Newton Matrices with Limited Storage.
@@ -38,7 +38,7 @@
 //     - Dong C. Liu and Jorge Nocedal.
 //       On the limited memory BFGS method for large scale optimization.
 //       <i>Mathematical Programming</i> B, Vol. 45, No. 3, pp. 503-528, 1989.
-
+//
 // The line search algorithms used in this implementation are described in:
 //     - John E. Dennis and Robert B. Schnabel.
 //       <i>Numerical Methods for Unconstrained Optimization and Nonlinear
@@ -47,7 +47,7 @@
 //       Line search algorithm with guaranteed sufficient decrease.
 //       <i>ACM Transactions on Mathematical Software (TOMS)</i>, Vol. 20, No. 3,
 //       pp. 286-307, 1994.
-
+//
 // This library also implements Orthant-Wise Limited-memory Quasi-Newton (OWL-QN)
 // method presented in:
 //     - Galen Andrew and Jianfeng Gao.
@@ -341,7 +341,6 @@ impl LbfgsParam {
 // problem
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*problem][problem:1]]
-#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Problem {
     /// x is an array of length n. on input it must contain the base point for
@@ -374,11 +373,6 @@ impl Problem {
         self.gx.clone_from_slice(&src.gx);
         self.fx = src.fx;
     }
-}
-
-pub trait Evaluate {
-    /// Evaluate function value `fx` and gradient `gx` at `x`
-    fn eval(&mut self) -> Result<()>;
 }
 // problem:1 ends here
 
@@ -454,32 +448,6 @@ fn owlqn_pseudo_gradient(
 // common
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*common][common:1]]
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct LBFGS<F, G>
-where
-    F: FnMut(&mut Problem) -> Result<()>,
-    G: FnMut(&Progress) -> bool,
-{
-    pub param: LbfgsParam,
-    evaluate: Option<F>,
-    progress: Option<G>,
-}
-
-impl<F, G> Default for LBFGS<F, G>
-where
-    F: FnMut(&mut Problem) -> Result<()>,
-    G: FnMut(&Progress) -> bool,
-{
-    fn default() -> Self {
-        LBFGS {
-            param: LbfgsParam::default(),
-            evaluate: None,
-            progress: None,
-        }
-    }
-}
-
 #[derive(Clone)]
 struct IterationData {
     pub alpha: f64,

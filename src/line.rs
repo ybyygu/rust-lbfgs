@@ -1,3 +1,14 @@
+// header
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*header][header:1]]
+//       Limited memory BFGS (L-BFGS).
+//
+//  Copyright (c) 1990, Jorge Nocedal
+//  Copyright (c) 2007-2010 Naoaki Okazaki
+//  Copyright (c) 2018-2019 Wenping Guo
+//  All rights reserved.
+// header:1 ends here
+
 // base
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
@@ -8,6 +19,67 @@ use crate::math::LbfgsMath;
 use crate::lbfgs::Problem;
 use crate::lbfgs::LbfgsParam;
 // base:1 ends here
+
+// algorithm
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*algorithm][algorithm:1]]
+/// Line search algorithms.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum LineSearchAlgorithm {
+    /// MoreThuente method proposd by More and Thuente. This is the default for
+    /// regular LBFGS.
+    MoreThuente,
+
+    ///
+    /// Backtracking method with the Armijo condition.
+    ///
+    /// The backtracking method finds the step length such that it satisfies
+    /// the sufficient decrease (Armijo) condition,
+    ///   - f(x + a * d) <= f(x) + ftol * a * g(x)^T d,
+    ///
+    /// where x is the current point, d is the current search direction, and
+    /// a is the step length.
+    ///
+    BacktrackingArmijo,
+
+    /// The backtracking method with the defualt (regular Wolfe) condition.
+    Backtracking,
+
+    /// Backtracking method with strong Wolfe condition.
+    ///
+    /// The backtracking method finds the step length such that it satisfies
+    /// both the Armijo condition (BacktrackingArmijo)
+    /// and the following condition,
+    /// FIXME: gtol vs wolfe?
+    ///   - |g(x + a * d)^T d| <= lbfgs_parameter_t::wolfe * |g(x)^T d|,
+    ///
+    /// where x is the current point, d is the current search direction, and
+    /// a is the step length.
+    ///
+    BacktrackingStrongWolfe,
+
+    ///
+    /// Backtracking method with regular Wolfe condition.
+    ///
+    /// The backtracking method finds the step length such that it satisfies
+    /// both the Armijo condition (BacktrackingArmijo)
+    /// and the curvature condition,
+    /// FIXME: gtol vs wolfe?
+    ///   - g(x + a * d)^T d >= lbfgs_parameter_t::wolfe * g(x)^T d,
+    ///
+    /// where x is the current point, d is the current search direction, and a
+    /// is the step length.
+    ///
+    BacktrackingWolfe,
+}
+
+impl Default for LineSearchAlgorithm {
+    /// The default algorithm (MoreThuente method).
+    fn default() -> Self {
+        LineSearchAlgorithm::MoreThuente
+    }
+}
+// algorithm:1 ends here
 
 // common
 
@@ -102,78 +174,69 @@ pub trait LineSearching<E> {
     ///
     /// # Arguments
     ///
-    /// * step: initial step size
+    /// * step: initial step size. On output it will be the optimal step size.
     /// * direction: proposed searching direction
+    /// * eval_fn: a callback function to evaluate `Problem`
     ///
     /// # Return
     ///
-    /// * the number of line searching iterations
+    /// * On success, return the number of line searching iterations
     ///
     fn find(&mut self, step: &mut f64, direction: &[f64], eval_fn: E) -> Result<usize>
     where
         E: FnMut(&mut Problem) -> Result<()>;
 }
-// common:1 ends here
 
-// algorithm
+pub struct LineSearch<'a> {
+    pub param: LineSearchParam,
+    problem: &'a mut Problem,
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*algorithm][algorithm:1]]
-/// Line search algorithms.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum LineSearchAlgorithm {
-    /// MoreThuente method proposd by More and Thuente.
-    MoreThuente,
-
-    ///
-    /// Backtracking method with the Armijo condition.
-    ///
-    /// The backtracking method finds the step length such that it satisfies
-    /// the sufficient decrease (Armijo) condition,
-    ///   - f(x + a * d) <= f(x) + ftol * a * g(x)^T d,
-    ///
-    /// where x is the current point, d is the current search direction, and
-    /// a is the step length.
-    ///
-    BacktrackingArmijo,
-
-    /// The backtracking method with the defualt (regular Wolfe) condition.
-    Backtracking,
-
-    /// Backtracking method with strong Wolfe condition.
-    ///
-    /// The backtracking method finds the step length such that it satisfies
-    /// both the Armijo condition (BacktrackingArmijo)
-    /// and the following condition,
-    /// FIXME: gtol vs wolfe?
-    ///   - |g(x + a * d)^T d| <= lbfgs_parameter_t::wolfe * |g(x)^T d|,
-    ///
-    /// where x is the current point, d is the current search direction, and
-    /// a is the step length.
-    ///
-    BacktrackingStrongWolfe,
-
-    ///
-    /// Backtracking method with regular Wolfe condition.
-    ///
-    /// The backtracking method finds the step length such that it satisfies
-    /// both the Armijo condition (BacktrackingArmijo)
-    /// and the curvature condition,
-    /// FIXME: gtol vs wolfe?
-    ///   - g(x + a * d)^T d >= lbfgs_parameter_t::wolfe * g(x)^T d,
-    ///
-    /// where x is the current point, d is the current search direction, and a
-    /// is the step length.
-    ///
-    BacktrackingWolfe,
+    // initial gradient in the search direction
+    dginit: f64,
 }
 
-impl Default for LineSearchAlgorithm {
-    /// The default algorithm (MoreThuente method).
-    fn default() -> Self {
-        LineSearchAlgorithm::MoreThuente
+impl<'a> LineSearch<'a> {
+    pub fn new(prb: &'a mut Problem) -> Self {
+        LineSearch {
+            param: LineSearchParam::default(),
+            problem: prb,
+            dginit: 0.0,
+        }
+    }
+
+    /// Unified entry for line searches
+    ///
+    /// # Arguments
+    ///
+    /// * step: initial step size. On output it will be the optimal step size.
+    /// * direction: proposed searching direction
+    /// * eval_fn: a callback function to evaluate `Problem`
+    ///
+    /// # Return
+    ///
+    /// * On success, return the number of line searching iterations
+    ///
+    pub fn find<E>(&mut self, step: &mut f64, direction: &[f64], eval_fn: E) -> Result<usize>
+    where
+        E: FnMut(&mut Problem) -> Result<()>,
+    {
+        // Check the input parameters for errors.
+        if *step <= 0.0 {
+            bail!("LBFGSERR_INVALIDPARAMETERS");
+        }
+
+        // Compute the initial gradient in the search direction.
+        self.dginit = self.problem.gx.vecdot(direction);
+
+        // Make sure that s points to a descent direction.
+        if self.dginit.is_sign_positive() {
+            bail!("LBFGSERR_INCREASEGRADIENT");
+        }
+
+        unimplemented!()
     }
 }
-// algorithm:1 ends here
+// common:1 ends here
 
 // Original documentation by J. Nocera (lbfgs.f)
 //                 subroutine mcsrch
@@ -306,18 +369,10 @@ impl Default for LineSearchAlgorithm {
 /// The purpose of mcsrch is to find a step which satisfies a sufficient
 /// decrease condition and a curvature condition.
 mod mcsrch {
-    // dependencies
-    use super::mcstep;
-    use super::LbfgsMath;
-    use super::LineSearchParam;
-    // use super::Evaluate;
-    use super::LineSearching;
-    use super::Problem;
-    use quicli::prelude::*;
-    type Result<T> = ::std::result::Result<T, Error>;
+    use super::*;
 
     /// A struct represents MCSRCH subroutine in original lbfgs.f by J. Nocera
-    struct MoreThuente<'a> {
+    pub struct MoreThuente<'a> {
         /// `prob` holds input variables `x`, gradient `gx` arrays of length
         /// n, and function value `fx`. on input it must contain the base point
         /// for the line search. on output it contains data on x + stp*s.
@@ -1095,15 +1150,7 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
 pub mod backtracking {
-    // dependencies
-    // use super::Evaluate;
-    use super::LbfgsMath ;
-    use super::LineSearchParam;
-    use super::LineSearching;
-    use super::LineSearchAlgorithm::*;
-    use super::Problem;
-    use quicli::prelude::*;
-    type Result<T> = ::std::result::Result<T, Error>;
+    use super::*;
 
     pub struct BackTracking<'a> {
         /// `prob` holds input variables `x`, gradient `gx` arrays of length
@@ -1111,7 +1158,7 @@ pub mod backtracking {
         /// for the line search. on output it contains data on x + stp*s.
         prob: &'a mut Problem,
 
-        param: LineSearchParam,
+        param: &'a LineSearchParam,
     }
 
     impl<'a, E> LineSearching<E> for BackTracking<'a>

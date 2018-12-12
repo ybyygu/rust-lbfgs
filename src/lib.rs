@@ -15,7 +15,6 @@ pub use crate::lbfgs::*;
 // lbfgs
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs][lbfgs:1]]
-#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct LBFGS<F, G>
 where
@@ -67,17 +66,16 @@ where
     /// evaluate() and progress() when necessary.
     ///
     /// # Parameters
-    /// - arr_x  : The array of variables, which will be updated during optimization.
-    /// - eval_fn: A closure to evaluate arr_x
+    /// - x      : The array of variables, which will be updated during optimization.
+    /// - eval_fn: A closure to evaluate x
     /// - prgr_fn: A closure to monitor progress
-    pub fn run(&mut self, arr_x: &mut [f64], eval_fn: F, prgr_fn: G) -> Result<f64> {
-        // let.evaluate = Some(eval_fn);
+    pub fn run(&mut self, x: &mut [f64], eval_fn: F, prgr_fn: G) -> Result<f64> {
         let progress = Some(prgr_fn);
 
-        // call external lbfgs function
+        // call lbfgs function
         let mut fx = 0.0;
         lbfgs(
-            arr_x,
+            x,
             &mut fx,
             eval_fn,
             progress,
