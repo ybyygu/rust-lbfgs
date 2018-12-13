@@ -1301,9 +1301,7 @@ where
 {
     // parameters for OWL-QN
     let orthantwise = param.orthantwise;
-    let owlqn_c = param.orthantwise_c;
-    let owlqn_start = param.orthantwise_start as usize;
-    let owlqn_end = param.orthantwise_end as usize;
+    let owlqn = param.owlqn;
 
     // quick wrapper
     let param = &param.linesearch;
@@ -1346,13 +1344,7 @@ where
         if orthantwise {
             // Choose the orthant for the new point.
             // The current point is projected onto the orthant.
-            for i in owlqn_start..owlqn_end {
-                // FIXME: float == 0.0??
-                let sign = if xp[i] == 0.0 { -gp[i] } else { xp[i] };
-                if x[i] * sign <= 0.0 {
-                    x[i] = 0.0
-                }
-            }
+            owlqn.project(x, xp, gp);
         }
 
         // FIXME: improve below
@@ -1362,8 +1354,7 @@ where
         count += 1;
         if orthantwise {
             // Compute the L1 norm of the variables and add it to the object value.
-            let norm = x.owlqn_x1norm(owlqn_start, owlqn_end);
-            *f += norm * owlqn_c;
+            *f += owlqn.x1norm(x);
 
             dgtest = 0.0;
             for i in 0..n {
@@ -1408,12 +1399,11 @@ where
         }
 
         // FIXME: review
-        // if owlqn {
-        //     *stp *= owlqn_width
-        // } else {
-        //     *stp *= width
-        // }
-        *stp *= width
+        if orthantwise {
+            *stp *= owlqn_width
+        } else {
+            *stp *= width
+        }
     }
 }
 // old:1 ends here

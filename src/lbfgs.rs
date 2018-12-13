@@ -222,38 +222,8 @@ pub struct LbfgsParam {
     /// Enable OWL-QN regulation or not
     pub orthantwise: bool,
 
-    /// Coeefficient for the L1 norm of variables.
-    ///
-    ///  Setting this parameter to a positive value activates Orthant-Wise
-    ///  Limited-memory Quasi-Newton (OWL-QN) method, which minimizes the
-    ///  objective function F(x) combined with the L1 norm |x| of the variables,
-    ///  {F(x) + C |x|}. This parameter is the coeefficient for the |x|, i.e.,
-    ///  C. As the L1 norm |x| is not differentiable at zero, the library
-    ///  modifies function and gradient evaluations from a client program
-    ///  suitably; a client program thus have only to return the function value
-    ///  F(x) and gradients G(x) as usual. The default value is 1.
-    pub orthantwise_c: f64,
-
-    /// Start index for computing L1 norm of the variables.
-    ///
-    /// This parameter is valid only for OWL-QN method (i.e., orthantwise_c !=
-    /// 0). This parameter b (0 <= b < N) specifies the index number from which
-    /// the library computes the L1 norm of the variables x,
-    ///
-    ///     |x| := |x_{b}| + |x_{b+1}| + ... + |x_{N}| .
-    ///
-    /// In other words, variables x_1, ..., x_{b-1} are not used for computing
-    /// the L1 norm. Setting b (0 < b < N), one can protect variables, x_1, ...,
-    /// x_{b-1} (e.g., a bias term of logistic regression) from being
-    /// regularized. The default value is zero.
-    pub orthantwise_start: i32,
-
-    /// End index for computing L1 norm of the variables.
-    ///
-    /// This parameter is valid only for OWL-QN method (i.e., \ref orthantwise_c
-    /// != 0). This parameter e (0 < e <= N) specifies the index number at which
-    /// the library stops computing the L1 norm of the variables x,
-    pub orthantwise_end: i32,
+    // FIXME: better name
+    pub owlqn: Orthantwise,
 }
 
 impl Default for LbfgsParam {
@@ -269,9 +239,7 @@ impl Default for LbfgsParam {
             delta: 1e-5,
             max_iterations: 0,
             orthantwise: false,
-            orthantwise_c: 1.0,
-            orthantwise_start: 0,
-            orthantwise_end: -1,
+            owlqn: Orthantwise::default(),
             linesearch: LineSearchParam::default(),
         }
     }
@@ -324,19 +292,19 @@ impl LbfgsParam {
         }
 
         // FIXME: take care below
-        if self.orthantwise_c < 0.0 {
+        if self.owlqn.c < 0.0 {
             bail!("LBFGSERR_INVALID_ORTHANTWISE");
         }
 
         // FIXME: make param immutable
-        if self.orthantwise_start < 0 || (n as i32) < self.orthantwise_start {
+        if self.owlqn.start < 0 || (n as i32) < self.owlqn.start {
             bail!("LBFGSERR_INVALID_ORTHANTWISE_START");
         }
-        if self.orthantwise_end < 0 {
+        if self.owlqn.end < 0 {
             //bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
-            self.orthantwise_end = n as i32
+            self.owlqn.end = n as i32
         }
-        if (n as i32) < self.orthantwise_end {
+        if (n as i32) < self.owlqn.end {
             bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
         }
 
@@ -361,6 +329,11 @@ pub struct Problem {
     /// `gx` is an array of length n. It must contain the gradient of `f` at
     /// x.
     pub gx: Vec<f64>,
+
+    /// Pseudo gradient for OrthantWise Limited-memory Quasi-Newton (owlqn) algorithm
+    pg: Vec<f64>,
+
+    orthantwise: bool,
 }
 
 impl Problem {
@@ -371,6 +344,8 @@ impl Problem {
             x: x.into(),
             fx: 0.0,
             gx: vec![0.0; n],
+            pg: vec![0.0; n],
+            orthantwise: false,
         }
     }
 
@@ -379,6 +354,23 @@ impl Problem {
         self.x.clone_from_slice(&src.x);
         self.gx.clone_from_slice(&src.gx);
         self.fx = src.fx;
+    }
+
+    pub fn update_search_direction(&self, d: &mut [f64]) {
+        if self.orthantwise {
+            d.vecncpy(&self.pg);
+        } else {
+            d.vecncpy(&self.gx);
+        }
+    }
+
+    /// Gradient norm
+    pub fn gnorm(&self) -> f64 {
+        if self.orthantwise {
+            self.pg.vec2norm()
+        } else {
+            self.gx.vec2norm()
+        }
     }
 }
 // problem:1 ends here
@@ -409,48 +401,142 @@ pub struct Progress<'a> {
 }
 // progress:1 ends here
 
-// owlqn pseduo gradient
+// orthantwise
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*owlqn%20pseduo%20gradient][owlqn pseduo gradient:1]]
-/// Compute the psuedo-gradients.
-fn owlqn_pseudo_gradient(
-    pg: &mut [f64],
-    x: &[f64],
-    g: &[f64],
-    c: f64,
-    start: usize,
-    end: usize,
-) {
-    // Compute the negative of gradients.
-    for i in 0..start {
-        pg[i] = g[i];
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*orthantwise][orthantwise:1]]
+#[derive(Copy, Clone, Debug)]
+pub struct Orthantwise {
+    /// Coeefficient for the L1 norm of variables.
+    ///
+    ///  Setting this parameter to a positive value activates Orthant-Wise
+    ///  Limited-memory Quasi-Newton (OWL-QN) method, which minimizes the
+    ///  objective function F(x) combined with the L1 norm |x| of the variables,
+    ///  {F(x) + C |x|}. This parameter is the coeefficient for the |x|, i.e.,
+    ///  C. As the L1 norm |x| is not differentiable at zero, the library
+    ///  modifies function and gradient evaluations from a client program
+    ///  suitably; a client program thus have only to return the function value
+    ///  F(x) and gradients G(x) as usual. The default value is 1.
+    pub c: f64,
+
+    /// Start index for computing L1 norm of the variables.
+    ///
+    /// This parameter is valid only for OWL-QN method (i.e., orthantwise_c !=
+    /// 0). This parameter b (0 <= b < N) specifies the index number from which
+    /// the library computes the L1 norm of the variables x,
+    ///
+    ///     |x| := |x_{b}| + |x_{b+1}| + ... + |x_{N}| .
+    ///
+    /// In other words, variables x_1, ..., x_{b-1} are not used for computing
+    /// the L1 norm. Setting b (0 < b < N), one can protect variables, x_1, ...,
+    /// x_{b-1} (e.g., a bias term of logistic regression) from being
+    /// regularized. The default value is zero.
+    pub start: i32,
+
+    /// End index for computing L1 norm of the variables.
+    ///
+    /// This parameter is valid only for OWL-QN method (i.e., \ref orthantwise_c
+    /// != 0). This parameter e (0 < e <= N) specifies the index number at which
+    /// the library stops computing the L1 norm of the variables x,
+    pub end: i32,
+}
+
+impl Default for Orthantwise {
+    fn default() -> Self {
+        Orthantwise {
+            c: 1.0,
+            start: 0,
+            end: -1,
+        }
+    }
+}
+
+impl Orthantwise {
+    // FIXME: remove
+    // a dirty wrapper for start and end
+    fn start_end(&self, x: &[f64]) -> (usize, usize) {
+        let start = self.start as usize;
+        let end = if self.end < 0 {
+            x.len()
+        } else {
+            self.end as usize
+        };
+
+        (start, end)
     }
 
-    // Compute the psuedo-gradients.
-    for i in start..end {
-        if x[i] < 0.0 {
-            // Differentiable.
-            pg[i] = g[i] - c;
-        } else if (0.0 < x[i]) {
-            pg[i] = g[i] + c;
-        } else {
-            if (g[i] < -c) {
-                // Take the right partial derivative.
-                pg[i] = g[i] + c;
-            } else if (c < g[i]) {
-                // Take the left partial derivative.
+    /// Compute the L1 norm of the variables.
+    pub fn x1norm(&self, x: &[f64]) -> f64 {
+        let (start, end) = self.start_end(x);
+
+        let mut s = 0.0;
+        for i in start..end {
+            s += self.c * x[i].abs();
+        }
+
+        s
+    }
+
+    /// Compute the psuedo-gradients.
+    pub fn pseudo_gradient(&self, pg: &mut [f64], x: &[f64], g: &[f64]) {
+        let (start, end) = self.start_end(x);
+        let c = self.c;
+
+        // Compute the negative of gradients.
+        for i in 0..start {
+            pg[i] = g[i];
+        }
+
+        // Compute the psuedo-gradients.
+        for i in start..end {
+            if x[i] < 0.0 {
+                // Differentiable.
                 pg[i] = g[i] - c;
+            } else if (0.0 < x[i]) {
+                pg[i] = g[i] + c;
             } else {
-                pg[i] = 0.;
+                if (g[i] < -c) {
+                    // Take the right partial derivative.
+                    pg[i] = g[i] + c;
+                } else if (c < g[i]) {
+                    // Take the left partial derivative.
+                    pg[i] = g[i] - c;
+                } else {
+                    pg[i] = 0.;
+                }
+            }
+        }
+
+        for i in end..g.len() {
+            pg[i] = g[i];
+        }
+    }
+
+    /// Choose the orthant for the new point.
+    ///
+    /// During the line search, each search point is projected onto the orthant
+    /// of the previous point.
+    pub fn project(&self, x: &mut [f64], xp: &[f64], gp: &[f64]) {
+        let (start, end) = self.start_end(xp);
+
+        for i in start..end {
+            let sign = if xp[i] == 0.0 { -gp[i] } else { xp[i] };
+            if x[i] * sign <= 0.0 {
+                x[i] = 0.0
             }
         }
     }
 
-    for i in end..g.len() {
-        pg[i] = g[i];
+    pub fn constrain(&self, d: &mut [f64], pg: &[f64]) {
+        let (start, end) = self.start_end(pg);
+
+        for i in start..end {
+            if d[i] * pg[i] >= 0.0 {
+                d[i] = 0.0;
+            }
+        }
     }
 }
-// owlqn pseduo gradient:1 ends here
+// orthantwise:1 ends here
 
 // common
 
@@ -486,7 +572,6 @@ where
 {
     // FIXME: make param immutable
     let mut param = param.clone();
-    let m = param.m;
     // FIXME: remove n
     let n = x.len();
     param.validate(n)?;
@@ -502,6 +587,7 @@ where
     let mut pg = vec![0.0; n];
 
     // Allocate limited memory storage.
+    let m = param.m;
     let mut lm_arr: Vec<IterationData> = Vec::with_capacity(m);
 
     // Initialize the limited memory.
@@ -524,26 +610,11 @@ where
     }
 
     // Evaluate the function value and its gradient.
-
     fx = proc_evaluate(&x, &mut g)?;
-
     if param.orthantwise {
         // Compute the L1 norm of the variable and add it to the object value.
-        // xnorm = owlqn_x1norm(x, param.orthantwise_start, param.orthantwise_end);
-        let xnorm = x.owlqn_x1norm(
-            param.orthantwise_start as usize,
-            param.orthantwise_end as usize,
-        );
-
-        fx += xnorm * param.orthantwise_c;
-        owlqn_pseudo_gradient(
-            &mut pg,
-            &x,
-            &g,
-            param.orthantwise_c,
-            param.orthantwise_start as usize,
-            param.orthantwise_end as usize,
-        );
+        fx += param.owlqn.x1norm(x);
+        param.owlqn.pseudo_gradient(&mut pg, &x, &g);
     }
 
     // Compute the direction;
@@ -622,14 +693,7 @@ where
                 &mut proc_evaluate,
                 &param,
             )?;
-            owlqn_pseudo_gradient(
-                &mut pg,
-                &x,
-                &g,
-                param.orthantwise_c,
-                param.orthantwise_start as usize,
-                param.orthantwise_end as usize,
-            );
+            param.owlqn.pseudo_gradient(&mut pg, &x, &g);
         }
 
         // FIXME: to be better
@@ -782,13 +846,7 @@ where
 
         // Constrain the search direction for orthant-wise updates.
         if param.orthantwise {
-            let j = param.orthantwise_start as usize;
-            let k = param.orthantwise_end as usize;
-            for i in j..k {
-                if d[i] * pg[i] >= 0.0 {
-                    d[i] = 0.0;
-                }
-            }
+            param.owlqn.constrain(&mut d, &pg);
         }
 
         // Now the search direction d is ready. We try step = 1 first.

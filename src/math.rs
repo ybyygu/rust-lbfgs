@@ -30,9 +30,6 @@ pub trait LbfgsMath<T> {
 
     /// 1 / ||x||
     fn vec2norminv(&self) -> T;
-
-    /// norm = sum(..., |x|, ...)
-    fn owlqn_x1norm(&self, start: usize, end: usize) -> T;
 }
 
 impl LbfgsMath<f64> for [f64] {
@@ -86,14 +83,6 @@ impl LbfgsMath<f64> for [f64] {
     fn vec2norminv(&self) -> f64 {
         1.0 / self.vec2norm()
     }
-
-    fn owlqn_x1norm(&self, start: usize, end: usize) -> f64 {
-        let mut s = 0.0;
-        for i in start..end {
-            s += self[i].abs();
-        }
-        s
-    }
 }
 
 #[test]
@@ -134,8 +123,5 @@ fn test_lbfgs_math() {
     assert_eq!(-1.0, y[0]);
     assert_eq!(-1.0, y[1]);
     assert_eq!(-1.0, y[2]);
-
-    let v = z.owlqn_x1norm(1, 3);
-    assert_eq!(v, 16.0);
 }
 // math.rs:1 ends here

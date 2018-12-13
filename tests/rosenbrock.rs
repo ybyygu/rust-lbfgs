@@ -88,9 +88,9 @@ fn test_lbfgs() {
 
     // OWL-QN
     lbfgs.param.orthantwise = true;
-    lbfgs.param.orthantwise_c = 1.0;
-    lbfgs.param.orthantwise_start = 0;
-    lbfgs.param.orthantwise_end = 99;
+    lbfgs.param.owlqn.c = 1.0;
+    lbfgs.param.owlqn.start = 0;
+    lbfgs.param.owlqn.end = 99;
     let fx = lbfgs.run(&mut x, evaluate, progress).expect("lbfgs run");
     // Iteration 171:
     // fx = 43.50249999999999, x[0] = 0.2500000069348678, x[1] = 0.057500004213084016
