@@ -152,9 +152,9 @@ pub const LBFGS_CONVERGENCE: unnamed = 0;
 pub const LBFGS_SUCCESS: unnamed = 0;
 // return value:1 ends here
 
-// lbfgs parameters
+// base
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs%20parameters][lbfgs parameters:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
 /// L-BFGS optimization parameters.
 ///
 /// Call lbfgs_parameter_t::default() function to initialize parameters to the
@@ -311,69 +311,62 @@ impl LbfgsParam {
         Ok(())
     }
 }
-// lbfgs parameters:1 ends here
+// base:1 ends here
 
-// problem
+// adhoc
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*problem][problem:1]]
-#[derive(Debug, Clone)]
-pub struct Problem {
-    /// x is an array of length n. on input it must contain the base point for
-    /// the line search.
-    pub x: Vec<f64>,
-
-    /// `fx` is a variable. It must contain the value of problem `f` at
-    /// x.
-    pub fx: f64,
-
-    /// `gx` is an array of length n. It must contain the gradient of `f` at
-    /// x.
-    pub gx: Vec<f64>,
-
-    /// Pseudo gradient for OrthantWise Limited-memory Quasi-Newton (owlqn) algorithm
-    pg: Vec<f64>,
-
-    orthantwise: bool,
-}
-
-impl Problem {
-    /// Initialize problem with array length n
-    pub fn new(x: &[f64]) -> Self {
-        let n = x.len();
-        Problem {
-            x: x.into(),
-            fx: 0.0,
-            gx: vec![0.0; n],
-            pg: vec![0.0; n],
-            orthantwise: false,
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*adhoc][adhoc:1]]
+impl LbfgsParam {
+    pub fn update_search_direction(&self, d: &mut [f64], pg: &[f64], g: &[f64]) {
+        // Compute the direction;
+        // we assume the initial hessian matrix H_0 as the identity matrix.
+        if self.orthantwise {
+            d.vecncpy(pg);
+        } else {
+            d.vecncpy(g);
         }
     }
 
-    /// Copies all elements from src into self.
-    pub fn clone_from(&mut self, src: &Problem) {
-        self.x.clone_from_slice(&src.x);
-        self.gx.clone_from_slice(&src.gx);
-        self.fx = src.fx;
-    }
-
-    pub fn update_search_direction(&self, d: &mut [f64]) {
+    // calculate gradient norm
+    pub fn update_gnorm(&self, pg: &[f64], g: &[f64]) -> f64 {
         if self.orthantwise {
-            d.vecncpy(&self.pg);
+            pg.vec2norm()
         } else {
-            d.vecncpy(&self.gx);
+            g.vec2norm()
         }
     }
 
-    /// Gradient norm
-    pub fn gnorm(&self) -> f64 {
+    // Evaluate the function value
+    pub fn fx_correction(&self, x: &[f64]) -> f64 {
         if self.orthantwise {
-            self.pg.vec2norm()
+            self.owlqn.x1norm(x)
         } else {
-            self.gx.vec2norm()
+            0.0
+        }
+    }
+
+    pub fn update_gradient(&self, pg: &mut [f64], x: &[f64], g: &[f64]) {
+        if self.orthantwise {
+            self.owlqn.pseudo_gradient(pg, &x, &g);
+        }
+    }
+
+    /// Constrain the search direction for orthant-wise updates.
+    pub fn constrain_search_direction(&self, d: &mut [f64], pg: &[f64]) {
+        if self.orthantwise {
+            self.owlqn.constrain(d, &pg);
+        }
+    }
+
+    // Choose the orthant for the new point.
+    // The current point is projected onto the orthant.
+    pub fn project_onto_orthant(&self, x: &mut [f64], xp: &[f64], gp: &[f64]) {
+        if self.orthantwise {
+            self.owlqn.project(x, xp, gp);
         }
     }
 }
-// problem:1 ends here
+// adhoc:1 ends here
 
 // progress
 
@@ -577,6 +570,8 @@ where
     param.validate(n)?;
 
     // Allocate working space.
+    // let mut problem = Problem::new(x, proc_evaluate);
+
     let mut xp = vec![0.0; n];
     let mut g = vec![0.0; n];
     let mut gp = g.clone();
@@ -610,28 +605,17 @@ where
     }
 
     // Evaluate the function value and its gradient.
-    fx = proc_evaluate(&x, &mut g)?;
-    if param.orthantwise {
-        // Compute the L1 norm of the variable and add it to the object value.
-        fx += param.owlqn.x1norm(x);
-        param.owlqn.pseudo_gradient(&mut pg, &x, &g);
-    }
+    // Compute the L1 norm of the variable and add it to the object value.
+    fx = proc_evaluate(&x, &mut g)? + param.fx_correction(x);
+    param.update_gradient(&mut pg, &x, &g);
 
     // Compute the direction;
     // we assume the initial hessian matrix H_0 as the identity matrix.
-    if param.orthantwise {
-        d.vecncpy(&pg);
-    } else {
-        d.vecncpy(&g);
-    }
+    param.update_search_direction(&mut d, &pg, &g);
 
     // Make sure that the initial variables are not a minimizer.
     let xnorm = x.vec2norm().max(1.0);
-    let mut gnorm = if param.orthantwise {
-        pg.vec2norm()
-    } else {
-        g.vec2norm()
-    };
+    let gnorm = param.update_gnorm(&pg, &g);
 
     if gnorm / xnorm <= param.epsilon {
         bail!("LBFGS_ALREADY_MINIMIZED");
@@ -693,8 +677,9 @@ where
                 &mut proc_evaluate,
                 &param,
             )?;
-            param.owlqn.pseudo_gradient(&mut pg, &x, &g);
         }
+
+        param.update_gradient(&mut pg, &x, &g);
 
         // FIXME: to be better
         // Recover from failed line search?
@@ -710,11 +695,7 @@ where
 
         // Compute x and g norms.
         let xnorm = x.vec2norm();
-        let gnorm = if !param.orthantwise {
-            g.vec2norm()
-        } else {
-            pg.vec2norm()
-        };
+        let gnorm = param.update_gnorm(&pg, &g);
 
         // Report the progress.
         if let Some(ref mut prgr_fn) = proc_progress {
@@ -803,12 +784,7 @@ where
         k += 1;
         end = (end + 1) % m;
         // Compute the steepest direction.
-        if !param.orthantwise {
-            // Compute the negative of gradients.
-            d.vecncpy(&g);
-        } else {
-            d.vecncpy(&pg);
-        }
+        param.update_search_direction(&mut d, &pg, &g);
 
         let mut i = 0;
         let mut j = end;
@@ -845,9 +821,7 @@ where
         }
 
         // Constrain the search direction for orthant-wise updates.
-        if param.orthantwise {
-            param.owlqn.constrain(&mut d, &pg);
-        }
+        param.constrain_search_direction(&mut d, &pg);
 
         // Now the search direction d is ready. We try step = 1 first.
         step = 1.0

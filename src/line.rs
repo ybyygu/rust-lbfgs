@@ -16,7 +16,6 @@ use quicli::prelude::*;
 type Result<T> = ::std::result::Result<T, Error>;
 
 use crate::math::LbfgsMath;
-use crate::lbfgs::Problem;
 use crate::lbfgs::LbfgsParam;
 // base:1 ends here
 
@@ -168,75 +167,26 @@ impl Default for LineSearchParam {
         }
     }
 }
-
-pub trait LineSearching<E> {
-    /// Apply line search algorithm to find satisfactory step size
-    ///
-    /// # Arguments
-    ///
-    /// * step: initial step size. On output it will be the optimal step size.
-    /// * direction: proposed searching direction
-    /// * eval_fn: a callback function to evaluate `Problem`
-    ///
-    /// # Return
-    ///
-    /// * On success, return the number of line searching iterations
-    ///
-    fn find(&mut self, step: &mut f64, direction: &[f64], eval_fn: E) -> Result<usize>
-    where
-        E: FnMut(&mut Problem) -> Result<()>;
-}
-
-pub struct LineSearch<'a> {
-    pub param: LineSearchParam,
-    problem: &'a mut Problem,
-
-    // initial gradient in the search direction
-    dginit: f64,
-}
-
-impl<'a> LineSearch<'a> {
-    pub fn new(prb: &'a mut Problem) -> Self {
-        LineSearch {
-            param: LineSearchParam::default(),
-            problem: prb,
-            dginit: 0.0,
-        }
-    }
-
-    /// Unified entry for line searches
-    ///
-    /// # Arguments
-    ///
-    /// * step: initial step size. On output it will be the optimal step size.
-    /// * direction: proposed searching direction
-    /// * eval_fn: a callback function to evaluate `Problem`
-    ///
-    /// # Return
-    ///
-    /// * On success, return the number of line searching iterations
-    ///
-    pub fn find<E>(&mut self, step: &mut f64, direction: &[f64], eval_fn: E) -> Result<usize>
-    where
-        E: FnMut(&mut Problem) -> Result<()>,
-    {
-        // Check the input parameters for errors.
-        if *step <= 0.0 {
-            bail!("LBFGSERR_INVALIDPARAMETERS");
-        }
-
-        // Compute the initial gradient in the search direction.
-        self.dginit = self.problem.gx.vecdot(direction);
-
-        // Make sure that s points to a descent direction.
-        if self.dginit.is_sign_positive() {
-            bail!("LBFGSERR_INCREASEGRADIENT");
-        }
-
-        unimplemented!()
-    }
-}
 // common:1 ends here
+
+// adhoc
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*adhoc][adhoc:1]]
+impl LineSearchParam {
+    fn validate_step(&self, step: f64) -> Result<()> {
+        // The step is the minimum value.
+        if step < self.min_step {
+            bail!("LBFGSERR_MINIMUMSTEP");
+        }
+        // The step is the maximum value.
+        if step > self.max_step {
+            bail!("LBFGSERR_MAXIMUMSTEP");
+        }
+
+        Ok(())
+    }
+}
+// adhoc:1 ends here
 
 // Original documentation by J. Nocera (lbfgs.f)
 //                 subroutine mcsrch
@@ -363,249 +313,6 @@ impl<'a> LineSearch<'a> {
 
 // Original documentation by J. Nocera (lbfgs.f):1 ends here
 
-// new
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
-/// The purpose of mcsrch is to find a step which satisfies a sufficient
-/// decrease condition and a curvature condition.
-mod mcsrch {
-    use super::*;
-
-    /// A struct represents MCSRCH subroutine in original lbfgs.f by J. Nocera
-    pub struct MoreThuente<'a> {
-        /// `prob` holds input variables `x`, gradient `gx` arrays of length
-        /// n, and function value `fx`. on input it must contain the base point
-        /// for the line search. on output it contains data on x + stp*s.
-        prob: &'a mut Problem,
-
-        param: LineSearchParam,
-    }
-
-    impl<'a, E> LineSearching<E> for MoreThuente<'a>
-    where
-        E: FnMut(&mut Problem) -> Result<()>,
-    {
-        /// Find a step which satisfies a sufficient decrease condition and a
-        /// curvature condition (strong wolfe conditions).
-        ///
-        /// # Arguments
-        ///
-        /// * stp: a nonnegative variable. on input stp contains an initial
-        /// estimate of a satisfactory step. on output stp contains the final
-        /// estimate.
-        /// * direction: is an input array of length n which specifies the search direction.
-        ///
-        /// # Return
-        ///
-        /// * the final estimate of a satisfactory step.
-        ///
-        /// # Example
-        ///
-        /// - TODO
-        ///
-        fn find(&mut self, stp: &mut f64, s: &[f64], mut eval_fn: E) -> Result<usize> {
-            // Check the input parameters for errors.
-            if !stp.is_sign_positive() {
-                bail!("A logic error (negative line-search step) occurred.");
-            }
-
-            // Compute the initial gradient in the search direction.
-            // vecdot(&mut dginit, g, s, n);
-            let mut dginit = self.prob.gx.vecdot(s);
-
-            // Make sure that s points to a descent direction.
-            if dginit.is_sign_positive() {
-                bail!("The current search direction increases the objective function value!");
-            }
-
-            // Initialize local variables.
-            let param = &self.param;
-            let mut brackt = false;
-            let mut stage1 = 1;
-            let finit = self.prob.fx;
-            let dgtest = param.ftol * dginit;
-            let mut width = param.max_step - param.min_step;
-            let mut prev_width = 2.0 * width;
-
-            // The variables stx, fx, dgx contain the values of the step,
-            // function, and directional derivative at the best step.
-            // The variables sty, fy, dgy contain the value of the step,
-            // function, and derivative at the other endpoint of
-            // the interval of uncertainty.
-            // The variables stp, f, dg contain the values of the step,
-            // function, and derivative at the current step.
-            let mut stx = 0f64;
-            let mut sty = 0f64;
-            let mut fx = finit;
-            let mut fy = finit;
-            let mut dgx = dginit;
-            let mut dgy = dginit;
-            let mut dg = 0f64;
-
-            let mut stmin = 0.;
-            let mut stmax = 0.;
-            let mut uinfo = 0;
-            let mut count = 0;
-
-            let mut fxm = 0.;
-            let mut dgxm = 0.;
-            let mut fym = 0.;
-            let mut dgym = 0.;
-            let mut ftest1 = 0.;
-            let mut fm = 0.;
-            let mut dgm = 0.;
-
-            loop {
-                // Set the minimum and maximum steps to correspond to the
-                // present interval of uncertainty.
-                if brackt {
-                    stmin = stx.min(sty);
-                    stmax = stx.max(sty);
-                } else {
-                    stmin = stx;
-                    stmax = *stp + 4.0 * (*stp - stx)
-                }
-
-                // Clip the step in the range of [stpmin, stpmax].
-                if *stp < param.min_step {
-                    *stp = param.min_step
-                }
-                if param.max_step < *stp {
-                    *stp = param.max_step
-                }
-
-                // If an unusual termination is to occur then let
-                // stp be the lowest point obtained so far.
-                if brackt
-                    && (*stp <= stmin
-                        || stmax <= *stp
-                        || param.max_linesearch <= count + 1
-                        || uinfo != 0)
-                    || brackt && stmax - stmin <= param.xtol * stmax
-                {
-                    *stp = stx
-                }
-
-                // Compute the current value of x: x <- x + (*stp) * s.
-                // veccpy(x, xp, n);
-                // vecadd(x, s, *stp, n);
-                self.prob.x.vecadd(&s, *stp);
-
-                // Evaluate the function and gradient values.
-                // *f = cd(x, g, *stp)?;
-                eval_fn(&mut self.prob)?;
-
-                let f = self.prob.fx;
-
-                // vecdot(&mut dg, g, s, n);
-                dg = self.prob.gx.vecdot(s);
-
-                // FIXME: wolfe constant?
-                ftest1 = finit + *stp * dgtest;
-                count += 1;
-
-                // Test for errors and convergence.
-                if brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0) {
-                    /* Rounding errors prevent further progress. */
-                    bail!("LBFGSERR_ROUNDING_ERROR");
-                }
-                if *stp == param.max_step && f <= ftest1 && dg <= dgtest {
-                    /* The step is the maximum value. */
-                    bail!("LBFGSERR_MAXIMUMSTEP");
-                }
-                if *stp == param.min_step && (ftest1 < f || dgtest <= dg) {
-                    /* The step is the minimum value. */
-                    bail!("LBFGSERR_MINIMUMSTEP");
-                }
-                if brackt && stmax - stmin <= param.xtol * stmax {
-                    /* Relative width of the interval of uncertainty is at most xtol. */
-                    bail!("LBFGSERR_WIDTHTOOSMALL");
-                }
-                if param.max_linesearch <= count {
-                    // Maximum number of iteration.
-                    bail!("LBFGSERR_MAXIMUMLINESEARCH");
-                }
-                if f <= ftest1 && dg.abs() <= param.gtol * -dginit {
-                    // The sufficient decrease condition and the directional derivative condition hold.
-                    return Ok(count);
-                }
-
-                // In the first stage we seek a step for which the modified
-                // function has a nonpositive value and nonnegative derivative.
-                if 0 != stage1 && f <= ftest1 && param.ftol.min(param.gtol) * dginit <= dg {
-                    stage1 = 0
-                }
-
-                // A modified function is used to predict the step only if
-                // we have not obtained a step for which the modified
-                // function has a nonpositive function value and nonnegative
-                // derivative, and if a lower function value has been
-                // obtained but the decrease is not sufficient.
-                if 0 != stage1 && ftest1 < f && f <= fx {
-                    // Define the modified function and derivative values.
-                    fm = f - *stp * dgtest;
-                    fxm = fx - stx * dgtest;
-                    fym = fy - sty * dgtest;
-                    dgm = dg - dgtest;
-                    dgxm = dgx - dgtest;
-                    dgym = dgy - dgtest;
-
-                    // Call update_trial_interval() to update the interval of
-                    // uncertainty and to compute the new step.
-                    uinfo = mcstep::update_trial_interval(
-                        &mut stx,
-                        &mut fxm,
-                        &mut dgxm,
-                        &mut sty,
-                        &mut fym,
-                        &mut dgym,
-                        stp,
-                        fm,
-                        dgm,
-                        stmin,
-                        stmax,
-                        &mut brackt,
-                    )?;
-
-                    // Reset the function and gradient values for f.
-                    fx = fxm + stx * dgtest;
-                    fy = fym + sty * dgtest;
-                    dgx = dgxm + dgtest;
-                    dgy = dgym + dgtest
-                } else {
-                    uinfo = mcstep::update_trial_interval(
-                        &mut stx,
-                        &mut fx,
-                        &mut dgx,
-                        &mut sty,
-                        &mut fy,
-                        &mut dgy,
-                        stp,
-                        f,
-                        dg,
-                        stmin,
-                        stmax,
-                        &mut brackt,
-                    )?;
-                }
-
-                // Force a sufficient decrease in the interval of uncertainty.
-                if brackt {
-                    if 0.66 * prev_width <= (sty - stx).abs() {
-                        *stp = stx + 0.5 * (sty - stx)
-                    }
-
-                    prev_width = width;
-                    width = (sty - stx).abs()
-                }
-            }
-
-            bail!("Logic error!");
-        }
-    }
-}
-// new:1 ends here
-
 // old
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
@@ -633,10 +340,7 @@ where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     // quick wrapper
-
     let param = &param.linesearch;
-    // FIXME: remove
-    let n = x.len();
 
     // Check the input parameters for errors.
     if *stp <= 0.0 {
@@ -668,17 +372,14 @@ where
     // the interval of uncertainty.
     // The variables stp, f, dg contain the values of the step,
     // function, and derivative at the current step.
-    let mut stx = 0.0;
-    let mut sty = 0.0;
+    let (mut stx, mut sty) = (0.0, 0.0);
     let mut fx = finit;
     let mut fy = finit;
     let mut dgy = dginit;
     let mut dgx = dgy;
 
-    let mut count = 0usize;
-    let mut stmin = 0.;
-    let mut stmax = 0.;
-    loop {
+    let (mut stmin, mut stmax) = (0.0, 0.0);
+    for count in 0..param.max_linesearch {
         // Set the minimum and maximum steps to correspond to the
         // present interval of uncertainty.
         if brackt {
@@ -716,26 +417,30 @@ where
 
         let mut dg = g.vecdot(s);
         let ftest1 = finit + *stp * dgtest;
-        count += 1;
 
         // Test for errors and convergence.
         if brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0i32) {
             // Rounding errors prevent further progress.
             bail!("LBFGSERR_ROUNDING_ERROR");
-        } else if *stp == param.max_step && *f <= ftest1 && dg <= dgtest {
-            // The step is the maximum value.
-            bail!("LBFGSERR_MAXIMUMSTEP");
-        } else if *stp == param.min_step && (ftest1 < *f || dgtest <= dg) {
-            // The step is the minimum value.
-            bail!("LBFGSERR_MINIMUMSTEP");
-        } else if brackt && stmax - stmin <= param.xtol * stmax {
+        }
+
+        if brackt && stmax - stmin <= param.xtol * stmax {
             // Relative width of the interval of uncertainty is at most xtol.
             bail!("LBFGSERR_WIDTHTOOSMALL");
-        } else if param.max_linesearch <= count {
-            // Maximum number of iteration.
-            bail!("LBFGSERR_MAXIMUMLINESEARCH");
-        // return Ok(LBFGSERR_MAXIMUMLINESEARCH);
-        } else if *f <= ftest1 && dg.abs() <= param.gtol * -dginit {
+        }
+
+        // FIXME: float == float?
+        if *stp == param.max_step && *f <= ftest1 && dg <= dgtest {
+            // The step is the maximum value.
+            bail!("LBFGSERR_MAXIMUMSTEP");
+        }
+        // FIXME: float == float?
+        if *stp == param.min_step && (ftest1 < *f || dgtest <= dg) {
+            // The step is the minimum value.
+            bail!("LBFGSERR_MINIMUMSTEP");
+        }
+
+        if *f <= ftest1 && dg.abs() <= param.gtol * -dginit {
             // The sufficient decrease condition and the directional derivative condition hold.
             return Ok(count as i32);
         } else {
@@ -811,6 +516,9 @@ where
             width = (sty - stx).abs()
         }
     }
+
+    // Maximum number of iteration.
+    bail!("LBFGSERR_MAXIMUMLINESEARCH");
 }
 // old:1 ends here
 
@@ -1146,131 +854,6 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
 }
 // interpolation:1 ends here
 
-// new
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
-pub mod backtracking {
-    use super::*;
-
-    pub struct BackTracking<'a> {
-        /// `prob` holds input variables `x`, gradient `gx` arrays of length
-        /// n, and function value `fx`. on input it must contain the base point
-        /// for the line search. on output it contains data on x + stp*s.
-        prob: &'a mut Problem,
-
-        param: &'a LineSearchParam,
-    }
-
-    impl<'a, E> LineSearching<E> for BackTracking<'a>
-    where
-        E: FnMut(&mut Problem) -> Result<()>,
-    {
-        fn find(&mut self, stp: &mut f64, s: &[f64], mut eval_fn: E) -> Result<usize> {
-            let mut width: f64 = 0.;
-            let mut dg: f64 = 0.;
-            let mut finit: f64 = 0.;
-            let mut dgtest: f64 = 0.;
-            let dec: f64 = 0.5f64;
-            let inc: f64 = 2.1f64;
-
-            // Check the input parameters for errors.
-            if *stp <= 0.0 {
-                bail!("LBFGSERR_INVALIDPARAMETERS");
-            }
-
-            // Compute the initial gradient in the search direction.
-            // vecdot(&mut dginit, g, s, n);
-            let mut dginit = self.prob.gx.vecdot(s);
-
-            // Make sure that s points to a descent direction.
-            if dginit.is_sign_positive() {
-                bail!("LBFGSERR_INCREASEGRADIENT");
-            }
-
-            // The initial value of the objective function.
-            finit = self.prob.fx;
-
-            let param = &self.param;
-            dgtest = param.ftol * dginit;
-
-            let mut count = 0;
-            loop {
-                // FIXME: handle xp in Problem
-                // veccpy(x, xp, n);
-                // vecadd(x, s, *stp, n);
-                self.prob.x.vecadd(s, *stp);
-
-                // Evaluate the function and gradient values.
-                eval_fn(&mut self.prob)?;
-
-                count += 1;
-                if self.prob.fx > finit + *stp * dgtest {
-                    width = dec
-                } else {
-                    // The sufficient decrease condition (Armijo condition).
-                    if param.algorithm == BacktrackingArmijo {
-                        // Exit with the Armijo condition.
-                        return Ok(count);
-                    }
-
-                    // Check the Wolfe condition.
-                    // vecdot(&mut dg, g, s, n);
-                    dg = self.prob.gx.vecdot(s);
-                    // FIXME: param.gtol vs param.wolfe?
-                    if dg < param.wolfe * dginit {
-                        width = inc
-                    } else if param.algorithm == BacktrackingWolfe {
-                        // Exit with the regular Wolfe condition.
-                        return Ok(count);
-                    } else if dg > -param.wolfe * dginit {
-                        width = dec
-                    } else {
-                        return Ok(count);
-                    }
-                }
-
-                // The step is the minimum value.
-                if *stp < param.min_step {
-                    bail!("LBFGSERR_MINIMUMSTEP");
-                }
-                // The step is the maximum value.
-                if *stp > param.max_step {
-                    bail!("LBFGSERR_MAXIMUMSTEP");
-                }
-                // Maximum number of iteration.
-                if param.max_linesearch <= count {
-                    bail!("LBFGSERR_MAXIMUMLINESEARCH");
-                }
-
-                *stp *= width
-            }
-
-            bail!("LOGICAL ERROR!");
-        }
-    }
-
-    // backtracking Owlqn variant
-    pub struct BacktrackingOwlqn<'a> {
-        /// `prob` holds input variables `x`, gradient `gx` arrays of length
-        /// n, and function value `fx`. on input it must contain the base point
-        /// for the line search. on output it contains data on x + stp*s.
-        prob: &'a mut Problem,
-
-        param: LineSearchParam,
-    }
-
-    impl<'a, E> LineSearching<E> for BacktrackingOwlqn<'a> {
-        fn find(&mut self, stp: &mut f64, s: &[f64], mut eval_fn: E) -> Result<usize> {
-            // quick wrapper
-            let param = &self.param;
-            let x = &self.prob.x;
-
-            unimplemented!()
-        }
-    }
-}
-// new:1 ends here
-
 // old
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
@@ -1294,17 +877,17 @@ pub fn line_search_backtracking<E>(
     // callback struct
     mut cd: E,
     // LBFGS parameter
-    param: &LbfgsParam,
+    _param: &LbfgsParam,
 ) -> Result<i32>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     // parameters for OWL-QN
-    let orthantwise = param.orthantwise;
-    let owlqn = param.owlqn;
+    let orthantwise = _param.orthantwise;
+    let owlqn = _param.owlqn;
 
     // quick wrapper
-    let param = &param.linesearch;
+    let param = &_param.linesearch;
 
     // FIXME: remove
     let n = x.len();
@@ -1336,26 +919,23 @@ where
     let finit = *f;
     let mut dgtest = param.ftol * dginit;
 
-    let mut count = 0usize;
-    loop {
+    // let mut count = 0usize;
+    for count in 0..param.max_linesearch {
         x.veccpy(xp);
         x.vecadd(s, *stp);
 
-        if orthantwise {
-            // Choose the orthant for the new point.
-            // The current point is projected onto the orthant.
-            owlqn.project(x, xp, gp);
-        }
+        // Choose the orthant for the new point.
+        // The current point is projected onto the orthant.
+        _param.project_onto_orthant(x, xp, gp);
 
         // FIXME: improve below
         // Evaluate the function and gradient values.
         *f = cd(x, g)?;
 
-        count += 1;
-        if orthantwise {
-            // Compute the L1 norm of the variables and add it to the object value.
-            *f += owlqn.x1norm(x);
+        // Compute the L1 norm of the variables and add it to the object value.
+        *f += _param.fx_correction(x);
 
+        if orthantwise {
             dgtest = 0.0;
             for i in 0..n {
                 dgtest += (x[i] - xp[i]) * gp[i];
@@ -1385,18 +965,8 @@ where
                 return Ok(count as i32);
             }
         }
-        if *stp < param.min_step {
-            // The step is the minimum value.
-            bail!("LBFGSERR_MINIMUMSTEP");
-        }
-        if *stp > param.max_step {
-            // The step is the maximum value.
-            bail!("LBFGSERR_MAXIMUMSTEP");
-        }
-        if param.max_linesearch <= count {
-            // Maximum number of iteration.
-            bail!("LBFGSERR_MAXIMUMLINESEARCH");
-        }
+
+        param.validate_step(*stp)?;
 
         // FIXME: review
         if orthantwise {
@@ -1405,5 +975,8 @@ where
             *stp *= width
         }
     }
+
+    // Maximum number of iteration.
+    bail!("LBFGSERR_MAXIMUMLINESEARCH");
 }
 // old:1 ends here
