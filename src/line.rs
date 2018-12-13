@@ -348,7 +348,7 @@ where
     }
 
     // Compute the initial gradient in the search direction.
-    let mut dginit = g.vecdot(s);
+    let dginit = g.vecdot(s);
 
     // Make sure that s points to a descent direction.
     if 0.0 < dginit {
@@ -360,7 +360,7 @@ where
     let mut stage1 = 1;
     let mut uinfo = 0;
 
-    let mut finit = *f;
+    let finit = *f;
     let dgtest = param.ftol * dginit;
     let mut width = param.max_step - param.min_step;
     let mut prev_width = 2.0f64 * width;
@@ -378,17 +378,17 @@ where
     let mut dgy = dginit;
     let mut dgx = dgy;
 
-    let (mut stmin, mut stmax) = (0.0, 0.0);
     for count in 0..param.max_linesearch {
         // Set the minimum and maximum steps to correspond to the
         // present interval of uncertainty.
-        if brackt {
-            stmin = if stx <= sty { stx } else { sty };
-            stmax = if stx >= sty { stx } else { sty }
+        let (stmin, stmax) = if brackt {
+            (
+                if stx <= sty { stx } else { sty },
+                if stx >= sty { stx } else { sty },
+            )
         } else {
-            stmin = stx;
-            stmax = *stp + 4.0 * (*stp - stx)
-        }
+            (stx, *stp + 4.0 * (*stp - stx))
+        };
 
         // Clip the step in the range of [stpmin, stpmax].
         if *stp < param.min_step {
@@ -415,7 +415,7 @@ where
         // FIXME: use stp or not?
         *f = cd(x, g)?;
 
-        let mut dg = g.vecdot(s);
+        let dg = g.vecdot(s);
         let ftest1 = finit + *stp * dgtest;
 
         // Test for errors and convergence.
@@ -590,9 +590,8 @@ mod mcstep {
         tmax: f64,
         brackt: &mut bool,
     ) -> Result<i32> {
-        let mut bound = 0;
         // fsigndiff
-        let dsign = (dt * (*dx / (*dx).abs()) < 0.0);
+        let dsign = dt * (*dx / (*dx).abs()) < 0.0;
         // minimizer of an interpolated cubic.
         let mut mc = 0.;
         // minimizer of an interpolated quadratic.
@@ -615,17 +614,12 @@ mod mcstep {
         }
 
         // Trial value selection.
-        let mut p = 0.;
-        let mut q = 0.;
-        let mut r = 0.;
-        let mut s = 0.;
-        if *fx < ft {
+        let bound = if *fx < ft {
             // Case 1: a higher function value.
             // The minimum is brackt. If the cubic minimizer is closer
             // to x than the quadratic one, the cubic one is taken, else
             // the average of the minimizers is taken.
             *brackt = true;
-            bound = 1;
             cubic_minimizer(&mut mc, *x, *fx, *dx, *t, ft, dt);
             quard_minimizer(&mut mq, *x, *fx, *dx, *t, ft);
             if (mc - *x).abs() < (mq - *x).abs() {
@@ -633,13 +627,14 @@ mod mcstep {
             } else {
                 newt = mc + 0.5 * (mq - mc)
             }
+
+            1
         } else if dsign {
             // Case 2: a lower function value and derivatives of
             // opposite sign. The minimum is brackt. If the cubic
             // minimizer is closer to x than the quadratic (secant) one,
             // the cubic one is taken, else the quadratic one is taken.
             *brackt = true;
-            bound = 0;
             cubic_minimizer(&mut mc, *x, *fx, *dx, *t, ft, dt);
             quard_minimizer2(&mut mq, *x, *dx, *t, dt);
             if (mc - *t).abs() > (mq - *t).abs() {
@@ -647,6 +642,8 @@ mod mcstep {
             } else {
                 newt = mq
             }
+
+            0
         } else if dt.abs() < (*dx).abs() {
             // Case 3: a lower function value, derivatives of the
             // same sign, and the magnitude of the derivative decreases.
@@ -657,7 +654,6 @@ mod mcstep {
             // minimizer is also computed and if the minimum is brackt
             // then the the minimizer closest to x is taken, else the one
             // farthest away is taken.
-            bound = 1;
             cubic_minimizer2(&mut mc, *x, *fx, *dx, *t, ft, dt, tmin, tmax);
             quard_minimizer2(&mut mq, *x, *dx, *t, dt);
             if *brackt {
@@ -671,13 +667,13 @@ mod mcstep {
             } else {
                 newt = mq
             }
+
+            1
         } else {
             // Case 4: a lower function value, derivatives of the
             // same sign, and the magnitude of the derivative does
             // not decrease. If the minimum is not brackt, the step
             // is either tmin or tmax, else the cubic minimizer is taken.
-
-            bound = 0;
             if *brackt {
                 cubic_minimizer(&mut newt, *t, ft, dt, *y, *fy, *dy);
             } else if *x < *t {
@@ -685,7 +681,9 @@ mod mcstep {
             } else {
                 newt = tmin
             }
-        }
+
+            0
+        };
 
         // Update the interval of uncertainty. This update does not
         // depend on the new step or the case analysis above.
@@ -884,7 +882,6 @@ where
 {
     // parameters for OWL-QN
     let orthantwise = _param.orthantwise;
-    let owlqn = _param.owlqn;
 
     // quick wrapper
     let param = &_param.linesearch;
@@ -919,7 +916,6 @@ where
     let finit = *f;
     let mut dgtest = param.ftol * dginit;
 
-    // let mut count = 0usize;
     for count in 0..param.max_linesearch {
         x.veccpy(xp);
         x.vecadd(s, *stp);

@@ -251,9 +251,6 @@ impl LbfgsParam {
         if self.epsilon < 0.0 {
             bail!("LBFGSERR_INVALID_EPSILON");
         }
-        if self.past < 0 {
-            bail!("LBFGSERR_INVALID_TESTPERIOD");
-        }
         if self.delta < 0.0 {
             bail!("LBFGSERR_INVALID_DELTA");
         }
@@ -484,13 +481,13 @@ impl Orthantwise {
             if x[i] < 0.0 {
                 // Differentiable.
                 pg[i] = g[i] - c;
-            } else if (0.0 < x[i]) {
+            } else if 0.0 < x[i] {
                 pg[i] = g[i] + c;
             } else {
-                if (g[i] < -c) {
+                if g[i] < -c {
                     // Take the right partial derivative.
                     pg[i] = g[i] + c;
-                } else if (c < g[i]) {
+                } else if c < g[i] {
                     // Take the left partial derivative.
                     pg[i] = g[i] - c;
                 } else {
@@ -586,7 +583,7 @@ where
     let mut lm_arr: Vec<IterationData> = Vec::with_capacity(m);
 
     // Initialize the limited memory.
-    for i in 0..m {
+    for _ in 0..m {
         lm_arr.push(IterationData {
             alpha: 0.0,
             ys: 0.0,
@@ -808,8 +805,7 @@ where
             // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
             let it = &mut lm_arr[j as usize];
             // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
-            let mut beta = 0.;
-            beta = it.y.vecdot(&d);
+            let mut beta = it.y.vecdot(&d);
 
             beta /= (*it).ys;
             // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
