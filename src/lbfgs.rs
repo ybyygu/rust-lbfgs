@@ -626,9 +626,8 @@ where
 
     // FIXME: return code
     let mut ret = 0;
-    let mut ls = 0i32;
+    let mut linesearch = LineSearch::new(&param, &mut proc_evaluate);
 
-    use crate::line::LineSearchAlgorithm::*;
     info!("start lbfgs loop...");
     loop {
         // Store the current position and gradient vectors.
@@ -636,46 +635,7 @@ where
         gp.veccpy(&g);
 
         // Search for an optimal step.
-        if !param.orthantwise {
-            if param.linesearch.algorithm == MoreThuente {
-                ls = line_search_morethuente(
-                    x,
-                    &mut fx,
-                    &mut g,
-                    &d,
-                    &mut step,
-                    &xp,
-                    &gp,
-                    &mut proc_evaluate,
-                    &param,
-                )?;
-            } else {
-                ls = line_search_backtracking(
-                    x,
-                    &mut fx,
-                    &mut g,
-                    &d,
-                    &mut step,
-                    &xp,
-                    &gp,
-                    &mut proc_evaluate,
-                    &param,
-                )?;
-            }
-        } else {
-            ls = line_search_backtracking(
-                x,
-                &mut fx,
-                &mut g,
-                &d,
-                &mut step,
-                &xp,
-                &pg,
-                &mut proc_evaluate,
-                &param,
-            )?;
-        }
-
+        let ls = linesearch.find(x, &mut fx, &mut g, &d, &mut step, &xp, &gp, &pg)?;
         param.update_gradient(&mut pg, &x, &g);
 
         // FIXME: to be better

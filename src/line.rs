@@ -80,9 +80,9 @@ impl Default for LineSearchAlgorithm {
 }
 // algorithm:1 ends here
 
-// common
+// paramters
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*common][common:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*paramters][paramters:1]]
 #[derive(Debug, Copy, Clone)]
 pub struct LineSearchParam {
     pub algorithm: LineSearchAlgorithm,
@@ -167,7 +167,7 @@ impl Default for LineSearchParam {
         }
     }
 }
-// common:1 ends here
+// paramters:1 ends here
 
 // adhoc
 
@@ -187,6 +187,127 @@ impl LineSearchParam {
     }
 }
 // adhoc:1 ends here
+
+// entry
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*entry][entry:1]]
+// use crate::lbfgs::Problem;
+
+pub trait LineSearching<E>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
+    /// Apply line search algorithm to find satisfactory step size
+    ///
+    /// # Arguments
+    ///
+    /// * step: initial step size. On output it will be the optimal step size.
+    /// * direction: proposed searching direction
+    /// * eval_fn: a callback function to evaluate `Problem`
+    ///
+    /// # Return
+    ///
+    /// * On success, return the number of line searching iterations
+    ///
+    fn find(
+        &mut self,
+        x: &mut [f64],
+        fx: &mut f64,
+        g: &mut [f64],
+        direction: &[f64],
+        stp: &mut f64,
+        xp: &[f64],
+        gp: &[f64],
+    ) -> Result<i32>;
+}
+
+pub struct LineSearch<'a, E>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
+    param: &'a LbfgsParam,
+    eval_fn: E,
+
+    // initial gradient in the search direction
+    dginit: f64,
+}
+
+impl<'a, E> LineSearch<'a, E>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
+    pub fn new(param: &'a LbfgsParam, eval_fn: E) -> Self {
+        LineSearch {
+            dginit: 0.0,
+            eval_fn,
+            param,
+        }
+    }
+
+    /// Unified entry for line searches
+    ///
+    /// # Arguments
+    ///
+    /// * step: initial step size. On output it will be the optimal step size.
+    /// * direction: proposed searching direction
+    /// * eval_fn: a callback function to evaluate `Problem`
+    ///
+    /// # Return
+    ///
+    /// * On success, return the number of line searching iterations
+    ///
+    pub fn find(
+        &mut self,
+        x: &mut [f64],
+        fx: &mut f64,
+        g: &mut [f64],
+        d: &[f64],
+        step: &mut f64,
+        xp: &[f64],
+        gp: &[f64],
+        pg: &[f64],
+    ) -> Result<i32> {
+        // Check the input parameters for errors.
+        if !step.is_sign_positive() {
+            bail!("LBFGSERR_INVALIDPARAMETERS");
+        }
+
+        // Make sure that search direction points to a descent direction.
+        if !self.param.orthantwise {
+            // Compute the initial gradient in the search direction.
+            self.dginit = g.vecdot(d);
+            if self.dginit.is_sign_positive() {
+                bail!("LBFGSERR_INCREASEGRADIENT");
+            }
+        }
+
+        let param = &self.param;
+        let eval_fn = &mut self.eval_fn;
+
+        // Search for an optimal step.
+        let ls = if !param.orthantwise {
+            if param.linesearch.algorithm == MoreThuente {
+                line_search_morethuente(x, fx, g, d, step, xp, gp, eval_fn, param, self.dginit)?
+            } else {
+                line_search_backtracking(x, fx, g, d, step, xp, gp, eval_fn, param, self.dginit)?
+            }
+        } else {
+            line_search_backtracking(x, fx, g, d, step, xp, pg, eval_fn, param, self.dginit)?
+        };
+
+        // Recover from failed line search?
+        // Revert to the previous point.
+        if ls < 0 {
+            x.veccpy(&xp);
+            g.veccpy(&gp);
+
+            bail!("line search failed, revert to the previous point!");
+        }
+
+        Ok(ls)
+    }
+}
+// entry:1 ends here
 
 // Original documentation by J. Nocera (lbfgs.f)
 //                 subroutine mcsrch
@@ -335,25 +456,13 @@ pub fn line_search_morethuente<E>(
     mut cd: E,
     // LBFGS parameter
     param: &LbfgsParam,
+    dginit: f64,
 ) -> Result<i32>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     // quick wrapper
     let param = &param.linesearch;
-
-    // Check the input parameters for errors.
-    if *stp <= 0.0 {
-        bail!("LBFGSERR_INVALIDPARAMETERS");
-    }
-
-    // Compute the initial gradient in the search direction.
-    let dginit = g.vecdot(s);
-
-    // Make sure that s points to a descent direction.
-    if 0.0 < dginit {
-        bail!("LBFGSERR_INCREASEGRADIENT");
-    }
 
     // Initialize local variables.
     let mut brackt = false;
@@ -855,7 +964,7 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
 // old
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
-use crate::line::LineSearchAlgorithm::*;
+use self::LineSearchAlgorithm::*;
 
 pub fn line_search_backtracking<E>(
     // The array of variables.
@@ -876,6 +985,7 @@ pub fn line_search_backtracking<E>(
     mut cd: E,
     // LBFGS parameter
     _param: &LbfgsParam,
+    dginit: f64,
 ) -> Result<i32>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
@@ -895,22 +1005,6 @@ where
 
     let dec: f64 = 0.5;
     let inc: f64 = 2.1;
-
-    // Check the input parameters for errors.
-    if *stp <= 0.0 {
-        bail!("LBFGSERR_INVALIDPARAMETERS");
-    }
-
-    // Compute the initial gradient in the search direction.
-    let mut dginit = 0.0;
-    if !orthantwise {
-        dginit = g.vecdot(s);
-
-        // Make sure that s points to a descent direction.
-        if 0.0 < dginit {
-            bail!("x LBFGSERR_INCREASEGRADIENT");
-        }
-    }
 
     // The initial value of the objective function.
     let finit = *f;
