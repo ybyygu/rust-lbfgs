@@ -263,9 +263,9 @@ impl<'a> LineSearch<'a> {
 
         // Search for an optimal step.
         let ls = if param.linesearch.algorithm == MoreThuente && !param.orthantwise {
-            line_search_morethuente(prb, d, step, param, self.dginit)?
+            line_search_morethuente(prb, d, step, &param.linesearch, self.dginit)?
         } else {
-            line_search_backtracking(prb, d, step, param, self.dginit, param.orthantwise)?
+            line_search_backtracking(prb, d, step, &param.linesearch, self.dginit, param.orthantwise)?
         };
 
         // Recover from failed line search?
@@ -411,18 +411,15 @@ impl<'a> LineSearch<'a> {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 pub fn line_search_morethuente<E>(
-    prb:     &mut Problem<E>,
-    s:       &[f64],      // Search direction array
-    stp:     &mut f64,    // Step size
-    param:   &LbfgsParam, // LBFGS parameter
-    dginit:  f64,
+    prb: &mut Problem<E>,
+    s: &[f64],               // Search direction array
+    stp: &mut f64,           // Step size
+    param: &LineSearchParam, // line search parameters
+    dginit: f64,
 ) -> Result<i32>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
-    // quick wrapper
-    let param = &param.linesearch;
-
     // Initialize local variables.
     let mut brackt = false;
     let mut stage1 = 1;
@@ -488,8 +485,10 @@ where
         // Test for errors and convergence.
         if brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0i32) {
             // Rounding errors prevent further progress.
-            bail!("A rounding error occurred; alternatively, no line-search step
-satisfies the sufficient decrease and curvature conditions.");
+            bail!(
+                "A rounding error occurred; alternatively, no line-search step
+satisfies the sufficient decrease and curvature conditions."
+            );
         }
 
         if brackt && stmax - stmin <= param.xtol * stmax {
@@ -929,27 +928,23 @@ use self::LineSearchAlgorithm::*;
 /// search. on output it contains data on x + stp*s.
 pub fn line_search_backtracking<E>(
     prb: &mut Problem<E>,
-    s: &[f64],
-    stp: &mut f64,
-    param: &LbfgsParam,
-    dginit: f64,
-    // parameters for OWL-QN
-    orthantwise: bool,
+    s: &[f64],               // search direction
+    stp: &mut f64,           // step length
+    param: &LineSearchParam, // line search parameters
+    dginit: f64,             // temp
+    orthantwise: bool,       // turn on OWL-QN algorithm
 ) -> Result<i32>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
-    // quick wrapper
-    let param = &param.linesearch;
-    let mut width = 0.0;
-
     let dec: f64 = 0.5;
     let inc: f64 = 2.1;
 
     // The initial value of the objective function.
     let finit = prb.fx;
-    let mut dgtest = param.ftol * dginit;
+    let dgtest = param.ftol * dginit;
 
+    let mut width: f64;
     for count in 0..param.max_linesearch {
         prb.take_line_step(s, *stp);
 

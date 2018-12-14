@@ -743,7 +743,7 @@ where
         problem.update_search_direction(&mut d);
 
         let mut j = end;
-        for i in 0..bound {
+        for _ in 0..bound {
             // if (--j == -1) j = m-1;
             j = (j + m - 1) % m;
             // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
@@ -757,7 +757,7 @@ where
         }
         d.vecscale(ys / yy);
 
-        for i in 0..bound {
+        for _ in 0..bound {
             // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
             let it = &mut lm_arr[j as usize];
             // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
