@@ -1,6 +1,10 @@
 
-# v0.0.10 - WIP
+# v0.0.11 WIP
 
+
+# v0.0.10
+
+-   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-12 Wed] </span></span> add Orthantwise struct to represent all orthantwise parameters (see: param.owlqn)
 -   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-12 Wed] </span></span> use param.orthantwise option to enable/disable OWL-QN algorithm
 -   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-11 Tue] </span></span> new line mod
 
@@ -20,7 +24,7 @@
 
 # v0.0.7
 
--   <span class="timestamp-wrapper"><span class="timestamp">[2018-11-26 Mon] </span></span> translated from liblbfgs by using c2rust
+-   <span class="timestamp-wrapper"><span class="timestamp">[2018-11-26 Mon] </span></span> Rust codes translated from liblbfgs/c using c2rust
 
 
 # v0.0.6

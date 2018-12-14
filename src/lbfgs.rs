@@ -88,9 +88,9 @@ pub const LBFGSERR_MAXIMUMSTEP: i32 = -999;
 pub const LBFGSERR_MINIMUMSTEP: i32 = -1000;
 // return value:1 ends here
 
-// lbfgs parameters
+// parameters
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs%20parameters][lbfgs parameters:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*parameters][parameters:1]]
 /// L-BFGS optimization parameters.
 ///
 /// Call lbfgs_parameter_t::default() function to initialize parameters to the
@@ -183,68 +183,72 @@ impl Default for LbfgsParam {
 
 impl LbfgsParam {
     // Check the input parameters for errors.
-    pub fn validate(&mut self, n: usize) -> Result<()> {
-        if self.epsilon < 0.0 {
-            bail!("Invalid parameter epsilon specified.");
-        }
-        if self.delta < 0.0 {
-            bail!("Invalid parameter delta specified.");
-        }
-        if self.linesearch.min_step < 0.0f64 {
-            bail!("Invalid parameter min_step specified.");
-        }
-        if self.linesearch.max_step < self.linesearch.min_step {
-            bail!("Invalid parameter max_step specified.");
-        }
-        if self.linesearch.ftol < 0.0 {
-            bail!("Invalid parameter lbfgs_parameter_t::ftol specified.");
-        }
+    pub fn validate(&mut self, n: i32) -> Result<()> {
+        ensure!(self.epsilon >= 0.0, "Invalid parameter epsilon specified.");
 
-        // FIXME: review needed
-        use self::LineSearchAlgorithm::*;
-        if self.linesearch.algorithm == BacktrackingWolfe
-            || self.linesearch.algorithm == BacktrackingStrongWolfe
-        {
-            if self.linesearch.wolfe <= self.linesearch.ftol || 1.0 <= self.linesearch.wolfe {
-                bail!("Invalid parameter lbfgs_parameter_t::wolfe specified.");
-            }
-        }
+        ensure!(self.delta >= 0.0, "Invalid parameter delta specified.");
 
-        if self.linesearch.gtol < 0.0 {
-            bail!("Invalid parameter gtol specified.");
-        }
-        if self.linesearch.xtol < 0.0 {
-            bail!("Invalid parameter xtol specified.");
-        }
-        if self.linesearch.max_linesearch <= 0 {
-            bail!("Invalid parameter max_linesearch specified.");
-        }
+        // check line search parameters
+        let ls = self.linesearch;
 
-        if self.orthantwise {
-            warn!("Only the backtracking method is available.");
-        }
+        ensure!(ls.min_step >= 0.0, "Invalid parameter min_step specified.");
+        ensure!(
+            ls.max_step >= ls.min_step,
+            "Invalid parameter max_step specified."
+        );
+
+        ensure!(
+            ls.ftol >= 0.0,
+            "Invalid parameter lbfgs_parameter_t::ftol specified."
+        );
+
+        ensure!(ls.gtol >= 0.0, "Invalid parameter gtol specified.");
+
+        ensure!(ls.xtol >= 0.0, "Invalid parameter xtol specified.");
+
+        ensure!(
+            ls.max_linesearch > 0,
+            "Invalid parameter max_linesearch specified."
+        );
 
         // FIXME: take care below
-        if self.owlqn.c < 0.0 {
-            bail!("Invalid parameter lbfgs_parameter_t::orthantwise_c specified.");
-        }
+        ensure!(
+            self.owlqn.c >= 0.0,
+            "Invalid parameter lbfgs_parameter_t::orthantwise_c specified."
+        );
 
         // FIXME: make param immutable
-        if self.owlqn.start < 0 || (n as i32) < self.owlqn.start {
-            bail!("Invalid parameter lbfgs_parameter_t::orthantwise_start specified.");
-        }
+        ensure!(
+            self.owlqn.start >= 0 && self.owlqn.start < n,
+            "Invalid parameter orthantwise_start specified."
+        );
+
         if self.owlqn.end < 0 {
-            //bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
-            self.owlqn.end = n as i32
+            self.owlqn.end = n;
         }
-        if (n as i32) < self.owlqn.end {
-            bail!("Invalid parameter orthantwise_end specified.");
+
+        ensure!(
+            self.owlqn.end > 0 && self.owlqn.end <= n,
+            "Invalid parameter orthantwise_end specified."
+        );
+
+        use self::LineSearchAlgorithm::*;
+        match ls.algorithm {
+            BacktrackingWolfe | BacktrackingStrongWolfe => ensure!(
+                ls.wolfe > ls.ftol && ls.wolfe < 1.0,
+                "Invalid parameter lbfgs_parameter_t::wolfe specified."
+            ),
+            _ => {
+                if self.orthantwise {
+                    warn!("Only the backtracking line search is available for OWL-QN algorithm.");
+                }
+            }
         }
 
         Ok(())
     }
 }
-// lbfgs parameters:1 ends here
+// parameters:1 ends here
 
 // problem
 
@@ -589,7 +593,7 @@ where
     let mut param = param.clone();
     // FIXME: remove n
     let n = x.len();
-    param.validate(n)?;
+    param.validate(n as i32)?;
 
     // Allocate limited memory storage.
     let m = param.m;
