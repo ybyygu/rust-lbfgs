@@ -191,7 +191,7 @@ impl LineSearchParam {
 // entry
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*entry][entry:1]]
-// use crate::lbfgs::Problem;
+use crate::lbfgs::Problem;
 
 pub trait LineSearching<E>
 where
@@ -221,27 +221,16 @@ where
     ) -> Result<i32>;
 }
 
-pub struct LineSearch<'a, E>
-where
-    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
+pub struct LineSearch<'a> {
     param: &'a LbfgsParam,
-    eval_fn: E,
 
     // initial gradient in the search direction
     dginit: f64,
 }
 
-impl<'a, E> LineSearch<'a, E>
-where
-    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
-    pub fn new(param: &'a LbfgsParam, eval_fn: E) -> Self {
-        LineSearch {
-            dginit: 0.0,
-            eval_fn,
-            param,
-        }
+impl<'a> LineSearch<'a> {
+    pub fn new(param: &'a LbfgsParam) -> Self {
+        LineSearch { dginit: 0.0, param }
     }
 
     /// Unified entry for line searches
@@ -256,17 +245,10 @@ where
     ///
     /// * On success, return the number of line searching iterations
     ///
-    pub fn find(
-        &mut self,
-        x: &mut [f64],
-        fx: &mut f64,
-        g: &mut [f64],
-        d: &[f64],
-        step: &mut f64,
-        xp: &[f64],
-        gp: &[f64],
-        pg: &[f64],
-    ) -> Result<i32> {
+    pub fn find<E>(&mut self, prb: &mut Problem<E>, d: &[f64], step: &mut f64) -> Result<i32>
+    where
+        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    {
         // Check the input parameters for errors.
         if !step.is_sign_positive() {
             bail!("LBFGSERR_INVALIDPARAMETERS");
@@ -275,31 +257,27 @@ where
         // Make sure that search direction points to a descent direction.
         if !self.param.orthantwise {
             // Compute the initial gradient in the search direction.
-            self.dginit = g.vecdot(d);
+            self.dginit = prb.gx.vecdot(d);
             if self.dginit.is_sign_positive() {
                 bail!("LBFGSERR_INCREASEGRADIENT");
             }
         }
 
+        // quick wrapper
         let param = &self.param;
-        let eval_fn = &mut self.eval_fn;
 
         // Search for an optimal step.
-        let ls = if !param.orthantwise {
-            if param.linesearch.algorithm == MoreThuente {
-                line_search_morethuente(x, fx, g, d, step, xp, gp, eval_fn, param, self.dginit)?
-            } else {
-                line_search_backtracking(x, fx, g, d, step, xp, gp, eval_fn, param, self.dginit)?
-            }
+        let ls = if param.linesearch.algorithm == MoreThuente && !param.orthantwise {
+            line_search_morethuente(prb, d, step, param, self.dginit)?
         } else {
-            line_search_backtracking(x, fx, g, d, step, xp, pg, eval_fn, param, self.dginit)?
+            line_search_backtracking(prb, d, step, param, self.dginit, param.orthantwise)?
         };
 
         // Recover from failed line search?
         // Revert to the previous point.
         if ls < 0 {
-            x.veccpy(&xp);
-            g.veccpy(&gp);
+            prb.x.veccpy(&prb.xp);
+            prb.gx.veccpy(&prb.gp);
 
             bail!("line search failed, revert to the previous point!");
         }
@@ -438,22 +416,11 @@ where
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 pub fn line_search_morethuente<E>(
-    // The array of variables.
-    x: &mut [f64],
-    // Evaluated function value
-    f: &mut f64,
-    // Evaluated gradient array
-    g: &mut [f64],
+    prb: &mut Problem<E>,
     // Search direction array
     s: &[f64],
     // Step size
     stp: &mut f64,
-    // Variable vector of previous step
-    xp: &[f64],
-    // Gradient vector of previous step
-    gp: &[f64],
-    // callback struct
-    mut cd: E,
     // LBFGS parameter
     param: &LbfgsParam,
     dginit: f64,
@@ -469,7 +436,7 @@ where
     let mut stage1 = 1;
     let mut uinfo = 0;
 
-    let finit = *f;
+    let finit = prb.fx;
     let dgtest = param.ftol * dginit;
     let mut width = param.max_step - param.min_step;
     let mut prev_width = 2.0f64 * width;
@@ -517,14 +484,13 @@ where
         }
 
         // Compute the current value of x: x <- x + (*stp) * s.
-        x.veccpy(xp);
-        x.vecadd(s, *stp);
+        prb.take_line_step(s, *stp);
 
         // Evaluate the function and gradient values.
         // FIXME: use stp or not?
-        *f = cd(x, g)?;
-
-        let dg = g.vecdot(s);
+        prb.evaluate()?;
+        let f = prb.fx;
+        let dg = prb.gx.vecdot(s);
         let ftest1 = finit + *stp * dgtest;
 
         // Test for errors and convergence.
@@ -539,23 +505,23 @@ where
         }
 
         // FIXME: float == float?
-        if *stp == param.max_step && *f <= ftest1 && dg <= dgtest {
+        if *stp == param.max_step && f <= ftest1 && dg <= dgtest {
             // The step is the maximum value.
             bail!("LBFGSERR_MAXIMUMSTEP");
         }
         // FIXME: float == float?
-        if *stp == param.min_step && (ftest1 < *f || dgtest <= dg) {
+        if *stp == param.min_step && (ftest1 < f || dgtest <= dg) {
             // The step is the minimum value.
             bail!("LBFGSERR_MINIMUMSTEP");
         }
 
-        if *f <= ftest1 && dg.abs() <= param.gtol * -dginit {
+        if f <= ftest1 && dg.abs() <= param.gtol * -dginit {
             // The sufficient decrease condition and the directional derivative condition hold.
             return Ok(count as i32);
         } else {
             // In the first stage we seek a step for which the modified
             // function has a nonpositive value and nonnegative derivative.
-            if 0 != stage1 && *f <= ftest1 && param.ftol.min(param.gtol) * dginit <= dg {
+            if 0 != stage1 && f <= ftest1 && param.ftol.min(param.gtol) * dginit <= dg {
                 stage1 = 0;
             }
 
@@ -564,9 +530,9 @@ where
             // function has a nonpositive function value and nonnegative
             // derivative, and if a lower function value has been
             // obtained but the decrease is not sufficient.
-            if 0 != stage1 && ftest1 < *f && *f <= fx {
+            if 0 != stage1 && ftest1 < f && f <= fx {
                 // Define the modified function and derivative values.
-                let fm = *f - *stp * dgtest;
+                let fm = f - *stp * dgtest;
                 let mut fxm = fx - stx * dgtest;
                 let mut fym = fy - sty * dgtest;
                 let dgm = dg - dgtest;
@@ -604,7 +570,7 @@ where
                     &mut fy,
                     &mut dgy,
                     &mut *stp,
-                    *f,
+                    f,
                     dg,
                     stmin,
                     stmax,
@@ -967,37 +933,19 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
 use self::LineSearchAlgorithm::*;
 
 pub fn line_search_backtracking<E>(
-    // The array of variables.
-    x: &mut [f64],
-    // Evaluated function value
-    f: &mut f64,
-    // Evaluated gradient array
-    g: &mut [f64],
-    // Search direction array
+    prb: &mut Problem<E>,
     s: &[f64],
-    // Step size
     stp: &mut f64,
-    // Variable vector of previous step
-    xp: &[f64],
-    // Gradient vector of previous step
-    gp: &[f64],
-    // callback struct
-    mut cd: E,
-    // LBFGS parameter
     _param: &LbfgsParam,
     dginit: f64,
+    // parameters for OWL-QN
+    orthantwise: bool,
 ) -> Result<i32>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
-    // parameters for OWL-QN
-    let orthantwise = _param.orthantwise;
-
     // quick wrapper
     let param = &_param.linesearch;
-
-    // FIXME: remove
-    let n = x.len();
 
     // FIXME: review
     let owlqn_width = 0.5;
@@ -1007,43 +955,45 @@ where
     let inc: f64 = 2.1;
 
     // The initial value of the objective function.
-    let finit = *f;
+    let finit = prb.fx;
     let mut dgtest = param.ftol * dginit;
 
     for count in 0..param.max_linesearch {
-        x.veccpy(xp);
-        x.vecadd(s, *stp);
+        prb.take_line_step(s, *stp);
 
+        // FIXME: pg vs gp
         // Choose the orthant for the new point.
         // The current point is projected onto the orthant.
-        _param.project_onto_orthant(x, xp, gp);
+        if orthantwise {
+            _param.project_onto_orthant(&mut prb.x, &prb.xp, &prb.pg);
+        }
 
         // FIXME: improve below
         // Evaluate the function and gradient values.
-        *f = cd(x, g)?;
-
+        prb.evaluate()?;
         // Compute the L1 norm of the variables and add it to the object value.
-        *f += _param.fx_correction(x);
+        prb.fx += _param.fx_correction(&prb.x);
 
         if orthantwise {
             dgtest = 0.0;
-            for i in 0..n {
-                dgtest += (x[i] - xp[i]) * gp[i];
+            for i in 0..(prb.x.len()) {
+                // FIXME: pg vs gp
+                dgtest += (prb.x[i] - prb.xp[i]) * prb.pg[i];
             }
-            if *f <= finit + param.ftol * dgtest {
+            if prb.fx <= finit + param.ftol * dgtest {
                 // The sufficient decrease condition.
                 return Ok(count as i32);
             }
         }
 
-        if *f > finit + *stp * dgtest {
+        if prb.fx > finit + *stp * dgtest {
             width = dec
         } else if param.algorithm == BacktrackingArmijo {
             // Exit with the Armijo condition.
             return Ok(count as i32);
         } else {
             // Check the Wolfe condition.
-            let dg = g.vecdot(s);
+            let dg = prb.gx.vecdot(s);
             if dg < param.wolfe * dginit {
                 width = inc
             } else if param.algorithm == BacktrackingWolfe {

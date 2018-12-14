@@ -365,6 +365,117 @@ impl LbfgsParam {
 }
 // adhoc:1 ends here
 
+// problem
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*problem][problem:1]]
+#[derive(Debug)]
+pub struct Problem<'a, E>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
+    /// x is an array of length n. on input it must contain the base point for
+    /// the line search.
+    pub x: &'a mut [f64],
+
+    /// `fx` is a variable. It must contain the value of problem `f` at
+    /// x.
+    pub fx: f64,
+
+    /// `gx` is an array of length n. It must contain the gradient of `f` at
+    /// x.
+    pub gx: Vec<f64>,
+
+    /// previous position
+    pub xp: Vec<f64>,
+
+    /// previous gradient
+    pub gp: Vec<f64>,
+
+    /// Pseudo gradient for OrthantWise Limited-memory Quasi-Newton (owlqn) algorithm
+    pub pg: Vec<f64>,
+
+    /// store callback function for evaluating objective function
+    pub eval_fn: E,
+
+    /// Orthantwise operations
+    owlqn: Option<Orthantwise>,
+}
+
+impl<'a, E> Problem<'a, E>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
+    /// Initialize problem with array length n
+    pub fn new(x: &'a mut [f64], eval_fn: E, owlqn: Option<Orthantwise>) -> Self {
+        let n = x.len();
+        Problem {
+            fx: 0.0,
+            gx: vec![0.0; n],
+            xp: vec![0.0; n],
+            gp: vec![0.0; n],
+            pg: vec![0.0; n],
+            x,
+            eval_fn,
+            owlqn,
+        }
+    }
+
+    // FIXME: improve
+    pub fn evaluate(&mut self) -> Result<()> {
+        self.fx = (self.eval_fn)(&self.x, &mut self.gx)?;
+        // FIXME: to be better
+        // if self.orthantwise {
+            // Compute the L1 norm of the variable and add it to the object value.
+            // fx += self.owlqn.x1norm(x);
+            // self.owlqn.pseudo_gradient(&mut pg, &x, &g);
+        // }
+        Ok(())
+    }
+
+    /// Copies all elements from src into self.
+    pub fn clone_from(&mut self, src: &Problem<E>) {
+        self.x.clone_from_slice(&src.x);
+        self.gx.clone_from_slice(&src.gx);
+        self.fx = src.fx;
+    }
+
+    // Store the current position and gradient vectors.
+    pub fn update_state(&mut self) {
+        self.xp.veccpy(&self.x);
+        self.gp.veccpy(&self.gx);
+    }
+
+    pub fn update_search_direction(&self, d: &mut [f64]) {
+        if self.owlqn.is_some() {
+            d.vecncpy(&self.pg);
+        } else {
+            d.vecncpy(&self.gx);
+        }
+    }
+
+    // For line search
+    //
+    // Compute the current value of x: x <- x + (*stp) * s.
+    pub fn take_line_step(&mut self, s: &[f64], stp: f64) {
+        self.x.veccpy(&self.xp);
+        self.x.vecadd(s, stp);
+    }
+
+    /// Gradient norm
+    pub fn gnorm(&self) -> f64 {
+        if self.owlqn.is_some() {
+            self.pg.vec2norm()
+        } else {
+            self.gx.vec2norm()
+        }
+    }
+
+    pub fn xnorm(&self) -> f64 {
+        self.x.vec2norm()
+    }
+}
+// problem:1 ends here
+
 // progress
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*progress][progress:1]]
@@ -566,18 +677,6 @@ where
     let n = x.len();
     param.validate(n)?;
 
-    // Allocate working space.
-    // let mut problem = Problem::new(x, proc_evaluate);
-
-    let mut xp = vec![0.0; n];
-    let mut g = vec![0.0; n];
-    let mut gp = g.clone();
-    let mut d = vec![0.0; n];
-
-    // FIXME: check param.orthantwise_c or not?
-    // Allocate working space for OW-LQN.
-    let mut pg = vec![0.0; n];
-
     // Allocate limited memory storage.
     let m = param.m;
     let mut lm_arr: Vec<IterationData> = Vec::with_capacity(m);
@@ -595,26 +694,29 @@ where
     // Allocate an array for storing previous values of the objective function.
     let mut pf = vec![0.0; param.past as usize];
 
-    // Store the initial value of the objective function.
-    let mut fx = 0.0;
-    if pf.len() > 0 {
-        pf[0] = fx;
-    }
+    // Allocate working space.
+    let owlqn = if param.orthantwise {
+        Some(param.owlqn.clone())
+    } else {
+        None
+    };
+    let mut problem = Problem::new(x, &mut proc_evaluate, owlqn);
 
     // Evaluate the function value and its gradient.
     // Compute the L1 norm of the variable and add it to the object value.
-    fx = proc_evaluate(&x, &mut g)? + param.fx_correction(x);
-    param.update_gradient(&mut pg, &x, &g);
+    problem.evaluate()?;
+    problem.fx += param.fx_correction(&problem.x);
+    param.update_gradient(&mut problem.pg, &problem.x, &problem.gx);
 
     // Compute the direction;
     // we assume the initial hessian matrix H_0 as the identity matrix.
-    param.update_search_direction(&mut d, &pg, &g);
+    let mut d = vec![0.0; n];
+    param.update_search_direction(&mut d, &problem.pg, &problem.gx);
 
     // Make sure that the initial variables are not a minimizer.
-    let xnorm = x.vec2norm().max(1.0);
-    let gnorm = param.update_gnorm(&pg, &g);
-
-    if gnorm / xnorm <= param.epsilon {
+    let xnorm = problem.xnorm();
+    let gnorm = problem.gnorm();
+    if gnorm / xnorm.max(1.0) <= param.epsilon {
         bail!("LBFGS_ALREADY_MINIMIZED");
     }
 
@@ -626,45 +728,32 @@ where
 
     // FIXME: return code
     let mut ret = 0;
-    let mut linesearch = LineSearch::new(&param, &mut proc_evaluate);
+    let mut linesearch = LineSearch::new(&param);
 
     info!("start lbfgs loop...");
     loop {
         // Store the current position and gradient vectors.
-        xp.veccpy(&x);
-        gp.veccpy(&g);
+        problem.update_state();
 
         // Search for an optimal step.
-        let ls = linesearch.find(x, &mut fx, &mut g, &d, &mut step, &xp, &gp, &pg)?;
-        param.update_gradient(&mut pg, &x, &g);
-
-        // FIXME: to be better
-        // Recover from failed line search?
-        if ls < 0 {
-            warn!("line search failed, revert to the previous point!");
-            // Revert to the previous point.
-            x.veccpy(&xp);
-            g.veccpy(&gp);
-
-            ret = ls;
-            break;
-        }
+        let ls = linesearch.find(&mut problem, &d, &mut step)?;
+        param.update_gradient(&mut problem.pg, &problem.x, &problem.gx);
 
         // Compute x and g norms.
-        let xnorm = x.vec2norm();
-        let gnorm = param.update_gnorm(&pg, &g);
+        let xnorm = problem.xnorm();
+        let gnorm = problem.gnorm();
 
         // Report the progress.
         if let Some(ref mut prgr_fn) = proc_progress {
             let prgr = Progress {
-                x: &x,
-                gx: &g,
-                fx,
+                x: &problem.x,
+                gx: &problem.gx,
+                fx: problem.fx,
+                niter: k,
+                ncall: ls as usize,
                 xnorm,
                 gnorm,
                 step,
-                niter: k,
-                ncall: ls as usize,
             };
 
             let cancel = prgr_fn(&prgr);
@@ -677,9 +766,7 @@ where
         // Convergence test.
         // The criterion is given by the following formula:
         //     |g(x)| / \max(1, |x|) < \epsilon
-
-        let xnorm = xnorm.max(1.0);
-        if gnorm / xnorm <= param.epsilon {
+        if gnorm / xnorm.max(1.0) <= param.epsilon {
             info!("lbfgs converged");
             // Convergence.
             ret = LBFGS_SUCCESS;
@@ -689,6 +776,7 @@ where
         // Test for stopping criterion.
         // The criterion is given by the following formula:
         //    (f(past_x) - f(x)) / f(x) < \delta
+        let fx = problem.fx;
         if pf.len() > 0 {
             // We don't test the stopping criterion while k < past.
             if param.past <= k {
@@ -718,8 +806,8 @@ where
         // y_{k+1} = g_{k+1} - g_{k}.
         // it = &mut *lm.offset(end as isize) as *mut iteration_data_t;
         let mut it = &mut lm_arr[end];
-        it.s.vecdiff(&x, &xp);
-        it.y.vecdiff(&g, &gp);
+        it.s.vecdiff(&problem.x, &problem.xp);
+        it.y.vecdiff(&problem.gx, &problem.gp);
 
         // Compute scalars ys and yy:
         // ys = y^t \cdot s = 1 / \rho.
@@ -741,7 +829,7 @@ where
         k += 1;
         end = (end + 1) % m;
         // Compute the steepest direction.
-        param.update_search_direction(&mut d, &pg, &g);
+        param.update_search_direction(&mut d, &problem.pg, &problem.gx);
 
         let mut i = 0;
         let mut j = end;
@@ -777,14 +865,14 @@ where
         }
 
         // Constrain the search direction for orthant-wise updates.
-        param.constrain_search_direction(&mut d, &pg);
+        param.constrain_search_direction(&mut d, &problem.pg);
 
         // Now the search direction d is ready. We try step = 1 first.
         step = 1.0
     }
 
     // Return the final value of the objective function.
-    *ptr_fx = fx;
+    *ptr_fx = problem.fx;
 
     Ok(ret)
 }
