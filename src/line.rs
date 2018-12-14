@@ -1,6 +1,8 @@
 // header
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*header][header:1]]
+//! Line search algorithms
+//
 //       Limited memory BFGS (L-BFGS).
 //
 //  Copyright (c) 1990, Jorge Nocedal
@@ -197,7 +199,7 @@ pub trait LineSearching<E>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
-    /// Apply line search algorithm to find satisfactory step size
+    /// Apply line search algorithm to find satisfactory step size.
     ///
     /// # Arguments
     ///
@@ -209,16 +211,7 @@ where
     ///
     /// * On success, return the number of line searching iterations
     ///
-    fn find(
-        &mut self,
-        x: &mut [f64],
-        fx: &mut f64,
-        g: &mut [f64],
-        direction: &[f64],
-        stp: &mut f64,
-        xp: &[f64],
-        gp: &[f64],
-    ) -> Result<i32>;
+    fn find(&mut self, problem: &mut Problem<E>, direction: &[f64], step: &mut f64) -> Result<i32>;
 }
 
 pub struct LineSearch<'a> {
@@ -251,7 +244,7 @@ impl<'a> LineSearch<'a> {
     {
         // Check the input parameters for errors.
         if !step.is_sign_positive() {
-            bail!("LBFGSERR_INVALIDPARAMETERS");
+            bail!("A logic error (negative line-search step) occurred.");
         }
 
         // Make sure that search direction points to a descent direction.
@@ -259,7 +252,7 @@ impl<'a> LineSearch<'a> {
             // Compute the initial gradient in the search direction.
             self.dginit = prb.gx.vecdot(d);
             if self.dginit.is_sign_positive() {
-                bail!("LBFGSERR_INCREASEGRADIENT");
+                bail!("The current search direction increases the objective function value.");
             }
         }
 
@@ -416,14 +409,11 @@ impl<'a> LineSearch<'a> {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 pub fn line_search_morethuente<E>(
-    prb: &mut Problem<E>,
-    // Search direction array
-    s: &[f64],
-    // Step size
-    stp: &mut f64,
-    // LBFGS parameter
-    param: &LbfgsParam,
-    dginit: f64,
+    prb:     &mut Problem<E>,
+    s:       &[f64],      // Search direction array
+    stp:     &mut f64,    // Step size
+    param:   &LbfgsParam, // LBFGS parameter
+    dginit:  f64,
 ) -> Result<i32>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
@@ -496,12 +486,12 @@ where
         // Test for errors and convergence.
         if brackt && (*stp <= stmin || stmax <= *stp || uinfo != 0i32) {
             // Rounding errors prevent further progress.
-            bail!("LBFGSERR_ROUNDING_ERROR");
+            bail!("A rounding error occurred; alternatively, no line-search step
+satisfies the sufficient decrease and curvature conditions.");
         }
 
         if brackt && stmax - stmin <= param.xtol * stmax {
-            // Relative width of the interval of uncertainty is at most xtol.
-            bail!("LBFGSERR_WIDTHTOOSMALL");
+            bail!("Relative width of the interval of uncertainty is at most xtol.");
         }
 
         // FIXME: float == float?
@@ -678,13 +668,13 @@ mod mcstep {
         if *brackt {
             if *t <= x.min(*y) || x.max(*y) <= *t {
                 // The trival value t is out of the interval.
-                bail!("LBFGSERR_OUTOFINTERVAL");
+                bail!("The line-search step went out of the interval of uncertainty.");
             } else if 0.0 <= *dx * (*t - *x) {
                 // The function must decrease from x.
-                bail!("LBFGSERR_INCREASEGRADIENT");
+                bail!("The current search direction increases the objective function value.");
             } else if tmax < tmin {
                 // Incorrect tmin and tmax specified.
-                bail!("LBFGSERR_INCORRECT_TMINMAX");
+                bail!("A logic error occurred; alternatively, the interval of uncertainty became too small.");
             }
         }
 
@@ -932,6 +922,9 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 use self::LineSearchAlgorithm::*;
 
+/// `prb` holds input variables `x`, gradient `gx` arrays of length n, and
+/// function value `fx`. on input it must contain the base point for the line
+/// search. on output it contains data on x + stp*s.
 pub fn line_search_backtracking<E>(
     prb: &mut Problem<E>,
     s: &[f64],
@@ -961,18 +954,9 @@ where
     for count in 0..param.max_linesearch {
         prb.take_line_step(s, *stp);
 
-        // FIXME: pg vs gp
-        // Choose the orthant for the new point.
-        // The current point is projected onto the orthant.
-        if orthantwise {
-            _param.project_onto_orthant(&mut prb.x, &prb.xp, &prb.pg);
-        }
-
         // FIXME: improve below
         // Evaluate the function and gradient values.
         prb.evaluate()?;
-        // Compute the L1 norm of the variables and add it to the object value.
-        prb.fx += _param.fx_correction(&prb.x);
 
         if orthantwise {
             dgtest = 0.0;

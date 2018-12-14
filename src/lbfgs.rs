@@ -1,7 +1,7 @@
 // header
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*header][header:1]]
-//       Limited memory BFGS (L-BFGS).
+//!       Limited memory BFGS (L-BFGS).
 //
 //  Copyright (c) 1990, Jorge Nocedal
 //  Copyright (c) 2007-2010 Naoaki Okazaki
@@ -70,7 +70,7 @@ use crate::math::LbfgsMath;
 use crate::line::*;
 // base:1 ends here
 
-// TODO return value
+// return value
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*return%20value][return value:1]]
 //
@@ -78,83 +78,19 @@ use crate::line::*;
 //
 //   Roughly speaking, a negative value indicates an error.
 
-pub type unnamed = i32;
-/* * The current search direction increases the objective function value. */
-pub const LBFGSERR_INCREASEGRADIENT: unnamed = -994;
-/* * A logic error (negative line-search step) occurred. */
-pub const LBFGSERR_INVALIDPARAMETERS: unnamed = -995;
-/* * Relative width of the interval of uncertainty is at most
-lbfgs_parameter_t::xtol. */
-pub const LBFGSERR_WIDTHTOOSMALL: unnamed = -996;
-/* * The algorithm routine reaches the maximum number of iterations. */
-pub const LBFGSERR_MAXIMUMITERATION: unnamed = -997;
-/* * The line-search routine reaches the maximum number of evaluations. */
-pub const LBFGSERR_MAXIMUMLINESEARCH: unnamed = -998;
-/* * The line-search step became larger than lbfgs_parameter_t::max_step. */
-pub const LBFGSERR_MAXIMUMSTEP: unnamed = -999;
-/* * The line-search step became smaller than lbfgs_parameter_t::min_step. */
-pub const LBFGSERR_MINIMUMSTEP: unnamed = -1000;
-/* * A rounding error occurred; alternatively, no line-search step
-satisfies the sufficient decrease and curvature conditions. */
-pub const LBFGSERR_ROUNDING_ERROR: unnamed = -1001;
-/* * A logic error occurred; alternatively, the interval of uncertainty
-became too small. */
-pub const LBFGSERR_INCORRECT_TMINMAX: unnamed = -1002;
-/* * The line-search step went out of the interval of uncertainty. */
-pub const LBFGSERR_OUTOFINTERVAL: unnamed = -1003;
-/* * Invalid parameter lbfgs_parameter_t::orthantwise_end specified. */
-pub const LBFGSERR_INVALID_ORTHANTWISE_END: unnamed = -1004;
-/* * Invalid parameter lbfgs_parameter_t::orthantwise_start specified. */
-pub const LBFGSERR_INVALID_ORTHANTWISE_START: unnamed = -1005;
-/* * Invalid parameter lbfgs_parameter_t::orthantwise_c specified. */
-pub const LBFGSERR_INVALID_ORTHANTWISE: unnamed = -1006;
-/* * Invalid parameter lbfgs_parameter_t::max_linesearch specified. */
-pub const LBFGSERR_INVALID_MAXLINESEARCH: unnamed = -1007;
-/* * Invalid parameter lbfgs_parameter_t::xtol specified. */
-pub const LBFGSERR_INVALID_XTOL: unnamed = -1008;
-/* * Invalid parameter lbfgs_parameter_t::gtol specified. */
-pub const LBFGSERR_INVALID_GTOL: unnamed = -1009;
-/* * Invalid parameter lbfgs_parameter_t::wolfe specified. */
-pub const LBFGSERR_INVALID_WOLFE: unnamed = -1010;
-/* * Invalid parameter lbfgs_parameter_t::ftol specified. */
-pub const LBFGSERR_INVALID_FTOL: unnamed = -1011;
-/* * Invalid parameter lbfgs_parameter_t::max_step specified. */
-pub const LBFGSERR_INVALID_MAXSTEP: unnamed = -1012;
-/* * Invalid parameter lbfgs_parameter_t::max_step specified. */
-pub const LBFGSERR_INVALID_MINSTEP: unnamed = -1013;
-/* * Invalid parameter lbfgs_parameter_t::linesearch specified. */
-pub const LBFGSERR_INVALID_LINESEARCH: unnamed = -1014;
-/* * Invalid parameter lbfgs_parameter_t::delta specified. */
-pub const LBFGSERR_INVALID_DELTA: unnamed = -1015;
-/* * Invalid parameter lbfgs_parameter_t::past specified. */
-pub const LBFGSERR_INVALID_TESTPERIOD: unnamed = -1016;
-/* * Invalid parameter lbfgs_parameter_t::epsilon specified. */
-pub const LBFGSERR_INVALID_EPSILON: unnamed = -1017;
-/* * The array x must be aligned to 16 (for SSE). */
-pub const LBFGSERR_INVALID_X_SSE: unnamed = -1018;
-/* * Invalid number of variables (for SSE) specified. */
-pub const LBFGSERR_INVALID_N_SSE: unnamed = -1019;
-/* * Invalid number of variables specified. */
-pub const LBFGSERR_INVALID_N: unnamed = -1020;
-/* * The minimization process has been canceled. */
-pub const LBFGSERR_CANCELED: unnamed = -1021;
-/* * Insufficient memory. */
-pub const LBFGSERR_OUTOFMEMORY: unnamed = -1022;
-/* * Logic error. */
-pub const LBFGSERR_LOGICERROR: unnamed = -1023;
-/* * Unknown error. */
-pub const LBFGSERR_UNKNOWNERROR: unnamed = -1024;
-/* * The initial variables already minimize the objective function. */
-pub const LBFGS_ALREADY_MINIMIZED: unnamed = 2;
-pub const LBFGS_STOP: unnamed = 1;
-pub const LBFGS_CONVERGENCE: unnamed = 0;
-/* * L-BFGS reaches convergence. */
-pub const LBFGS_SUCCESS: unnamed = 0;
+// The algorithm routine reaches the maximum number of iterations.
+pub const LBFGSERR_MAXIMUMITERATION: i32 = -997;
+// The line-search routine reaches the maximum number of evaluations.
+pub const LBFGSERR_MAXIMUMLINESEARCH: i32 = -998;
+// The line-search step became larger than lbfgs_parameter_t::max_step.
+pub const LBFGSERR_MAXIMUMSTEP: i32 = -999;
+// The line-search step became smaller than lbfgs_parameter_t::min_step.
+pub const LBFGSERR_MINIMUMSTEP: i32 = -1000;
 // return value:1 ends here
 
-// base
+// lbfgs parameters
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs%20parameters][lbfgs parameters:1]]
 /// L-BFGS optimization parameters.
 ///
 /// Call lbfgs_parameter_t::default() function to initialize parameters to the
@@ -249,19 +185,19 @@ impl LbfgsParam {
     // Check the input parameters for errors.
     pub fn validate(&mut self, n: usize) -> Result<()> {
         if self.epsilon < 0.0 {
-            bail!("LBFGSERR_INVALID_EPSILON");
+            bail!("Invalid parameter epsilon specified.");
         }
         if self.delta < 0.0 {
-            bail!("LBFGSERR_INVALID_DELTA");
+            bail!("Invalid parameter delta specified.");
         }
         if self.linesearch.min_step < 0.0f64 {
-            bail!("LBFGSERR_INVALID_MINSTEP");
+            bail!("Invalid parameter min_step specified.");
         }
         if self.linesearch.max_step < self.linesearch.min_step {
-            bail!("LBFGSERR_INVALID_MINSTEP");
+            bail!("Invalid parameter max_step specified.");
         }
         if self.linesearch.ftol < 0.0 {
-            bail!("LBFGSERR_INVALID_FTOL");
+            bail!("Invalid parameter lbfgs_parameter_t::ftol specified.");
         }
 
         // FIXME: review needed
@@ -270,18 +206,18 @@ impl LbfgsParam {
             || self.linesearch.algorithm == BacktrackingStrongWolfe
         {
             if self.linesearch.wolfe <= self.linesearch.ftol || 1.0 <= self.linesearch.wolfe {
-                bail!("LBFGSERR_INVALID_WOLFE");
+                bail!("Invalid parameter lbfgs_parameter_t::wolfe specified.");
             }
         }
 
         if self.linesearch.gtol < 0.0 {
-            bail!("LBFGSERR_INVALID_GTOL");
+            bail!("Invalid parameter gtol specified.");
         }
         if self.linesearch.xtol < 0.0 {
-            bail!("LBFGSERR_INVALID_XTOL");
+            bail!("Invalid parameter xtol specified.");
         }
         if self.linesearch.max_linesearch <= 0 {
-            bail!("LBFGSERR_INVALID_MAXLINESEARCH");
+            bail!("Invalid parameter max_linesearch specified.");
         }
 
         if self.orthantwise {
@@ -290,84 +226,30 @@ impl LbfgsParam {
 
         // FIXME: take care below
         if self.owlqn.c < 0.0 {
-            bail!("LBFGSERR_INVALID_ORTHANTWISE");
+            bail!("Invalid parameter lbfgs_parameter_t::orthantwise_c specified.");
         }
 
         // FIXME: make param immutable
         if self.owlqn.start < 0 || (n as i32) < self.owlqn.start {
-            bail!("LBFGSERR_INVALID_ORTHANTWISE_START");
+            bail!("Invalid parameter lbfgs_parameter_t::orthantwise_start specified.");
         }
         if self.owlqn.end < 0 {
             //bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
             self.owlqn.end = n as i32
         }
         if (n as i32) < self.owlqn.end {
-            bail!("LBFGSERR_INVALID_ORTHANTWISE_END");
+            bail!("Invalid parameter orthantwise_end specified.");
         }
 
         Ok(())
     }
 }
-// base:1 ends here
-
-// adhoc
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*adhoc][adhoc:1]]
-impl LbfgsParam {
-    pub fn update_search_direction(&self, d: &mut [f64], pg: &[f64], g: &[f64]) {
-        // Compute the direction;
-        // we assume the initial hessian matrix H_0 as the identity matrix.
-        if self.orthantwise {
-            d.vecncpy(pg);
-        } else {
-            d.vecncpy(g);
-        }
-    }
-
-    // calculate gradient norm
-    pub fn update_gnorm(&self, pg: &[f64], g: &[f64]) -> f64 {
-        if self.orthantwise {
-            pg.vec2norm()
-        } else {
-            g.vec2norm()
-        }
-    }
-
-    // Evaluate the function value
-    pub fn fx_correction(&self, x: &[f64]) -> f64 {
-        if self.orthantwise {
-            self.owlqn.x1norm(x)
-        } else {
-            0.0
-        }
-    }
-
-    pub fn update_gradient(&self, pg: &mut [f64], x: &[f64], g: &[f64]) {
-        if self.orthantwise {
-            self.owlqn.pseudo_gradient(pg, &x, &g);
-        }
-    }
-
-    /// Constrain the search direction for orthant-wise updates.
-    pub fn constrain_search_direction(&self, d: &mut [f64], pg: &[f64]) {
-        if self.orthantwise {
-            self.owlqn.constrain(d, &pg);
-        }
-    }
-
-    // Choose the orthant for the new point.
-    // The current point is projected onto the orthant.
-    pub fn project_onto_orthant(&self, x: &mut [f64], xp: &[f64], gp: &[f64]) {
-        if self.orthantwise {
-            self.owlqn.project(x, xp, gp);
-        }
-    }
-}
-// adhoc:1 ends here
+// lbfgs parameters:1 ends here
 
 // problem
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*problem][problem:1]]
+/// `Problem` holds input variables `x`, gradient `gx` arrays, and function value `fx`.
 #[derive(Debug)]
 pub struct Problem<'a, E>
 where
@@ -385,17 +267,17 @@ where
     /// x.
     pub gx: Vec<f64>,
 
-    /// previous position
+    /// Cached position vector of previous step.
     pub xp: Vec<f64>,
 
-    /// previous gradient
+    /// Cached gradient vector of previous step.
     pub gp: Vec<f64>,
 
-    /// Pseudo gradient for OrthantWise Limited-memory Quasi-Newton (owlqn) algorithm
+    /// Pseudo gradient for OrthantWise Limited-memory Quasi-Newton (owlqn) algorithm.
     pub pg: Vec<f64>,
 
-    /// store callback function for evaluating objective function
-    pub eval_fn: E,
+    /// Store callback function for evaluating objective function.
+    eval_fn: E,
 
     /// Orthantwise operations
     owlqn: Option<Orthantwise>,
@@ -423,12 +305,19 @@ where
     // FIXME: improve
     pub fn evaluate(&mut self) -> Result<()> {
         self.fx = (self.eval_fn)(&self.x, &mut self.gx)?;
+
+        // Compute the L1 norm of the variables and add it to the object value.
+        if let Some(owlqn) = self.owlqn {
+            self.fx += owlqn.x1norm(&self.x)
+        }
+
         // FIXME: to be better
         // if self.orthantwise {
-            // Compute the L1 norm of the variable and add it to the object value.
-            // fx += self.owlqn.x1norm(x);
-            // self.owlqn.pseudo_gradient(&mut pg, &x, &g);
+        // Compute the L1 norm of the variable and add it to the object value.
+        // fx += self.owlqn.x1norm(x);
+        // self.owlqn.pseudo_gradient(&mut pg, &x, &g);
         // }
+
         Ok(())
     }
 
@@ -439,12 +328,14 @@ where
         self.fx = src.fx;
     }
 
-    // Store the current position and gradient vectors.
+    /// Store the current position and gradient vectors.
     pub fn update_state(&mut self) {
         self.xp.veccpy(&self.x);
         self.gp.veccpy(&self.gx);
     }
 
+    /// Compute the direction;
+    /// we assume the initial hessian matrix H_0 as the identity matrix.
     pub fn update_search_direction(&self, d: &mut [f64]) {
         if self.owlqn.is_some() {
             d.vecncpy(&self.pg);
@@ -453,15 +344,21 @@ where
         }
     }
 
-    // For line search
-    //
-    // Compute the current value of x: x <- x + (*stp) * s.
+    /// For line search
+    ///
+    /// Compute the current value of x: x <- x + (*stp) * s.
     pub fn take_line_step(&mut self, s: &[f64], stp: f64) {
         self.x.veccpy(&self.xp);
         self.x.vecadd(s, stp);
+
+        // Choose the orthant for the new point.
+        // The current point is projected onto the orthant.
+        if let Some(owlqn) = self.owlqn {
+            owlqn.project(&mut self.x, &self.xp, &self.gp);
+        }
     }
 
-    /// Gradient norm
+    /// Return gradient vector norm: ||gx||
     pub fn gnorm(&self) -> f64 {
         if self.owlqn.is_some() {
             self.pg.vec2norm()
@@ -470,8 +367,23 @@ where
         }
     }
 
+    /// Return position vector norm: ||x||
     pub fn xnorm(&self) -> f64 {
         self.x.vec2norm()
+    }
+
+    /// Constrain the search direction for orthant-wise updates.
+    pub fn constrain_search_direction(&self, d: &mut [f64]) {
+        if let Some(owlqn) = self.owlqn {
+            owlqn.constrain(d, &self.pg);
+        }
+    }
+
+    // FIXME
+    pub fn update_owlqn_gradient(&mut self) {
+        if let Some(owlqn) = self.owlqn {
+            owlqn.pseudo_gradient(&mut self.pg, &self.x, &self.gx);
+        }
     }
 }
 // problem:1 ends here
@@ -505,6 +417,7 @@ pub struct Progress<'a> {
 // orthantwise
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*orthantwise][orthantwise:1]]
+/// Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) algorithm
 #[derive(Copy, Clone, Debug)]
 pub struct Orthantwise {
     /// Coeefficient for the L1 norm of variables.
@@ -642,6 +555,7 @@ impl Orthantwise {
 // common
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*common][common:1]]
+/// Internal iternation data for L-BFGS
 #[derive(Clone)]
 struct IterationData {
     pub alpha: f64,
@@ -705,23 +619,21 @@ where
     // Evaluate the function value and its gradient.
     // Compute the L1 norm of the variable and add it to the object value.
     problem.evaluate()?;
-    problem.fx += param.fx_correction(&problem.x);
-    param.update_gradient(&mut problem.pg, &problem.x, &problem.gx);
+    problem.update_owlqn_gradient();
 
     // Compute the direction;
     // we assume the initial hessian matrix H_0 as the identity matrix.
     let mut d = vec![0.0; n];
-    param.update_search_direction(&mut d, &problem.pg, &problem.gx);
+    problem.update_search_direction(&mut d);
 
     // Make sure that the initial variables are not a minimizer.
     let xnorm = problem.xnorm();
     let gnorm = problem.gnorm();
     if gnorm / xnorm.max(1.0) <= param.epsilon {
-        bail!("LBFGS_ALREADY_MINIMIZED");
+        bail!("The initial variables already minimize the objective function.");
     }
 
     // Compute the initial step:
-    // step = 1.0 / sqrt(vecdot(d, d, n))
     let mut step = d.vec2norminv();
     let mut k: usize = 1;
     let mut end = 0;
@@ -737,7 +649,7 @@ where
 
         // Search for an optimal step.
         let ls = linesearch.find(&mut problem, &d, &mut step)?;
-        param.update_gradient(&mut problem.pg, &problem.x, &problem.gx);
+        problem.update_owlqn_gradient();
 
         // Compute x and g norms.
         let xnorm = problem.xnorm();
@@ -758,7 +670,7 @@ where
 
             let cancel = prgr_fn(&prgr);
             if cancel {
-                info!("canceled by callback function.");
+                info!("The minimization process has been canceled.");
                 break;
             }
         }
@@ -767,9 +679,9 @@ where
         // The criterion is given by the following formula:
         //     |g(x)| / \max(1, |x|) < \epsilon
         if gnorm / xnorm.max(1.0) <= param.epsilon {
-            info!("lbfgs converged");
             // Convergence.
-            ret = LBFGS_SUCCESS;
+            info!("L-BFGS reaches convergence.");
+            ret = 0;
             break;
         }
 
@@ -781,16 +693,15 @@ where
             // We don't test the stopping criterion while k < past.
             if param.past <= k {
                 // Compute the relative improvement from the past.
-                // rate = (*pf.offset((k % param.past) as isize) - fx) / fx;
                 let rate = (pf[(k % param.past) as usize] - fx) / fx;
                 // The stopping criterion.
                 if rate < param.delta {
-                    ret = LBFGS_STOP as i32;
+                    info!("The stopping criterion.");
+                    ret = 1i32;
                     break;
                 }
             }
             // Store the current value of the objective function.
-            // *pf.offset((k % param.past) as isize) = fx
             pf[(k % param.past) as usize] = fx;
         }
 
@@ -829,11 +740,10 @@ where
         k += 1;
         end = (end + 1) % m;
         // Compute the steepest direction.
-        param.update_search_direction(&mut d, &problem.pg, &problem.gx);
+        problem.update_search_direction(&mut d);
 
-        let mut i = 0;
         let mut j = end;
-        while i < bound {
+        for i in 0..bound {
             // if (--j == -1) j = m-1;
             j = (j + m - 1) % m;
             // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
@@ -844,12 +754,10 @@ where
             it.alpha /= it.ys;
             // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
             d.vecadd(&it.y, -it.alpha);
-            i += 1
         }
         d.vecscale(ys / yy);
 
-        let mut i = 0;
-        while i < bound {
+        for i in 0..bound {
             // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
             let it = &mut lm_arr[j as usize];
             // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
@@ -861,11 +769,10 @@ where
 
             // if (++j == m) j = 0;
             j = (j + 1) % m;
-            i += 1
         }
 
         // Constrain the search direction for orthant-wise updates.
-        param.constrain_search_direction(&mut d, &problem.pg);
+        problem.constrain_search_direction(&mut d);
 
         // Now the search direction d is ready. We try step = 1 first.
         step = 1.0

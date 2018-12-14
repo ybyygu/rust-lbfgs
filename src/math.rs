@@ -4,6 +4,8 @@
 // :END:
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*math.rs][math.rs:1]]
+//! Backend for lbfgs vector operations
+
 /// Abstracting lbfgs required math operations
 pub trait LbfgsMath<T> {
     /// y += c*x
