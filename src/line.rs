@@ -247,13 +247,15 @@ impl<'a> LineSearch<'a> {
             bail!("A logic error (negative line-search step) occurred.");
         }
 
-        // Make sure that search direction points to a descent direction.
+        // Compute the initial gradient in the search direction.
         if !self.param.orthantwise {
-            // Compute the initial gradient in the search direction.
             self.dginit = prb.gx.vecdot(d);
+            // Make sure that search direction points to a descent direction.
             if self.dginit.is_sign_positive() {
                 bail!("The current search direction increases the objective function value.");
             }
+        } else {
+            self.dginit = prb.pg.vecdot(d);
         }
 
         // quick wrapper
@@ -929,7 +931,7 @@ pub fn line_search_backtracking<E>(
     prb: &mut Problem<E>,
     s: &[f64],
     stp: &mut f64,
-    _param: &LbfgsParam,
+    param: &LbfgsParam,
     dginit: f64,
     // parameters for OWL-QN
     orthantwise: bool,
@@ -938,10 +940,7 @@ where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     // quick wrapper
-    let param = &_param.linesearch;
-
-    // FIXME: review
-    let owlqn_width = 0.5;
+    let param = &param.linesearch;
     let mut width = 0.0;
 
     let dec: f64 = 0.5;
@@ -954,25 +953,13 @@ where
     for count in 0..param.max_linesearch {
         prb.take_line_step(s, *stp);
 
-        // FIXME: improve below
         // Evaluate the function and gradient values.
         prb.evaluate()?;
 
-        if orthantwise {
-            dgtest = 0.0;
-            for i in 0..(prb.x.len()) {
-                // FIXME: pg vs gp
-                dgtest += (prb.x[i] - prb.xp[i]) * prb.pg[i];
-            }
-            if prb.fx <= finit + param.ftol * dgtest {
-                // The sufficient decrease condition.
-                return Ok(count as i32);
-            }
-        }
-
         if prb.fx > finit + *stp * dgtest {
             width = dec
-        } else if param.algorithm == BacktrackingArmijo {
+        } else if param.algorithm == BacktrackingArmijo || orthantwise {
+            // The sufficient decrease condition.
             // Exit with the Armijo condition.
             return Ok(count as i32);
         } else {
@@ -991,13 +978,7 @@ where
         }
 
         param.validate_step(*stp)?;
-
-        // FIXME: review
-        if orthantwise {
-            *stp *= owlqn_width
-        } else {
-            *stp *= width
-        }
+        *stp *= width
     }
 
     // Maximum number of iteration.
