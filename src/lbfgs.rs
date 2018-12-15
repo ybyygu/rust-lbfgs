@@ -183,7 +183,7 @@ impl Default for LbfgsParam {
 
 impl LbfgsParam {
     // Check the input parameters for errors.
-    pub fn validate(&mut self, n: i32) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         ensure!(self.epsilon >= 0.0, "Invalid parameter epsilon specified.");
 
         ensure!(self.delta >= 0.0, "Invalid parameter delta specified.");
@@ -201,26 +201,6 @@ impl LbfgsParam {
         ensure!(ls.gtol >= 0.0, "Invalid parameter gtol specified.");
         ensure!(ls.xtol >= 0.0, "Invalid parameter xtol specified.");
 
-        // FIXME: take care below
-        ensure!(
-            self.owlqn.c >= 0.0,
-            "Invalid parameter lbfgs_parameter_t::orthantwise_c specified."
-        );
-
-        ensure!(
-            self.owlqn.start >= 0 && self.owlqn.start < n,
-            "Invalid parameter orthantwise_start specified."
-        );
-
-        if self.owlqn.end < 0 {
-            self.owlqn.end = n;
-        }
-
-        ensure!(
-            self.owlqn.end > 0 && self.owlqn.end <= n,
-            "Invalid parameter orthantwise_end specified."
-        );
-
         use self::LineSearchAlgorithm::*;
         match ls.algorithm {
             BacktrackingWolfe | BacktrackingStrongWolfe => ensure!(
@@ -233,6 +213,21 @@ impl LbfgsParam {
                 }
             }
         }
+
+        // FIXME: take care below
+        ensure!(
+            self.owlqn.c >= 0.0,
+            "Invalid parameter lbfgs_parameter_t::orthantwise_c specified."
+        );
+        // ensure!(
+        //     self.owlqn.start >= 0 && self.owlqn.start < n,
+        //     "Invalid parameter orthantwise_start specified."
+        // );
+
+        // ensure!(
+        //     self.owlqn.end > 0 && self.owlqn.end <= n,
+        //     "Invalid parameter orthantwise_end specified."
+        // );
 
         Ok(())
     }
@@ -602,17 +597,16 @@ pub fn lbfgs<F, G>(
     ptr_fx: &mut f64,
     mut proc_evaluate: F,
     mut proc_progress: Option<G>,
-    param: &mut LbfgsParam, // FIXME: make param immutable
+    param: &LbfgsParam,
 ) -> Result<i32>
 where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
     G: FnMut(&Progress) -> bool,
 {
-    // FIXME: remove n
-    let n = x.len();
-    param.validate(n as i32)?;
+    param.validate()?;
 
     // Initialize the limited memory.
+    let n = x.len();
     let m = param.m;
     let mut lm_arr: Vec<_> = (0..m).map(|_| IterationData::new(n)).collect();
 

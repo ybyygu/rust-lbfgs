@@ -77,7 +77,7 @@ where
             &mut fx,
             eval_fn,
             progress,
-            &mut self.param,
+            &self.param,
         )?;
 
         Ok(fx)
