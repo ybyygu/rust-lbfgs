@@ -18,7 +18,6 @@ use quicli::prelude::*;
 type Result<T> = ::std::result::Result<T, Error>;
 
 use crate::math::LbfgsMath;
-use crate::lbfgs::LbfgsParam;
 // base:1 ends here
 
 // algorithm
@@ -86,7 +85,7 @@ impl Default for LineSearchAlgorithm {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*paramters][paramters:1]]
 #[derive(Debug, Copy, Clone)]
-pub struct LineSearchParam {
+pub struct LineSearch {
     pub algorithm: LineSearchAlgorithm,
 
     /// ftol and gtol are nonnegative input variables. (in this reverse
@@ -141,7 +140,8 @@ pub struct LineSearchParam {
     /// The maximum number of trials for the line search.
     ///
     /// This parameter controls the number of function and gradients evaluations
-    /// per iteration for the line search routine. The default value is 40.
+    /// per iteration for the line search routine. The default value is 40. Set
+    /// this value to 0, will completely disable line search.
     ///
     pub max_linesearch: usize,
 
@@ -153,9 +153,9 @@ pub struct LineSearchParam {
 }
 
 // TODO: better defaults
-impl Default for LineSearchParam {
+impl Default for LineSearch {
     fn default() -> Self {
-        LineSearchParam {
+        LineSearch {
             ftol: 1e-4,
             gtol: 0.9,
             xtol: 1e-16,
@@ -174,7 +174,7 @@ impl Default for LineSearchParam {
 // adhoc
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*adhoc][adhoc:1]]
-impl LineSearchParam {
+impl LineSearch {
     fn validate_step(&self, step: f64) -> Result<()> {
         // The step is the minimum value.
         if step < self.min_step {
@@ -195,37 +195,7 @@ impl LineSearchParam {
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*entry][entry:1]]
 use crate::lbfgs::Problem;
 
-pub trait LineSearching<E>
-where
-    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
-    /// Apply line search algorithm to find satisfactory step size.
-    ///
-    /// # Arguments
-    ///
-    /// * step: initial step size. On output it will be the optimal step size.
-    /// * direction: proposed searching direction
-    /// * eval_fn: a callback function to evaluate `Problem`
-    ///
-    /// # Return
-    ///
-    /// * On success, return the number of line searching iterations
-    ///
-    fn find(&mut self, problem: &mut Problem<E>, direction: &[f64], step: &mut f64) -> Result<i32>;
-}
-
-pub struct LineSearch<'a> {
-    param: &'a LbfgsParam,
-
-    // initial gradient in the search direction
-    dginit: f64,
-}
-
-impl<'a> LineSearch<'a> {
-    pub fn new(param: &'a LbfgsParam) -> Self {
-        LineSearch { dginit: 0.0, param }
-    }
-
+impl LineSearch {
     /// Unified entry for line searches
     ///
     /// # Arguments
@@ -238,7 +208,7 @@ impl<'a> LineSearch<'a> {
     ///
     /// * On success, return the number of line searching iterations
     ///
-    pub fn find<E>(&mut self, prb: &mut Problem<E>, d: &[f64], step: &mut f64) -> Result<i32>
+    pub fn find<E>(&self, prb: &mut Problem<E>, d: &[f64], step: &mut f64) -> Result<i32>
     where
         E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
     {
@@ -247,25 +217,14 @@ impl<'a> LineSearch<'a> {
             bail!("A logic error (negative line-search step) occurred.");
         }
 
-        // Compute the initial gradient in the search direction.
-        if !self.param.orthantwise {
-            self.dginit = prb.gx.vecdot(d);
-            // Make sure that search direction points to a descent direction.
-            if self.dginit.is_sign_positive() {
-                bail!("The current search direction increases the objective function value.");
-            }
-        } else {
-            self.dginit = prb.pg.vecdot(d);
-        }
-
         // quick wrapper
-        let param = &self.param;
+        let orthantwise = prb.orthantwise();
 
         // Search for an optimal step.
-        let ls = if param.linesearch.algorithm == MoreThuente && !param.orthantwise {
-            line_search_morethuente(prb, d, step, &param.linesearch, self.dginit)?
+        let ls = if self.algorithm == MoreThuente && !orthantwise {
+            line_search_morethuente(prb, d, step, &self)?
         } else {
-            line_search_backtracking(prb, d, step, &param.linesearch, self.dginit, param.orthantwise)?
+            line_search_backtracking(prb, d, step, &self, orthantwise)?
         };
 
         // Recover from failed line search?
@@ -414,13 +373,13 @@ pub fn line_search_morethuente<E>(
     prb: &mut Problem<E>,
     s: &[f64],               // Search direction array
     stp: &mut f64,           // Step size
-    param: &LineSearchParam, // line search parameters
-    dginit: f64,
+    param: &LineSearch, // line search parameters
 ) -> Result<i32>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     // Initialize local variables.
+    let dginit = prb.dginit(s)?;
     let mut brackt = false;
     let mut stage1 = 1;
     let mut uinfo = 0;
@@ -923,20 +882,20 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 use self::LineSearchAlgorithm::*;
 
-/// `prb` holds input variables `x`, gradient `gx` arrays of length n, and
-/// function value `fx`. on input it must contain the base point for the line
-/// search. on output it contains data on x + stp*s.
+/// `prb` holds input variables `x`, gradient `gx` arrays, and function value
+/// `fx`. on input it must contain the base point for the line search. on output
+/// it contains data on x + stp*s.
 pub fn line_search_backtracking<E>(
     prb: &mut Problem<E>,
     s: &[f64],               // search direction
     stp: &mut f64,           // step length
-    param: &LineSearchParam, // line search parameters
-    dginit: f64,             // temp
+    param: &LineSearch, // line search parameters
     orthantwise: bool,       // turn on OWL-QN algorithm
 ) -> Result<i32>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
+    let dginit = prb.dginit(s)?;
     let dec: f64 = 0.5;
     let inc: f64 = 2.1;
 

@@ -153,7 +153,7 @@ pub struct LbfgsParam {
     ///  This parameter specifies a line search algorithm to be used by the
     ///  L-BFGS routine.
     ///
-    pub linesearch: LineSearchParam,
+    pub linesearch: LineSearch,
 
     /// Enable OWL-QN regulation or not
     pub orthantwise: bool,
@@ -176,7 +176,7 @@ impl Default for LbfgsParam {
             max_iterations: 0,
             orthantwise: false,
             owlqn: Orthantwise::default(),
-            linesearch: LineSearchParam::default(),
+            linesearch: LineSearch::default(),
         }
     }
 }
@@ -197,19 +197,9 @@ impl LbfgsParam {
             "Invalid parameter max_step specified."
         );
 
-        ensure!(
-            ls.ftol >= 0.0,
-            "Invalid parameter lbfgs_parameter_t::ftol specified."
-        );
-
+        ensure!(ls.ftol >= 0.0, "Invalid parameter ftol specified.");
         ensure!(ls.gtol >= 0.0, "Invalid parameter gtol specified.");
-
         ensure!(ls.xtol >= 0.0, "Invalid parameter xtol specified.");
-
-        ensure!(
-            ls.max_linesearch > 0,
-            "Invalid parameter max_linesearch specified."
-        );
 
         // FIXME: take care below
         ensure!(
@@ -217,7 +207,6 @@ impl LbfgsParam {
             "Invalid parameter lbfgs_parameter_t::orthantwise_c specified."
         );
 
-        // FIXME: make param immutable
         ensure!(
             self.owlqn.start >= 0 && self.owlqn.start < n,
             "Invalid parameter orthantwise_start specified."
@@ -306,6 +295,21 @@ where
         }
     }
 
+    /// Compute the initial gradient in the search direction.
+    pub fn dginit(&self, d: &[f64]) -> Result<f64> {
+        if self.owlqn.is_none() {
+            let dginit = self.gx.vecdot(d);
+            ensure!(
+                dginit <= 0.0,
+                "The current search direction increases the objective function value."
+            );
+
+            Ok(dginit)
+        } else {
+            Ok(self.pg.vecdot(d))
+        }
+    }
+
     // FIXME: improve
     pub fn evaluate(&mut self) -> Result<()> {
         self.fx = (self.eval_fn)(&self.x, &mut self.gx)?;
@@ -388,6 +392,10 @@ where
         if let Some(owlqn) = self.owlqn {
             owlqn.pseudo_gradient(&mut self.pg, &self.x, &self.gx);
         }
+    }
+
+    pub fn orthantwise(&self) -> bool {
+        self.owlqn.is_some()
     }
 }
 // problem:1 ends here
@@ -583,14 +591,12 @@ pub fn lbfgs<F, G>(
     ptr_fx: &mut f64,
     mut proc_evaluate: F,
     mut proc_progress: Option<G>,
-    param: &LbfgsParam,
+    param: &mut LbfgsParam, // FIXME: make param immutable
 ) -> Result<i32>
 where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
     G: FnMut(&Progress) -> bool,
 {
-    // FIXME: make param immutable
-    let mut param = param.clone();
     // FIXME: remove n
     let n = x.len();
     param.validate(n as i32)?;
@@ -634,7 +640,8 @@ where
     let xnorm = problem.xnorm();
     let gnorm = problem.gnorm();
     if gnorm / xnorm.max(1.0) <= param.epsilon {
-        bail!("The initial variables already minimize the objective function.");
+        info!("The initial variables already minimize the objective function.");
+        return Ok(0);
     }
 
     // Compute the initial step:
@@ -644,7 +651,8 @@ where
 
     // FIXME: return code
     let mut ret = 0;
-    let mut linesearch = LineSearch::new(&param);
+    // let linesearch = LineSearch::new(&param.linesearch);
+    let linesearch = &param.linesearch;
 
     info!("start lbfgs loop...");
     loop {

@@ -1,8 +1,6 @@
 // base
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
-#![allow(nonstandard_style)]
-
 use quicli::prelude::*;
 type Result<T> = ::std::result::Result<T, Error>;
 
@@ -79,7 +77,7 @@ where
             &mut fx,
             eval_fn,
             progress,
-            &self.param,
+            &mut self.param,
         )?;
 
         Ok(fx)
