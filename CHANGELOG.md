@@ -1,6 +1,9 @@
 
 # v0.0.11 WIP
 
+-   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-15 Sat] </span></span> remove wolfe parameter from LineSearch (use gtol instead)
+-   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-14 Fri] </span></span> LineSearchParm is renamed as LineSearch
+
 
 # v0.0.10
 

@@ -198,20 +198,14 @@ impl LbfgsParam {
         );
 
         ensure!(ls.ftol >= 0.0, "Invalid parameter ftol specified.");
-        ensure!(ls.gtol >= 0.0, "Invalid parameter gtol specified.");
+        ensure!(
+            ls.gtol >= 0.0 && ls.gtol < 1.0 && ls.gtol > ls.ftol,
+            "Invalid parameter gtol specified."
+        );
         ensure!(ls.xtol >= 0.0, "Invalid parameter xtol specified.");
 
-        use self::LineSearchAlgorithm::*;
-        match ls.algorithm {
-            BacktrackingWolfe | BacktrackingStrongWolfe => ensure!(
-                ls.wolfe > ls.ftol && ls.wolfe < 1.0,
-                "Invalid parameter lbfgs_parameter_t::wolfe specified."
-            ),
-            _ => {
-                if self.orthantwise {
-                    warn!("Only the backtracking line search is available for OWL-QN algorithm.");
-                }
-            }
+        if self.orthantwise {
+            warn!("Only the backtracking line search is available for OWL-QN algorithm.");
         }
 
         // FIXME: take care below
@@ -219,6 +213,7 @@ impl LbfgsParam {
             self.owlqn.c >= 0.0,
             "Invalid parameter lbfgs_parameter_t::orthantwise_c specified."
         );
+
         // ensure!(
         //     self.owlqn.start >= 0 && self.owlqn.start < n,
         //     "Invalid parameter orthantwise_start specified."

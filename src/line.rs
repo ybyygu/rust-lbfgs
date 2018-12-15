@@ -47,8 +47,7 @@ pub enum LineSearchAlgorithm {
     /// The backtracking method finds the step length such that it satisfies
     /// both the Armijo condition (BacktrackingArmijo)
     /// and the following condition,
-    /// FIXME: gtol vs wolfe?
-    ///   - |g(x + a * d)^T d| <= lbfgs_parameter_t::wolfe * |g(x)^T d|,
+    ///   - |g(x + a * d)^T d| <= gtol * |g(x)^T d|,
     ///
     /// where x is the current point, d is the current search direction, and
     /// a is the step length.
@@ -61,8 +60,7 @@ pub enum LineSearchAlgorithm {
     /// The backtracking method finds the step length such that it satisfies
     /// both the Armijo condition (BacktrackingArmijo)
     /// and the curvature condition,
-    /// FIXME: gtol vs wolfe?
-    ///   - g(x + a * d)^T d >= lbfgs_parameter_t::wolfe * g(x)^T d,
+    ///   - g(x + a * d)^T d >= gtol * g(x)^T d,
     ///
     /// where x is the current point, d is the current search direction, and a
     /// is the step length.
@@ -141,12 +139,6 @@ pub struct LineSearch {
     /// this value to 0, will completely disable line search.
     ///
     pub max_linesearch: usize,
-
-    /// A coefficient for the Wolfe condition.
-    /// *  This parameter is valid only when the backtracking line-search
-    /// *  algorithm is used with the Wolfe condition,
-    /// *  The default value is 0.9. This parameter should be greater the ftol parameter and smaller than 1.0.
-    pub wolfe: f64,
 }
 
 // TODO: better defaults
@@ -159,9 +151,6 @@ impl Default for LineSearch {
             min_step: 1e-20,
             max_step: 1e20,
             max_linesearch: 40,
-
-            // FIXME: only useful for backtracking
-            wolfe: 0.9,
             algorithm: LineSearchAlgorithm::default(),
         }
     }
@@ -916,12 +905,12 @@ where
         } else {
             // Check the Wolfe condition.
             let dg = prb.gx.vecdot(s);
-            if dg < param.wolfe * dginit {
+            if dg < param.gtol * dginit {
                 width = inc
             } else if param.algorithm == BacktrackingWolfe {
                 // Exit with the regular Wolfe condition.
                 return Ok(count as i32);
-            } else if dg > -param.wolfe * dginit {
+            } else if dg > -param.gtol * dginit {
                 width = dec
             } else {
                 return Ok(count as i32);
