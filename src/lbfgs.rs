@@ -581,11 +581,22 @@ struct IterationData {
     /// vecdot(y, s)
     pub ys: f64,
 }
+
+impl IterationData {
+    fn new(n: usize) -> Self {
+        IterationData {
+            alpha: 0.0,
+            ys: 0.0,
+            s: vec![0.0; n],
+            y: vec![0.0; n],
+        }
+    }
+}
 // common:1 ends here
 
-// old lbfgs
+// lbfgs
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old%20lbfgs][old lbfgs:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs][lbfgs:1]]
 pub fn lbfgs<F, G>(
     x: &mut [f64],
     ptr_fx: &mut f64,
@@ -601,33 +612,23 @@ where
     let n = x.len();
     param.validate(n as i32)?;
 
-    // Allocate limited memory storage.
-    let m = param.m;
-    let mut lm_arr: Vec<IterationData> = Vec::with_capacity(m);
-
     // Initialize the limited memory.
-    for _ in 0..m {
-        lm_arr.push(IterationData {
-            alpha: 0.0,
-            ys: 0.0,
-            s: vec![0.0; n],
-            y: vec![0.0; n],
-        });
-    }
+    let m = param.m;
+    let mut lm_arr: Vec<_> = (0..m).map(|_| IterationData::new(n)).collect();
 
     // Allocate an array for storing previous values of the objective function.
     let mut pf = vec![0.0; param.past as usize];
 
-    // Allocate working space.
+    // Allocate working space for OWL-QN algorithm.
     let owlqn = if param.orthantwise {
         Some(param.owlqn.clone())
     } else {
         None
     };
-    let mut problem = Problem::new(x, &mut proc_evaluate, owlqn);
 
     // Evaluate the function value and its gradient.
     // Compute the L1 norm of the variable and add it to the object value.
+    let mut problem = Problem::new(x, &mut proc_evaluate, owlqn);
     problem.evaluate()?;
     problem.update_owlqn_gradient();
 
@@ -646,16 +647,13 @@ where
 
     // Compute the initial step:
     let mut step = d.vec2norminv();
-    let mut k: usize = 1;
     let mut end = 0;
 
     // FIXME: return code
     let mut ret = 0;
-    // let linesearch = LineSearch::new(&param.linesearch);
     let linesearch = &param.linesearch;
-
     info!("start lbfgs loop...");
-    loop {
+    for k in 1.. {
         // Store the current position and gradient vectors.
         problem.update_state();
 
@@ -727,8 +725,7 @@ where
         // Update vectors s and y:
         // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
         // y_{k+1} = g_{k+1} - g_{k}.
-        // it = &mut *lm.offset(end as isize) as *mut iteration_data_t;
-        let mut it = &mut lm_arr[end];
+        let it = &mut lm_arr[end];
         it.s.vecdiff(&problem.x, &problem.xp);
         it.y.vecdiff(&problem.gx, &problem.gp);
 
@@ -739,7 +736,7 @@ where
         let ys = it.y.vecdot(&it.s);
         let yy = it.y.vecdot(&it.y);
 
-        (*it).ys = ys;
+        it.ys = ys;
 
         // Recursive formula to compute dir = -(H \cdot g).
         // This is described in page 779 of:
@@ -749,37 +746,28 @@ where
         // pp. 773--782, 1980.
         let bound = if m <= k { m } else { k };
 
-        k += 1;
         end = (end + 1) % m;
         // Compute the steepest direction.
         problem.update_search_direction(&mut d);
 
         let mut j = end;
         for _ in 0..bound {
-            // if (--j == -1) j = m-1;
             j = (j + m - 1) % m;
-            // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
-            let mut it = &mut lm_arr[j as usize];
+            let it = &mut lm_arr[j as usize];
 
             // \alpha_{j} = \rho_{j} s^{t}_{j} \cdot q_{k+1}.
-            it.alpha = it.s.vecdot(&d);
-            it.alpha /= it.ys;
+            it.alpha = it.s.vecdot(&d) / it.ys;
             // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
             d.vecadd(&it.y, -it.alpha);
         }
         d.vecscale(ys / yy);
 
         for _ in 0..bound {
-            // it = &mut *lm.offset(j as isize) as *mut iteration_data_t;
             let it = &mut lm_arr[j as usize];
             // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
-            let mut beta = it.y.vecdot(&d);
-
-            beta /= (*it).ys;
+            let beta = it.y.vecdot(&d) / it.ys;
             // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
             d.vecadd(&it.s, it.alpha - beta);
-
-            // if (++j == m) j = 0;
             j = (j + 1) % m;
         }
 
@@ -795,4 +783,4 @@ where
 
     Ok(ret)
 }
-// old lbfgs:1 ends here
+// lbfgs:1 ends here
