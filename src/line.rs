@@ -42,9 +42,6 @@ pub enum LineSearchAlgorithm {
     ///
     BacktrackingArmijo,
 
-    /// The backtracking method with the defualt (regular Wolfe) condition.
-    Backtracking,
-
     /// Backtracking method with strong Wolfe condition.
     ///
     /// The backtracking method finds the step length such that it satisfies
@@ -887,10 +884,10 @@ use self::LineSearchAlgorithm::*;
 /// it contains data on x + stp*s.
 pub fn line_search_backtracking<E>(
     prb: &mut Problem<E>,
-    s: &[f64],               // search direction
-    stp: &mut f64,           // step length
+    s: &[f64],          // search direction
+    stp: &mut f64,      // step length
     param: &LineSearch, // line search parameters
-    orthantwise: bool,       // turn on OWL-QN algorithm
+    orthantwise: bool,  // turn on OWL-QN algorithm
 ) -> Result<i32>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
