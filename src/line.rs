@@ -81,18 +81,13 @@ impl Default for LineSearchAlgorithm {
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*paramters][paramters:1]]
 #[derive(Debug, Copy, Clone)]
 pub struct LineSearch {
+    /// Various line search algorithms.
     pub algorithm: LineSearchAlgorithm,
 
-    /// ftol and gtol are nonnegative input variables. (in this reverse
-    /// communication implementation gtol is defined in a common statement.)
-    ///
-    /// Termination occurs when the sufficient decrease condition and the
-    /// directional derivative condition are satisfied.
-    ///
     /// A parameter to control the accuracy of the line search routine.
     ///
-    ///  The default value is \c 1e-4. This parameter should be greater
-    ///  than zero and smaller than \c 0.5.
+    ///  The default value is 1e-4. This parameter should be greater
+    ///  than zero and smaller than 0.5.
     pub ftol: f64,
 
     /// A parameter to control the accuracy of the line search routine.
@@ -101,8 +96,8 @@ pub struct LineSearch {
     /// inexpensive with respect to the cost of the iteration (which is
     /// sometimes the case when solving very large problems) it may be
     /// advantageous to set this parameter to a small value. A typical small
-    /// value is 0.1. This parameter shuold be greater than the \ref ftol
-    /// parameter (1e-4) and smaller than 1.0.
+    /// value is 0.1. This parameter shuold be greater than the ftol parameter
+    /// (1e-4) and smaller than 1.0.
     pub gtol: f64,
 
     /// xtol is a nonnegative input variable. termination occurs when the
@@ -357,8 +352,8 @@ impl LineSearch {
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 pub fn line_search_morethuente<E>(
     prb: &mut Problem<E>,
-    s: &[f64],               // Search direction array
-    stp: &mut f64,           // Step size
+    s: &[f64],          // Search direction array
+    stp: &mut f64,      // Step size
     param: &LineSearch, // line search parameters
 ) -> Result<i32>
 where
@@ -421,7 +416,6 @@ where
         prb.take_line_step(s, *stp);
 
         // Evaluate the function and gradient values.
-        // FIXME: use stp or not?
         prb.evaluate()?;
         let f = prb.fx;
         let dg = prb.gx.vecdot(s);
@@ -490,7 +484,7 @@ satisfies the sufficient decrease and curvature conditions."
                     stmin,
                     stmax,
                     &mut brackt,
-                ).expect("FIXME");
+                )?;
 
                 // Reset the function and gradient values for f.
                 fx = fxm + stx * dgtest;
@@ -511,7 +505,7 @@ satisfies the sufficient decrease and curvature conditions."
                     stmin,
                     stmax,
                     &mut brackt,
-                ).expect("FIXME")
+                )?;
             }
 
             // Force a sufficient decrease in the interval of uncertainty.

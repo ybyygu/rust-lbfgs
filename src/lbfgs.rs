@@ -132,7 +132,7 @@ pub struct LbfgsParam {
     ///
     /// This parameter determines the minimum rate of decrease of the objective
     /// function. The library stops iterations when the following condition is
-    /// met: (f' - f) / f < delta, where f' is the objective value of \ref past
+    /// met: (f' - f) / f < delta, where f' is the objective value of past
     /// iterations ago, and f is the objective value of the current iteration.
     /// The default value is 1e-5.
     ///
@@ -733,13 +733,12 @@ where
         // Updating Quasi-Newton Matrices with Limited Storage.
         // Mathematics of Computation, Vol. 35, No. 151,
         // pp. 773--782, 1980.
-        let bound = if m <= k { m } else { k };
-
         end = (end + 1) % m;
         // Compute the steepest direction.
         problem.update_search_direction(&mut d);
 
         let mut j = end;
+        let bound = m.min(k);
         for _ in 0..bound {
             j = (j + m - 1) % m;
             let it = &mut lm_arr[j as usize];
