@@ -132,7 +132,7 @@ pub struct LbfgsParam {
     ///
     /// This parameter determines the minimum rate of decrease of the objective
     /// function. The library stops iterations when the following condition is
-    /// met: (f' - f) / f < delta, where f' is the objective value of past
+    /// met: |f' - f| / f < delta, where f' is the objective value of past
     /// iterations ago, and f is the objective value of the current iteration.
     /// The default value is 1e-5.
     ///
@@ -616,9 +616,9 @@ where
     };
 
     // Evaluate the function value and its gradient.
-    // Compute the L1 norm of the variable and add it to the object value.
     let mut problem = Problem::new(x, &mut proc_evaluate, owlqn);
     problem.evaluate()?;
+    // Compute the L1 norm of the variable and add it to the object value.
     problem.update_owlqn_gradient();
 
     // Compute the direction;
@@ -655,18 +655,19 @@ where
         let gnorm = problem.gnorm();
 
         // Report the progress.
-        if let Some(ref mut prgr_fn) = proc_progress {
-            let prgr = Progress {
-                x: &problem.x,
-                gx: &problem.gx,
-                fx: problem.fx,
-                niter: k,
-                ncall: ls as usize,
-                xnorm,
-                gnorm,
-                step,
-            };
+        let prgr = Progress {
+            x: &problem.x,
+            gx: &problem.gx,
+            fx: problem.fx,
+            niter: k,
+            ncall: ls as usize,
+            xnorm,
+            gnorm,
+            step,
+        };
 
+        // User defined callback function
+        if let Some(ref mut prgr_fn) = proc_progress {
             let cancel = prgr_fn(&prgr);
             if cancel {
                 info!("The minimization process has been canceled.");
@@ -674,40 +675,16 @@ where
             }
         }
 
-        // Convergence test.
-        // The criterion is given by the following formula:
-        //     |g(x)| / \max(1, |x|) < \epsilon
-        if gnorm / xnorm.max(1.0) <= param.epsilon {
-            // Convergence.
-            info!("L-BFGS reaches convergence.");
-            ret = 0;
+        // Buildin tests for stopping conditions
+        if stop_satisfy_max_iterations(param.max_iterations)(&prgr) {
             break;
         }
 
-        // Test for stopping criterion.
-        // The criterion is given by the following formula:
-        //    (f(past_x) - f(x)) / f(x) < \delta
-        let fx = problem.fx;
-        if pf.len() > 0 {
-            // We don't test the stopping criterion while k < past.
-            if param.past <= k {
-                // Compute the relative improvement from the past.
-                let rate = (pf[(k % param.past) as usize] - fx) / fx;
-                // The stopping criterion.
-                if rate < param.delta {
-                    info!("The stopping criterion.");
-                    ret = 1i32;
-                    break;
-                }
-            }
-            // Store the current value of the objective function.
-            pf[(k % param.past) as usize] = fx;
+        if stop_satisfy_delta(&mut pf, param.delta)(&prgr) {
+            break;
         }
 
-        if param.max_iterations != 0 && param.max_iterations < k + 1 {
-            // Maximum number of iterations.
-            warn!("max_iterations reached!");
-            ret = LBFGSERR_MAXIMUMITERATION as i32;
+        if stop_satisfy_scaled_gnorm(param.epsilon)(&prgr) {
             break;
         }
 
@@ -772,3 +749,113 @@ where
     Ok(ret)
 }
 // lbfgs:1 ends here
+
+// stopping conditions
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*stopping%20conditions][stopping conditions:1]]
+/// Stopping conditions
+///
+/// defines when to stop optimization procedure
+pub struct StoppingCondition {
+    /// Gradient norm is small enough
+    max_gnorm: Option<f64>,
+
+    /// Scaled gradient norm is small enough (scaled gradient is a gradient
+    /// which is componentwise multiplied by vector of the variable scales)
+    max_scaled_gnorm: Option<f64>,
+
+    /// function change is small enough.
+    max_scaled_fnorm: Option<f64>,
+
+    /// Scaled step norm is small enough (scaled step is a step which is
+    /// componentwise divided by vector of the variable scales)
+    max_scaled_step: Option<f64>,
+
+    /// Maximum number of iterations. If set this value to 0, the number of
+    /// iterations is unlimited.
+    max_iterations: usize,
+
+    /// Minimum number of iterations before stopping tests. The default is 1.
+    min_iterations: usize,
+}
+
+impl Default for StoppingCondition {
+    fn default() -> Self {
+        StoppingCondition {
+            max_scaled_gnorm: Some(1e-4),
+            ..Default::default()
+        }
+    }
+}
+
+/// The criterion is given by the following formula:
+///     |g(x)| / \max(1, |x|) < \epsilon
+fn stop_satisfy_scaled_gnorm(epsilon: f64) -> impl FnMut(&Progress) -> bool {
+    move |prgr| {
+        if prgr.gnorm / prgr.xnorm.max(1.0) <= epsilon {
+            // Convergence.
+            info!("L-BFGS reaches convergence.");
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Maximum number of iterations.
+///
+/// number of function evaluations
+fn stop_satisfy_max_iterations(max_iterations: usize) -> impl FnMut(&Progress) -> bool {
+    move |prgr| {
+        if max_iterations == 0 {
+            false
+        } else if prgr.niter >= max_iterations {
+            warn!("max_iterations reached!");
+            true
+        } else {
+            false
+        }
+    }
+}
+
+fn stop_satisfy_max_gnorm(max_gnorm: f64) -> impl FnMut(&Progress) -> bool {
+    move |prgr| prgr.gx.vec2norm() <= max_gnorm
+}
+
+/// Functiona value (fx) delta based stopping criterion
+///
+/// Test for stopping criterion.
+/// The criterion is given by the following formula:
+///    |f(past_x) - f(x)| / f(x) < delta
+///
+/// # Parameters
+///
+/// * pf: an array for storing previous values of the objective function.
+/// * delta: max fx delta allowed
+///
+fn stop_satisfy_delta<'a>(pf: &'a mut [f64], delta: f64) -> impl FnMut(&'a Progress) -> bool {
+    move |prgr| {
+        let k = prgr.niter;
+        let fx = prgr.fx;
+        let past = pf.len();
+        if past < 1 {
+            return false;
+        }
+
+        // We don't test the stopping criterion while k < past.
+        if past <= k {
+            // Compute the relative improvement from the past.
+            let rate = (pf[(k % past) as usize] - fx).abs() / fx;
+            // The stopping criterion.
+            if rate < delta {
+                info!("The stopping criterion.");
+                return true;
+            }
+        }
+        // Store the current value of the objective function.
+        pf[(k % past) as usize] = fx;
+
+        false
+    }
+}
+// stopping conditions:1 ends here
