@@ -638,8 +638,6 @@ where
     let mut step = d.vec2norminv();
     let mut end = 0;
 
-    // FIXME: return code
-    let mut ret = 0;
     let linesearch = &param.linesearch;
     info!("start lbfgs loop...");
     for k in 1.. {
@@ -746,48 +744,13 @@ where
     // Return the final value of the objective function.
     *ptr_fx = problem.fx;
 
-    Ok(ret)
+    Ok(0)
 }
 // lbfgs:1 ends here
 
 // stopping conditions
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*stopping%20conditions][stopping conditions:1]]
-/// Stopping conditions
-///
-/// defines when to stop optimization procedure
-pub struct StoppingCondition {
-    /// Gradient norm is small enough
-    max_gnorm: Option<f64>,
-
-    /// Scaled gradient norm is small enough (scaled gradient is a gradient
-    /// which is componentwise multiplied by vector of the variable scales)
-    max_scaled_gnorm: Option<f64>,
-
-    /// function change is small enough.
-    max_scaled_fnorm: Option<f64>,
-
-    /// Scaled step norm is small enough (scaled step is a step which is
-    /// componentwise divided by vector of the variable scales)
-    max_scaled_step: Option<f64>,
-
-    /// Maximum number of iterations. If set this value to 0, the number of
-    /// iterations is unlimited.
-    max_iterations: usize,
-
-    /// Minimum number of iterations before stopping tests. The default is 1.
-    min_iterations: usize,
-}
-
-impl Default for StoppingCondition {
-    fn default() -> Self {
-        StoppingCondition {
-            max_scaled_gnorm: Some(1e-4),
-            ..Default::default()
-        }
-    }
-}
-
 /// The criterion is given by the following formula:
 ///     |g(x)| / \max(1, |x|) < \epsilon
 fn stop_satisfy_scaled_gnorm(epsilon: f64) -> impl FnMut(&Progress) -> bool {
