@@ -423,6 +423,24 @@ pub struct Progress<'a> {
     /// The number of evaluations called for this iteration.
     pub ncall: usize,
 }
+
+impl<'a> Progress<'a> {
+    fn new<E>(prb: &'a Problem<E>, niter: usize, ncall: usize, step: f64) -> Self
+    where
+        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    {
+        Progress {
+            x: &prb.x,
+            gx: &prb.gx,
+            fx: prb.fx,
+            xnorm: prb.xnorm(),
+            gnorm: prb.gnorm(),
+            step,
+            niter,
+            ncall,
+        }
+    }
+}
 // progress:1 ends here
 
 // orthantwise
@@ -627,6 +645,7 @@ where
     // Evaluate the function value and its gradient.
     let mut problem = Problem::new(x, &mut proc_evaluate, owlqn);
 
+    // Evaluate the function value and its gradient.
     problem.evaluate()?;
     // Compute the L1 norm of the variable and add it to the object value.
     problem.update_owlqn_gradient();
@@ -641,31 +660,15 @@ where
 
     let mut end = 0;
     let mut ls = 0i32;
-
     let linesearch = &param.linesearch;
 
     info!("start lbfgs loop...");
     for k in 1.. {
-        // Evaluate the function value and its gradient.
-
         // Store the current position and gradient vectors.
         problem.update_state();
 
-        // Compute x and g norms.
-        let xnorm = problem.xnorm();
-        let gnorm = problem.gnorm();
-
         // Report the progress.
-        let prgr = Progress {
-            x: &problem.x,
-            gx: &problem.gx,
-            fx: problem.fx,
-            niter: k,
-            ncall: ls as usize,
-            xnorm,
-            gnorm,
-            step,
-        };
+        let prgr = Progress::new(&problem, k, ls as usize, step);
 
         // User defined callback function
         if let Some(ref mut prgr_fn) = proc_progress {
@@ -678,8 +681,8 @@ where
 
         // Buildin tests for stopping conditions
         if stop_satisfy_max_iterations(param.max_iterations)(&prgr)
-            || stop_satisfy_delta(&mut pf, param.delta)(&prgr)
             || stop_satisfy_scaled_gnorm(param.epsilon)(&prgr)
+            || stop_satisfy_delta(&mut pf, param.delta)(&prgr)
         {
             break;
         }
