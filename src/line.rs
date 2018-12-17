@@ -163,7 +163,7 @@ impl LineSearch {
         }
         // The step is the maximum value.
         if step > self.max_step {
-            bail!("LBFGSERR_MAXIMUMSTEP");
+            bail!("LBFGSERR_MAXIMUMSTEP vs");
         }
 
         Ok(())
@@ -437,7 +437,7 @@ satisfies the sufficient decrease and curvature conditions."
         // FIXME: float == float?
         if *stp == param.max_step && f <= ftest1 && dg <= dgtest {
             // The step is the maximum value.
-            bail!("LBFGSERR_MAXIMUMSTEP");
+            bail!("LBFGSERR_MAXIMUMSTEP: MT");
         }
         // FIXME: float == float?
         if *stp == param.min_step && (ftest1 < f || dgtest <= dg) {

@@ -264,6 +264,8 @@ where
 
     /// Orthantwise operations
     owlqn: Option<Orthantwise>,
+
+    evaluated: bool,
 }
 
 impl<'a, E> Problem<'a, E>
@@ -279,6 +281,7 @@ where
             xp: vec![0.0; n],
             gp: vec![0.0; n],
             pg: vec![0.0; n],
+            evaluated: false,
             x,
             eval_fn,
             owlqn,
@@ -316,7 +319,13 @@ where
         // self.owlqn.pseudo_gradient(&mut pg, &x, &g);
         // }
 
+        self.evaluated = true;
         Ok(())
+    }
+
+    /// Test if `Problem` has been evaluated or not
+    pub fn evaluated(&self) -> bool {
+        self.evaluated
     }
 
     /// Copies all elements from src into self.
@@ -617,6 +626,7 @@ where
 
     // Evaluate the function value and its gradient.
     let mut problem = Problem::new(x, &mut proc_evaluate, owlqn);
+
     problem.evaluate()?;
     // Compute the L1 norm of the variable and add it to the object value.
     problem.update_owlqn_gradient();
@@ -626,27 +636,20 @@ where
     let mut d = vec![0.0; n];
     problem.update_search_direction(&mut d);
 
-    // Make sure that the initial variables are not a minimizer.
-    let xnorm = problem.xnorm();
-    let gnorm = problem.gnorm();
-    if gnorm / xnorm.max(1.0) <= param.epsilon {
-        info!("The initial variables already minimize the objective function.");
-        return Ok(0);
-    }
-
     // Compute the initial step:
     let mut step = d.vec2norminv();
+
     let mut end = 0;
+    let mut ls = 0i32;
 
     let linesearch = &param.linesearch;
+
     info!("start lbfgs loop...");
     for k in 1.. {
+        // Evaluate the function value and its gradient.
+
         // Store the current position and gradient vectors.
         problem.update_state();
-
-        // Search for an optimal step.
-        let ls = linesearch.find(&mut problem, &d, &mut step)?;
-        problem.update_owlqn_gradient();
 
         // Compute x and g norms.
         let xnorm = problem.xnorm();
@@ -674,17 +677,16 @@ where
         }
 
         // Buildin tests for stopping conditions
-        if stop_satisfy_max_iterations(param.max_iterations)(&prgr) {
+        if stop_satisfy_max_iterations(param.max_iterations)(&prgr)
+            || stop_satisfy_delta(&mut pf, param.delta)(&prgr)
+            || stop_satisfy_scaled_gnorm(param.epsilon)(&prgr)
+        {
             break;
         }
 
-        if stop_satisfy_delta(&mut pf, param.delta)(&prgr) {
-            break;
-        }
-
-        if stop_satisfy_scaled_gnorm(param.epsilon)(&prgr) {
-            break;
-        }
+        // Search for an optimal step.
+        ls = linesearch.find(&mut problem, &d, &mut step)?;
+        problem.update_owlqn_gradient();
 
         // Update vectors s and y:
         // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
