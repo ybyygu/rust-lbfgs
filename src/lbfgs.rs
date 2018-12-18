@@ -180,53 +180,6 @@ impl Default for LbfgsParam {
         }
     }
 }
-
-impl LbfgsParam {
-    // Check the input parameters for errors.
-    pub fn validate(&self) -> Result<()> {
-        ensure!(self.epsilon >= 0.0, "Invalid parameter epsilon specified.");
-
-        ensure!(self.delta >= 0.0, "Invalid parameter delta specified.");
-
-        // check line search parameters
-        let ls = self.linesearch;
-
-        ensure!(ls.min_step >= 0.0, "Invalid parameter min_step specified.");
-        ensure!(
-            ls.max_step >= ls.min_step,
-            "Invalid parameter max_step specified."
-        );
-
-        ensure!(ls.ftol >= 0.0, "Invalid parameter ftol specified.");
-        ensure!(
-            ls.gtol >= 0.0 && ls.gtol < 1.0 && ls.gtol > ls.ftol,
-            "Invalid parameter gtol specified."
-        );
-        ensure!(ls.xtol >= 0.0, "Invalid parameter xtol specified.");
-
-        if self.orthantwise {
-            warn!("Only the backtracking line search is available for OWL-QN algorithm.");
-        }
-
-        // FIXME: take care below
-        ensure!(
-            self.owlqn.c >= 0.0,
-            "Invalid parameter lbfgs_parameter_t::orthantwise_c specified."
-        );
-
-        // ensure!(
-        //     self.owlqn.start >= 0 && self.owlqn.start < n,
-        //     "Invalid parameter orthantwise_start specified."
-        // );
-
-        // ensure!(
-        //     self.owlqn.end > 0 && self.owlqn.end <= n,
-        //     "Invalid parameter orthantwise_end specified."
-        // );
-
-        Ok(())
-    }
-}
 // parameters:1 ends here
 
 // problem
@@ -581,177 +534,306 @@ impl Orthantwise {
 }
 // orthantwise:1 ends here
 
-// common
+// builder
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*common][common:1]]
-/// Internal iternation data for L-BFGS
-#[derive(Clone)]
-struct IterationData {
-    pub alpha: f64,
-
-    /// [n]
-    pub s: Vec<f64>,
-
-    /// [n]
-    pub y: Vec<f64>,
-
-    /// vecdot(y, s)
-    pub ys: f64,
-}
-
-impl IterationData {
-    fn new(n: usize) -> Self {
-        IterationData {
-            alpha: 0.0,
-            ys: 0.0,
-            s: vec![0.0; n],
-            y: vec![0.0; n],
-        }
-    }
-}
-// common:1 ends here
-
-// lbfgs
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs][lbfgs:1]]
-pub fn lbfgs<F, G>(
-    x: &mut [f64],
-    ptr_fx: &mut f64,
-    mut proc_evaluate: F,
-    mut proc_progress: Option<G>,
-    param: &LbfgsParam,
-) -> Result<i32>
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*builder][builder:1]]
+#[derive(Debug, Clone)]
+pub struct LBFGS<F, G>
 where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
     G: FnMut(&Progress) -> bool,
 {
-    param.validate()?;
+    // FIXME: make it private
+    pub param: LbfgsParam,
+    evaluate: Option<F>,
+    progress: Option<G>,
+}
 
-    // Initialize the limited memory.
-    let n = x.len();
-    let m = param.m;
-    let mut lm_arr: Vec<_> = (0..m).map(|_| IterationData::new(n)).collect();
-
-    // Allocate an array for storing previous values of the objective function.
-    let mut pf = vec![0.0; param.past as usize];
-
-    // Allocate working space for OWL-QN algorithm.
-    let owlqn = if param.orthantwise {
-        Some(param.owlqn.clone())
-    } else {
-        None
-    };
-
-    // Evaluate the function value and its gradient.
-    let mut problem = Problem::new(x, &mut proc_evaluate, owlqn);
-
-    // Evaluate the function value and its gradient.
-    problem.evaluate()?;
-    // Compute the L1 norm of the variable and add it to the object value.
-    problem.update_owlqn_gradient();
-
-    // Compute the direction;
-    // we assume the initial hessian matrix H_0 as the identity matrix.
-    let mut d = vec![0.0; n];
-    problem.update_search_direction(&mut d);
-
-    // Compute the initial step:
-    let mut step = d.vec2norminv();
-
-    let mut end = 0;
-    let mut ls = 0i32;
-    let linesearch = &param.linesearch;
-
-    info!("start lbfgs loop...");
-    for k in 1.. {
-        // Store the current position and gradient vectors.
-        problem.update_state();
-
-        // Report the progress.
-        let prgr = Progress::new(&problem, k, ls as usize, step);
-
-        // User defined callback function
-        if let Some(ref mut prgr_fn) = proc_progress {
-            let cancel = prgr_fn(&prgr);
-            if cancel {
-                info!("The minimization process has been canceled.");
-                break;
-            }
+impl<F, G> Default for LBFGS<F, G>
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    G: FnMut(&Progress) -> bool,
+{
+    fn default() -> Self {
+        LBFGS {
+            param: LbfgsParam::default(),
+            evaluate: None,
+            progress: None,
         }
+    }
+}
 
-        // Buildin tests for stopping conditions
-        if stop_satisfy_max_iterations(param.max_iterations)(&prgr)
-            || stop_satisfy_scaled_gnorm(param.epsilon)(&prgr)
-            || stop_satisfy_delta(&mut pf, param.delta)(&prgr)
-        {
-            break;
-        }
+/// Create lbfgs optimizer with epsilon convergence
+impl<F, G> LBFGS<F, G>
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    G: FnMut(&Progress) -> bool,
+{
+    /// Set scaled gradient norm for converence test
+    pub fn with_epsilon(mut self, epsilon: f64) -> Self {
+        assert!(
+            epsilon.is_sign_positive(),
+            "Invalid parameter epsilon specified."
+        );
 
-        // Search for an optimal step.
-        ls = linesearch.find(&mut problem, &d, &mut step)?;
-        problem.update_owlqn_gradient();
+        self.param.epsilon = epsilon;
 
-        // Update vectors s and y:
-        // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
-        // y_{k+1} = g_{k+1} - g_{k}.
-        let it = &mut lm_arr[end];
-        it.s.vecdiff(&problem.x, &problem.xp);
-        it.y.vecdiff(&problem.gx, &problem.gp);
-
-        // Compute scalars ys and yy:
-        // ys = y^t \cdot s = 1 / \rho.
-        // yy = y^t \cdot y.
-        // Notice that yy is used for scaling the hessian matrix H_0 (Cholesky factor).
-        let ys = it.y.vecdot(&it.s);
-        let yy = it.y.vecdot(&it.y);
-
-        it.ys = ys;
-
-        // Recursive formula to compute dir = -(H \cdot g).
-        // This is described in page 779 of:
-        // Jorge Nocedal.
-        // Updating Quasi-Newton Matrices with Limited Storage.
-        // Mathematics of Computation, Vol. 35, No. 151,
-        // pp. 773--782, 1980.
-        end = (end + 1) % m;
-        // Compute the steepest direction.
-        problem.update_search_direction(&mut d);
-
-        let mut j = end;
-        let bound = m.min(k);
-        for _ in 0..bound {
-            j = (j + m - 1) % m;
-            let it = &mut lm_arr[j as usize];
-
-            // \alpha_{j} = \rho_{j} s^{t}_{j} \cdot q_{k+1}.
-            it.alpha = it.s.vecdot(&d) / it.ys;
-            // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
-            d.vecadd(&it.y, -it.alpha);
-        }
-        d.vecscale(ys / yy);
-
-        for _ in 0..bound {
-            let it = &mut lm_arr[j as usize];
-            // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
-            let beta = it.y.vecdot(&d) / it.ys;
-            // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
-            d.vecadd(&it.s, it.alpha - beta);
-            j = (j + 1) % m;
-        }
-
-        // Constrain the search direction for orthant-wise updates.
-        problem.constrain_search_direction(&mut d);
-
-        // Now the search direction d is ready. We try step = 1 first.
-        step = 1.0
+        self
     }
 
-    // Return the final value of the objective function.
-    *ptr_fx = problem.fx;
+    /// Set progress monitor
+    pub fn with_progress_monitor(mut self, prgr_fn: G) -> Self {
+        self.progress = Some(prgr_fn);
+        self
+    }
 
-    Ok(0)
+    /// Set orthantwise parameters
+    pub fn with_orthantwise(mut self, c: f64, start: usize, end: usize) -> Self {
+        assert!(
+            c.is_sign_positive(),
+            "Invalid parameter orthantwise c parameter specified."
+        );
+        warn!("Only the backtracking line search is available for OWL-QN algorithm.");
+
+        self.param.orthantwise = true;
+        self.param.owlqn.c = c;
+        self.param.owlqn.start = start as i32;
+        self.param.owlqn.end = end as i32;
+
+        self
+    }
+
+    pub fn with_linesearch_ftol(mut self, ftol: f64) -> Self {
+        assert!(ftol >= 0.0, "Invalid parameter ftol specified.");
+        self.param.linesearch.ftol = ftol;
+
+        self
+    }
+
+    pub fn with_linesearch_gtol(mut self, gtol: f64) -> Self {
+        assert!(
+            gtol >= 0.0 && gtol < 1.0 && gtol > self.param.linesearch.ftol,
+            "Invalid parameter gtol specified."
+        );
+
+        self.param.linesearch.gtol = gtol;
+
+        self
+    }
+
+    pub fn with_linesearch_xtol(mut self, xtol: f64) -> Self {
+        assert!(xtol >= 0.0, "Invalid parameter xtol specified.");
+
+        self.param.linesearch.xtol = xtol;
+        self
+    }
+
+    pub fn with_linesearch_min_step(mut self, min_step: f64) -> Self {
+        assert!(min_step >= 0.0, "Invalid parameter min_step specified.");
+
+        self.param.linesearch.min_step = min_step;
+        self
+    }
+
+    /// Set the maximum number of iterations.
+    ///
+    /// The lbfgs optimization terminates when the iteration count exceedes this
+    /// parameter. Setting this parameter to zero continues an optimization
+    /// process until a convergence or error.
+    ///
+    /// The default value is 0.
+    pub fn with_max_iterations(mut self, niter: usize) -> Self {
+        self.param.max_iterations = niter;
+
+        self
+    }
+
+    /// This parameter determines the minimum rate of decrease of the objective
+    /// function. The library stops iterations when the following condition is
+    /// met: |f' - f| / f < delta, where f' is the objective value of past
+    /// iterations ago, and f is the objective value of the current iteration.
+    ///
+    /// If `past` is zero, the library does not perform the delta-based
+    /// convergence test.
+    ///
+    /// The default value of delta is 1e-5.
+    ///
+    pub fn with_fx_delta(mut self, delta: f64, past: usize) -> Self {
+        assert!(delta >= 0.0, "Invalid parameter delta specified.");
+
+        self.param.past = past;
+        self.param.delta = delta;
+        self
+    }
+
+    /// Select line search algorithm
+    ///
+    /// The default is "MoreThuente" line search algorithm.
+    pub fn with_linesearch_algorithm(mut self, algo: &str) -> Self {
+        match algo {
+            "MoreThuente" => self.param.linesearch.algorithm = LineSearchAlgorithm::MoreThuente,
+            "BacktrackingArmijo" => {
+                self.param.linesearch.algorithm = LineSearchAlgorithm::BacktrackingArmijo
+            }
+            "BacktrackingStrongWolfe" => {
+                self.param.linesearch.algorithm = LineSearchAlgorithm::BacktrackingStrongWolfe
+            }
+            "BacktrackingWolfe" | "Backtracking" => {
+                self.param.linesearch.algorithm = LineSearchAlgorithm::BacktrackingWolfe
+            }
+            _ => unimplemented!(),
+        }
+
+        self
+    }
 }
-// lbfgs:1 ends here
+// builder:1 ends here
+
+// entry
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*entry][entry:1]]
+impl<F, G> LBFGS<F, G>
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    G: FnMut(&Progress) -> bool,
+{
+    /// Start the L-BFGS optimization; this will invoke the callback functions
+    /// evaluate() and progress() when necessary.
+    ///
+    /// # Parameters
+    ///
+    /// - x      : The array of input variables.
+    /// - eval_fn: A callback function to evaluate function value and gradient
+    ///
+    /// # Return
+    ///
+    /// * on success, return final evaluated `Problem`.
+    ///
+    pub fn minimize<'a>(mut self, x: &'a mut [f64], eval_fn: F) -> Result<Problem<'a, F>> {
+        let n = x.len();
+        let param = &self.param;
+
+        // Allocate working space for LBFGS optimization
+        let owlqn = if param.orthantwise {
+            Some(param.owlqn.clone())
+        } else {
+            None
+        };
+        let mut problem = Problem::new(x, eval_fn, owlqn);
+
+        // Evaluate the function value and its gradient.
+        problem.evaluate()?;
+        // Compute the L1 norm of the variable and add it to the object value.
+        problem.update_owlqn_gradient();
+
+        // Compute the direction;
+        // we assume the initial hessian matrix H_0 as the identity matrix.
+        let mut d = vec![0.0; n];
+        problem.update_search_direction(&mut d);
+
+        // Compute the initial step:
+        let mut step = d.vec2norminv();
+
+        let mut end = 0;
+        let mut ls = 0i32;
+        let linesearch = param.linesearch;
+
+        // Initialize the limited memory.
+        let m = param.m;
+        let mut lm_arr: Vec<_> = (0..m).map(|_| IterationData::new(n)).collect();
+
+        // Allocate an array for storing previous values of the objective function.
+        let mut pf = vec![0.0; param.past as usize];
+
+        info!("start lbfgs loop...");
+        for k in 1.. {
+            // Store the current position and gradient vectors.
+            problem.update_state();
+
+            // Report the progress.
+            let prgr = Progress::new(&problem, k, ls as usize, step);
+
+            // User defined callback function
+            if let Some(ref mut prgr_fn) = self.progress {
+                let cancel = prgr_fn(&prgr);
+                if cancel {
+                    info!("The minimization process has been canceled.");
+                    break;
+                }
+            }
+
+            // Buildin tests for stopping conditions
+            if stop_satisfy_max_iterations(param.max_iterations)(&prgr)
+                || stop_satisfy_scaled_gnorm(param.epsilon)(&prgr)
+                || stop_satisfy_delta(&mut pf, param.delta)(&prgr)
+            {
+                break;
+            }
+
+            // Search for an optimal step.
+            ls = linesearch.find(&mut problem, &d, &mut step)?;
+            problem.update_owlqn_gradient();
+
+            // Update vectors s and y:
+            // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
+            // y_{k+1} = g_{k+1} - g_{k}.
+            let it = &mut lm_arr[end];
+            it.s.vecdiff(&problem.x, &problem.xp);
+            it.y.vecdiff(&problem.gx, &problem.gp);
+
+            // Compute scalars ys and yy:
+            // ys = y^t \cdot s = 1 / \rho.
+            // yy = y^t \cdot y.
+            // Notice that yy is used for scaling the hessian matrix H_0 (Cholesky factor).
+            let ys = it.y.vecdot(&it.s);
+            let yy = it.y.vecdot(&it.y);
+
+            it.ys = ys;
+
+            // Recursive formula to compute dir = -(H \cdot g).
+            // This is described in page 779 of:
+            // Jorge Nocedal.
+            // Updating Quasi-Newton Matrices with Limited Storage.
+            // Mathematics of Computation, Vol. 35, No. 151,
+            // pp. 773--782, 1980.
+            end = (end + 1) % m;
+            // Compute the steepest direction.
+            problem.update_search_direction(&mut d);
+
+            let mut j = end;
+            let bound = m.min(k);
+            for _ in 0..bound {
+                j = (j + m - 1) % m;
+                let it = &mut lm_arr[j as usize];
+
+                // \alpha_{j} = \rho_{j} s^{t}_{j} \cdot q_{k+1}.
+                it.alpha = it.s.vecdot(&d) / it.ys;
+                // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
+                d.vecadd(&it.y, -it.alpha);
+            }
+            d.vecscale(ys / yy);
+
+            for _ in 0..bound {
+                let it = &mut lm_arr[j as usize];
+                // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
+                let beta = it.y.vecdot(&d) / it.ys;
+                // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
+                d.vecadd(&it.s, it.alpha - beta);
+                j = (j + 1) % m;
+            }
+
+            // Constrain the search direction for orthant-wise updates.
+            problem.constrain_search_direction(&mut d);
+
+            // Now the search direction d is ready. We try step = 1 first.
+            step = 1.0
+        }
+
+        // Return the final value of the objective function.
+        Ok(problem)
+    }
+}
+// entry:1 ends here
 
 // stopping conditions
 
@@ -827,3 +909,33 @@ fn stop_satisfy_delta<'a>(pf: &'a mut [f64], delta: f64) -> impl FnMut(&'a Progr
     }
 }
 // stopping conditions:1 ends here
+
+// iteration data
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*iteration%20data][iteration data:1]]
+/// Internal iternation data for L-BFGS
+#[derive(Clone)]
+struct IterationData {
+    pub alpha: f64,
+
+    /// [n]
+    pub s: Vec<f64>,
+
+    /// [n]
+    pub y: Vec<f64>,
+
+    /// vecdot(y, s)
+    pub ys: f64,
+}
+
+impl IterationData {
+    fn new(n: usize) -> Self {
+        IterationData {
+            alpha: 0.0,
+            ys: 0.0,
+            s: vec![0.0; n],
+            y: vec![0.0; n],
+        }
+    }
+}
+// iteration data:1 ends here

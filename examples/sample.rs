@@ -5,8 +5,7 @@
 // Adopted from sample.c in original source.
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*sample.rs][sample.rs:1]]
-use lbfgs::{LBFGS, Progress};
-use quicli::prelude::*;
+use lbfgs::{lbfgs, Progress};
 
 fn main() {
     const N: usize = 100;
@@ -15,25 +14,25 @@ fn main() {
     let mut x = [0.0 as f64; N];
     for i in (0..N).step_by(2) {
         x[i] = -1.2;
-        x[i+1] = 1.0;
+        x[i + 1] = 1.0;
     }
 
     // Default evaluator adopted from liblbfgs sample.c
     //
     // # Parameters
-    // - arr_x: The current values of variables.
+    // - x: The current values of variables.
     // - gx   : The gradient vector. The callback function must compute the gradient values for the current variables.
     // # Return
     // - fx: evaluated value
-    let evaluate = |arr_x: &[f64], gx: &mut [f64]| {
-        let n = arr_x.len();
+    let evaluate = |x: &[f64], gx: &mut [f64]| {
+        let n = x.len();
 
         let mut fx = 0.0;
         for i in (0..n).step_by(2) {
-            let t1 = 1.0 - arr_x[i];
-            let t2 = 10.0 * (arr_x[i+1] - arr_x[i] * arr_x[i]);
-            gx[i+1] = 20.0 * t2;
-            gx[i] = -2.0 * (arr_x[i] * gx[i+1] + t1);
+            let t1 = 1.0 - x[i];
+            let t2 = 10.0 * (x[i + 1] - x[i] * x[i]);
+            gx[i + 1] = 20.0 * t2;
+            gx[i] = -2.0 * (x[i] * gx[i + 1] + t1);
             fx += t1 * t1 + t2 * t2;
         }
 
@@ -47,18 +46,24 @@ fn main() {
     // # Return
     // - false to continue the optimization process. Returning true will cancel the optimization process.
     let progress = |prgr: &Progress| {
-        let x = &prgr.arr_x;
+        let x = &prgr.x;
 
         println!("Iteration {}:", &prgr.niter);
         println!("  fx = {}, x[0] = {}, x[1] = {}", &prgr.fx, x[0], x[1]);
-        println!("  xnorm = {}, gnorm = {}, step = {}", &prgr.xnorm, &prgr.gnorm, &prgr.step);
+        println!(
+            "  xnorm = {}, gnorm = {}, step = {}",
+            &prgr.xnorm, &prgr.gnorm, &prgr.step
+        );
         println!("");
 
         false
     };
 
-    let mut lbfgs = LBFGS::default();
-    let fx = lbfgs.run(&mut x, evaluate, progress).expect("lbfgs run");
-    println!("  fx = {:}, x[0] = {}, x[1] = {}\n", fx, x[0], x[1]);
+    let prb = lbfgs()
+        .with_progress_monitor(progress)
+        .minimize(&mut x, evaluate)
+        .expect("lbfgs minimize");
+
+    println!("  fx = {:}, x[0] = {}, x[1] = {}\n", prb.fx, x[0], x[1]);
 }
 // sample.rs:1 ends here

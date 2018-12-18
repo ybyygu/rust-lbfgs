@@ -22,7 +22,7 @@ use approx::*;
 
 #[test]
 fn test_lbfgs() {
-    use lbfgs::{Progress, LBFGS};
+    use lbfgs::{lbfgs, Progress};
 
     const N: usize = 100;
 
@@ -75,29 +75,33 @@ fn test_lbfgs() {
         false
     };
 
-    let mut lbfgs = LBFGS::default();
-    let fx = lbfgs.run(&mut x, evaluate, progress).expect("lbfgs run");
+    let prb = lbfgs()
+        .with_progress_monitor(progress)
+        .minimize(&mut x, evaluate)
+        .expect("lbfgs minimize");
+
     // Iteration 37:
     // fx = 0.0000000000000012832127771605377, x[0] = 0.9999999960382451, x[1] = 0.9999999917607568
     // xnorm = 9.999999938995018, gnorm = 0.0000009486547293218877, step = 1
 
-    assert_relative_eq!(0.0, fx, epsilon=1e-4);
+    assert_relative_eq!(0.0, prb.fx, epsilon = 1e-4);
     for i in 0..N {
-        assert_relative_eq!(1.0, x[i], epsilon=1e-4);
+        assert_relative_eq!(1.0, x[i], epsilon = 1e-4);
     }
 
     // OWL-QN
-    lbfgs.param.orthantwise = true;
-    lbfgs.param.owlqn.c = 1.0;
-    lbfgs.param.owlqn.start = 0;
-    lbfgs.param.owlqn.end = 99;
-    let fx = lbfgs.run(&mut x, evaluate, progress).expect("lbfgs run");
+    let prb = lbfgs()
+        .with_progress_monitor(progress)
+        .with_orthantwise(1.0, 0, 99)
+        .minimize(&mut x, evaluate)
+        .expect("lbfgs owlqn minimize");
+
     // Iteration 171:
     // fx = 43.50249999999999, x[0] = 0.2500000069348678, x[1] = 0.057500004213084016
     // xnorm = 1.8806931246657475, gnorm = 0.00000112236896804755, step = 1
 
-    assert_relative_eq!(43.5025, fx, epsilon=1e-4);
-    assert_relative_eq!(0.2500, x[0], epsilon=1e-4);
-    assert_relative_eq!(0.0575, x[1], epsilon=1e-4);
+    assert_relative_eq!(43.5025, prb.fx, epsilon = 1e-4);
+    assert_relative_eq!(0.2500, x[0], epsilon = 1e-4);
+    assert_relative_eq!(0.0575, x[1], epsilon = 1e-4);
 }
 // rosenbrock:1 ends here
