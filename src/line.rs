@@ -73,8 +73,8 @@ pub struct LineSearch {
 
     /// A parameter to control the accuracy of the line search routine.
     ///
-    ///  The default value is 1e-4. This parameter should be greater
-    ///  than zero and smaller than 0.5.
+    /// The default value is 1e-4. This parameter should be greater
+    /// than zero and smaller than 0.5.
     pub ftol: f64,
 
     /// A parameter to control the accuracy of the line search routine.

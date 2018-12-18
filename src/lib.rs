@@ -1,6 +1,12 @@
 // docs
 
-//! LBFGS algorithm
+//
+//  Copyright (c) 1990, Jorge Nocedal
+//  Copyright (c) 2007-2010 Naoaki Okazaki
+//  Copyright (c) 2018-2019 Wenping Guo
+//  All rights reserved.
+//
+//! Limited memory BFGS (L-BFGS) algorithm
 //!
 //! # Example
 //! ```
@@ -13,7 +19,7 @@
 //! let mut x = [0.0 as f64; N];
 //! for i in (0..N).step_by(2) {
 //!     x[i] = -1.2;
-//!     x[i + 1] = 1.0;
+//!     x[i+1] = 1.0;
 //! }
 //! 
 //! // 2. Defining how to evaluate function and gradient
@@ -23,9 +29,9 @@
 //!     let mut fx = 0.0;
 //!     for i in (0..n).step_by(2) {
 //!         let t1 = 1.0 - x[i];
-//!         let t2 = 10.0 * (x[i + 1] - x[i] * x[i]);
-//!         gx[i + 1] = 20.0 * t2;
-//!         gx[i] = -2.0 * (x[i] * gx[i + 1] + t1);
+//!         let t2 = 10.0 * (x[i+1] - x[i] * x[i]);
+//!         gx[i+1] = 20.0 * t2;
+//!         gx[i] = -2.0 * (x[i] * gx[i+1] + t1);
 //!         fx += t1 * t1 + t2 * t2;
 //!     }
 //! 

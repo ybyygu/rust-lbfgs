@@ -11,6 +11,6 @@ notifications:
 branches:
 only: master
 
-script:
-  # disable doc test
-  - cargo test --tests
+# script:
+#   # disable doc test
+#   - cargo test --tests

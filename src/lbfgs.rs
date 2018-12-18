@@ -565,6 +565,13 @@ where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     /// Set scaled gradient norm for converence test
+    ///
+    /// This parameter determines the accuracy with which the solution is to be
+    /// found. A minimization terminates when
+    ///
+    /// ||g|| < epsilon * max(1, ||x||),
+    ///
+    /// where ||.|| denotes the Euclidean (L2) norm. The default value is 1e-5.
     pub fn with_epsilon(mut self, epsilon: f64) -> Self {
         assert!(
             epsilon.is_sign_positive(),
@@ -592,6 +599,10 @@ where
         self
     }
 
+    /// A parameter to control the accuracy of the line search routine.
+    ///
+    /// The default value is 1e-4. This parameter should be greater
+    /// than zero and smaller than 0.5.
     pub fn with_linesearch_ftol(mut self, ftol: f64) -> Self {
         assert!(ftol >= 0.0, "Invalid parameter ftol specified.");
         self.param.linesearch.ftol = ftol;
@@ -599,6 +610,14 @@ where
         self
     }
 
+    /// A parameter to control the accuracy of the line search routine.
+    ///
+    /// The default value is 0.9. If the function and gradient evaluations are
+    /// inexpensive with respect to the cost of the iteration (which is
+    /// sometimes the case when solving very large problems) it may be
+    /// advantageous to set this parameter to a small value. A typical small
+    /// value is 0.1. This parameter shuold be greater than the ftol parameter
+    /// (1e-4) and smaller than 1.0.
     pub fn with_linesearch_gtol(mut self, gtol: f64) -> Self {
         assert!(
             gtol >= 0.0 && gtol < 1.0 && gtol > self.param.linesearch.ftol,
@@ -610,6 +629,15 @@ where
         self
     }
 
+    /// xtol is a nonnegative input variable. termination occurs when the
+    /// relative width of the interval of uncertainty is at most xtol.
+    ///
+    /// The machine precision for floating-point values.
+    ///
+    ///  This parameter must be a positive value set by a client program to
+    ///  estimate the machine precision. The line search routine will terminate
+    ///  with the status code (::LBFGSERR_ROUNDING_ERROR) if the relative width
+    ///  of the interval of uncertainty is less than this parameter.
     pub fn with_linesearch_xtol(mut self, xtol: f64) -> Self {
         assert!(xtol >= 0.0, "Invalid parameter xtol specified.");
 
@@ -617,6 +645,12 @@ where
         self
     }
 
+    /// The minimum step of the line search routine.
+    ///
+    /// The default value is 1e-20. This value need not be modified unless the
+    /// exponents are too large for the machine being used, or unless the
+    /// problem is extremely badly scaled (in which case the exponents should be
+    /// increased).
     pub fn with_linesearch_min_step(mut self, min_step: f64) -> Self {
         assert!(min_step >= 0.0, "Invalid parameter min_step specified.");
 
@@ -679,25 +713,25 @@ where
 }
 // builder:1 ends here
 
-// entry
+// src
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*entry][entry:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
 impl<F> LBFGS<F>
 where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
-    /// Start the L-BFGS optimization; this will invoke the callback functions
-    /// evaluate() and progress() when necessary.
-    ///
+    /// Start the L-BFGS optimization; this will invoke the callback functions evaluate
+    /// and progress.
+    /// 
     /// # Parameters
-    ///
-    /// - x      : The array of input variables.
-    /// - eval_fn: A callback function to evaluate function value and gradient
-    ///
+    /// 
+    /// * x       : The array of input variables.
+    /// * evaluate: A closure for evaluating function value and gradient
+    /// * progress: A closure for monitor progress or defining stopping condition
+    /// 
     /// # Return
-    ///
+    /// 
     /// * on success, return final evaluated `Problem`.
-    ///
     pub fn minimize<'a, G>(self, x: &'a mut [f64], eval_fn: F, mut prgr_fn: G) -> Result<Problem<'a, F>>
     where
         G: FnMut(&Progress) -> bool,
@@ -823,7 +857,7 @@ where
         Ok(problem)
     }
 }
-// entry:1 ends here
+// src:1 ends here
 
 // stopping conditions
 
