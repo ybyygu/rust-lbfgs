@@ -38,6 +38,8 @@ C codes.
     // 0. Import the lib
     use lbfgs::lbfgs;
     
+    const N: usize = 100;
+    
     // 1. Initialize data
     let mut x = [0.0 as f64; N];
     for i in (0..N).step_by(2) {
@@ -62,12 +64,20 @@ C codes.
     };
     
     // 3. Carry out LBFGS optimization
-    let fx = lbfgs()
+    let prb = lbfgs()
         .with_max_iterations(5)
-        .minimize(&mut x, evaluate)
-        .expect("lbfgs run");
+        .with_orthantwise(1.0, 0, 99) // enable OWL-QN
+        .minimize(
+            &mut x,                   // input variables
+            evaluate,                 // define how to evaluate function
+            |prgr| {                  // define progress monitor
+                println!("iter: {:}", prgr.niter);
+                false                 // returning true will cancel optimization
+            }
+        )
+        .expect("lbfgs owlqn minimize");
     
-    println!("fx = {:}", fx);
+    println!("fx = {:}", prb.fx);
 
 The callback functions are native Rust FnMut closures, possible to
 capture/change variables in the environment.

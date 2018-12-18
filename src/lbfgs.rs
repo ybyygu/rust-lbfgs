@@ -112,7 +112,7 @@ pub struct LbfgsParam {
     /// This parameter determines the accuracy with which the solution is to be
     /// found. A minimization terminates when
     ///
-    ///     ||g|| < epsilon * max(1, ||x||),
+    /// ||g|| < epsilon * max(1, ||x||),
     ///
     /// where ||.|| denotes the Euclidean (L2) norm. The default value is \c
     /// 1e-5.
@@ -420,7 +420,7 @@ pub struct Orthantwise {
     /// 0). This parameter b (0 <= b < N) specifies the index number from which
     /// the library computes the L1 norm of the variables x,
     ///
-    ///     |x| := |x_{b}| + |x_{b+1}| + ... + |x_{N}| .
+    /// |x| := |x_{b}| + |x_{b+1}| + ... + |x_{N}| .
     ///
     /// In other words, variables x_1, ..., x_{b-1} are not used for computing
     /// the L1 norm. Setting b (0 < b < N), one can protect variables, x_1, ...,
@@ -538,36 +538,31 @@ impl Orthantwise {
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*builder][builder:1]]
 #[derive(Debug, Clone)]
-pub struct LBFGS<F, G>
+pub struct LBFGS<F>
 where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-    G: FnMut(&Progress) -> bool,
 {
     // FIXME: make it private
     pub param: LbfgsParam,
     evaluate: Option<F>,
-    progress: Option<G>,
 }
 
-impl<F, G> Default for LBFGS<F, G>
+impl<F> Default for LBFGS<F>
 where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-    G: FnMut(&Progress) -> bool,
 {
     fn default() -> Self {
         LBFGS {
             param: LbfgsParam::default(),
             evaluate: None,
-            progress: None,
         }
     }
 }
 
 /// Create lbfgs optimizer with epsilon convergence
-impl<F, G> LBFGS<F, G>
+impl<F> LBFGS<F>
 where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-    G: FnMut(&Progress) -> bool,
 {
     /// Set scaled gradient norm for converence test
     pub fn with_epsilon(mut self, epsilon: f64) -> Self {
@@ -578,12 +573,6 @@ where
 
         self.param.epsilon = epsilon;
 
-        self
-    }
-
-    /// Set progress monitor
-    pub fn with_progress_monitor(mut self, prgr_fn: G) -> Self {
-        self.progress = Some(prgr_fn);
         self
     }
 
@@ -643,6 +632,7 @@ where
     ///
     /// The default value is 0.
     pub fn with_max_iterations(mut self, niter: usize) -> Self {
+        // FIXME: remove below
         self.param.max_iterations = niter;
 
         self
@@ -692,10 +682,9 @@ where
 // entry
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*entry][entry:1]]
-impl<F, G> LBFGS<F, G>
+impl<F> LBFGS<F>
 where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-    G: FnMut(&Progress) -> bool,
 {
     /// Start the L-BFGS optimization; this will invoke the callback functions
     /// evaluate() and progress() when necessary.
@@ -709,7 +698,10 @@ where
     ///
     /// * on success, return final evaluated `Problem`.
     ///
-    pub fn minimize<'a>(mut self, x: &'a mut [f64], eval_fn: F) -> Result<Problem<'a, F>> {
+    pub fn minimize<'a, G>(self, x: &'a mut [f64], eval_fn: F, mut prgr_fn: G) -> Result<Problem<'a, F>>
+    where
+        G: FnMut(&Progress) -> bool,
+    {
         let n = x.len();
         let param = &self.param;
 
@@ -754,12 +746,10 @@ where
             let prgr = Progress::new(&problem, k, ls as usize, step);
 
             // User defined callback function
-            if let Some(ref mut prgr_fn) = self.progress {
-                let cancel = prgr_fn(&prgr);
-                if cancel {
-                    info!("The minimization process has been canceled.");
-                    break;
-                }
+            let cancel = prgr_fn(&prgr);
+            if cancel {
+                info!("The minimization process has been canceled.");
+                break;
             }
 
             // Buildin tests for stopping conditions
@@ -918,10 +908,8 @@ fn stop_satisfy_delta<'a>(pf: &'a mut [f64], delta: f64) -> impl FnMut(&'a Progr
 struct IterationData {
     pub alpha: f64,
 
-    /// [n]
     pub s: Vec<f64>,
 
-    /// [n]
     pub y: Vec<f64>,
 
     /// vecdot(y, s)

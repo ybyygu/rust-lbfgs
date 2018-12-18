@@ -76,8 +76,7 @@ fn test_lbfgs() {
     };
 
     let prb = lbfgs()
-        .with_progress_monitor(progress)
-        .minimize(&mut x, evaluate)
+        .minimize(&mut x, evaluate, progress)
         .expect("lbfgs minimize");
 
     // Iteration 37:
@@ -91,9 +90,8 @@ fn test_lbfgs() {
 
     // OWL-QN
     let prb = lbfgs()
-        .with_progress_monitor(progress)
         .with_orthantwise(1.0, 0, 99)
-        .minimize(&mut x, evaluate)
+        .minimize(&mut x, evaluate, progress)
         .expect("lbfgs owlqn minimize");
 
     // Iteration 171:

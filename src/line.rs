@@ -1,16 +1,3 @@
-// header
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*header][header:1]]
-//! Line search algorithms
-//
-//       Limited memory BFGS (L-BFGS).
-//
-//  Copyright (c) 1990, Jorge Nocedal
-//  Copyright (c) 2007-2010 Naoaki Okazaki
-//  Copyright (c) 2018-2019 Wenping Guo
-//  All rights reserved.
-// header:1 ends here
-
 // base
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
@@ -163,7 +150,7 @@ impl LineSearch {
         }
         // The step is the maximum value.
         if step > self.max_step {
-            bail!("LBFGSERR_MAXIMUMSTEP vs");
+            bail!("LBFGSERR_MAXIMUMSTEP: VS");
         }
 
         Ok(())
@@ -368,7 +355,7 @@ where
     let finit = prb.fx;
     let dgtest = param.ftol * dginit;
     let mut width = param.max_step - param.min_step;
-    let mut prev_width = 2.0f64 * width;
+    let mut prev_width = 2.0 * width;
 
     // The variables stx, fx, dgx contain the values of the step,
     // function, and directional derivative at the best step.

@@ -60,8 +60,7 @@ fn main() {
     };
 
     let prb = lbfgs()
-        .with_progress_monitor(progress)
-        .minimize(&mut x, evaluate)
+        .minimize(&mut x, evaluate, progress)
         .expect("lbfgs minimize");
 
     println!("  fx = {:}, x[0] = {}, x[1] = {}\n", prb.fx, x[0], x[1]);

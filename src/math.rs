@@ -1,11 +1,8 @@
-// math.rs
-// :PROPERTIES:
-// :header-args: :tangle src/math.rs
-// :END:
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*math.rs][math.rs:1]]
 //! Backend for lbfgs vector operations
 
+// trait
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*trait][trait:1]]
 /// Abstracting lbfgs required math operations
 pub trait LbfgsMath<T> {
     /// y += c*x
@@ -126,4 +123,4 @@ fn test_lbfgs_math() {
     assert_eq!(-1.0, y[1]);
     assert_eq!(-1.0, y[2]);
 }
-// math.rs:1 ends here
+// trait:1 ends here
