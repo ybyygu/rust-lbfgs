@@ -1,6 +1,8 @@
 
-# v0.0.11 WIP
+# v0.0.11
 
+-   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-17 Mon] </span></span> assign lbfgs parameters using builder pattern
+-   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-16 Sun] </span></span> fixed important issues inherited from liblibfgs (#2, #3)
 -   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-15 Sat] </span></span> remove wolfe parameter from LineSearch (use gtol instead)
 -   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-14 Fri] </span></span> LineSearchParm is renamed as LineSearch
 
