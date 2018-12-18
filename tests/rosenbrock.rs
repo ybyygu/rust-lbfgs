@@ -22,7 +22,7 @@ use approx::*;
 
 #[test]
 fn test_lbfgs() {
-    use lbfgs::{lbfgs, Progress};
+    use lbfgs::{default_evaluate, default_progress, lbfgs, Progress};
 
     const N: usize = 100;
 
@@ -33,50 +33,8 @@ fn test_lbfgs() {
         x[i + 1] = 1.0;
     }
 
-    // Default evaluator adopted from liblbfgs sample.c
-    //
-    // # Parameters
-    // - arr_x: The current values of variables.
-    // - gx   : The gradient vector. The callback function must compute the gradient values for the current variables.
-    // # Return
-    // - fx: evaluated value
-    let evaluate = |arr_x: &[f64], gx: &mut [f64]| {
-        let n = arr_x.len();
-
-        let mut fx = 0.0;
-        for i in (0..n).step_by(2) {
-            let t1 = 1.0 - arr_x[i];
-            let t2 = 10.0 * (arr_x[i + 1] - arr_x[i] * arr_x[i]);
-            gx[i + 1] = 20.0 * t2;
-            gx[i] = -2.0 * (arr_x[i] * gx[i + 1] + t1);
-            fx += t1 * t1 + t2 * t2;
-        }
-
-        Ok(fx)
-    };
-
-    // Default progress monitor adopted from liblbfgs sample.c
-    //
-    // # Parameters
-    // - prgr: holding all progressive data
-    // # Return
-    // - false to continue the optimization process. Returning true will cancel the optimization process.
-    let progress = |prgr: &Progress| {
-        let x = &prgr.x;
-
-        println!("Iteration {}, Evaluation {}:", &prgr.niter, &prgr.neval);
-        println!("  fx = {}, x[0] = {}, x[1] = {}", &prgr.fx, x[0], x[1]);
-        println!(
-            "  xnorm = {}, gnorm = {}, step = {}",
-            &prgr.xnorm, &prgr.gnorm, &prgr.step
-        );
-        println!("");
-
-        false
-    };
-
     let prb = lbfgs()
-        .minimize(&mut x, evaluate, progress)
+        .minimize(&mut x, default_evaluate(), default_progress())
         .expect("lbfgs minimize");
 
     // Iteration 37:
@@ -91,7 +49,7 @@ fn test_lbfgs() {
     // OWL-QN
     let prb = lbfgs()
         .with_orthantwise(1.0, 0, 99)
-        .minimize(&mut x, evaluate, progress)
+        .minimize(&mut x, default_evaluate(), default_progress())
         .expect("lbfgs owlqn minimize");
 
     // Iteration 171:

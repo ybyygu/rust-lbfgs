@@ -1,3 +1,39 @@
+// docs
+// Copyright (c) 1990, Jorge Nocedal
+// Copyright (c) 2007-2010 Naoaki Okazaki
+// Copyright (c) 2018-2019 Wenping Guo
+// All rights reserved.
+
+//! # Find a satisfactory step length along predefined search direction
+//!
+//! # Example
+//! ```
+//! use lbfgs::math::LbfgsMath;
+//! use lbfgs::Problem;
+//! use lbfgs::default_evaluate;
+//! use lbfgs::line::LineSearch;
+//! 
+//! const N: usize = 100;
+//! 
+//! let mut x = [0.0 as f64; N];
+//! for i in (0..N).step_by(2) {
+//!     x[i] = -1.2;
+//!     x[i + 1] = 1.0;
+//! }
+//! 
+//! // construct problem
+//! let mut prb = Problem::new(&mut x, default_evaluate(), None);
+//! prb.evaluate();
+//! // construct initial search direction
+//! let mut d = vec![0.0; N];
+//! prb.update_search_direction(&mut d);
+//! // Compute the initial step
+//! let mut step = d.vec2norminv();
+//! 
+//! let ls = LineSearch::default();
+//! let ncall = ls.find(&mut prb, &d, &mut step).expect("line search");
+//! ```
+
 // base
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]

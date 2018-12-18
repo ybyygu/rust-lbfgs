@@ -11,7 +11,7 @@ type Result<T> = ::std::result::Result<T, Error>;
 extern crate criterion;
 
 use criterion::Criterion;
-use lbfgs::LBFGS;
+use lbfgs::lbfgs;
 
 // Default evaluator adopted from liblbfgs sample.c
 //
@@ -50,15 +50,12 @@ fn rosenbrock() {
     const N: usize = 100;
 
     let mut x = init_variables(N);
-
-    let mut lbfgs = LBFGS::default();
-    lbfgs.run(&mut x, evaluate, |_| false).expect("lbfgs run");
+    lbfgs().minimize(&mut x, evaluate, |_| false).expect("lbfgs run");
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("rosenbrock lbfgs", |b| b.iter(|| rosenbrock()));
 }
-
 
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);

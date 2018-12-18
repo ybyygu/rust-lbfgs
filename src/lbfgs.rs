@@ -820,7 +820,7 @@ where
             // Store the current position and gradient vectors.
             problem.update_state();
 
-            // Report the progress.
+            // Monitor the progress.
             let prgr = Progress::new(&problem, k, ls as usize, step);
 
             // User defined callback function
@@ -829,13 +829,7 @@ where
                 info!("The minimization process has been canceled.");
                 break;
             }
-
-            // Buildin tests for stopping conditions
-            if stop_satisfy_max_iterations(param.max_iterations)(&prgr)
-                || stop_satisfy_max_evaluations(param.max_evaluations)(&prgr)
-                || stop_satisfy_scaled_gnorm(param.epsilon)(&prgr)
-                || stop_satisfy_delta(&mut pf, param.delta)(&prgr)
-            {
+            if satisfying_stop_conditions(param, prgr, &mut pf) {
                 break;
             }
 
@@ -907,49 +901,63 @@ where
 // stopping conditions
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*stopping%20conditions][stopping conditions:1]]
+/// test if progress satisfying stop condition
+fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress, pf: &mut [f64]) -> bool {
+    // Buildin tests for stopping conditions
+    if satisfying_max_iterations(&prgr, param.max_iterations)
+        || satisfying_max_evaluations(&prgr, param.max_evaluations)
+        || satisfying_scaled_gnorm(&prgr, param.epsilon)
+        || satisfying_delta(&prgr, pf, param.delta)
+    // || satisfying_max_gnorm(&prgr, self.param.max_gnorm)
+    {
+        return true;
+    }
+
+    false
+}
+
 /// The criterion is given by the following formula:
 ///     |g(x)| / \max(1, |x|) < \epsilon
-fn stop_satisfy_scaled_gnorm(epsilon: f64) -> impl FnMut(&Progress) -> bool {
-    move |prgr| {
-        if prgr.gnorm / prgr.xnorm.max(1.0) <= epsilon {
-            // Convergence.
-            info!("L-BFGS reaches convergence.");
-            true
-        } else {
-            false
-        }
+#[inline]
+fn satisfying_scaled_gnorm(prgr: &Progress, epsilon: f64) -> bool {
+    if prgr.gnorm / prgr.xnorm.max(1.0) <= epsilon {
+        // Convergence.
+        info!("L-BFGS reaches convergence.");
+        true
+    } else {
+        false
     }
 }
 
 /// Maximum number of lbfgs iterations.
-fn stop_satisfy_max_iterations(max_iterations: usize) -> impl FnMut(&Progress) -> bool {
-    move |prgr| {
-        if max_iterations == 0 {
-            false
-        } else if prgr.niter >= max_iterations {
-            warn!("max_iterations reached!");
-            true
-        } else {
-            false
-        }
+#[inline]
+fn satisfying_max_iterations(prgr: &Progress, max_iterations: usize) -> bool {
+    if max_iterations == 0 {
+        false
+    } else if prgr.niter >= max_iterations {
+        warn!("max_iterations reached!");
+        true
+    } else {
+        false
     }
 }
 
 /// Maximum number of function evaluations
-fn stop_satisfy_max_evaluations(max_evaluations: usize) -> impl FnMut(&Progress) -> bool {
-    move |prgr| {
-        if max_evaluations == 0 {
-            false
-        } else if prgr.neval >= max_evaluations {
-            warn!("max evaluations reached!");
-            true
-        } else {
-            false
-        }
+#[inline]
+fn satisfying_max_evaluations(prgr: &Progress, max_evaluations: usize) -> bool {
+    if max_evaluations == 0 {
+        false
+    } else if prgr.neval >= max_evaluations {
+        warn!("Max allowed evaluations reached!");
+        true
+    } else {
+        false
     }
 }
-fn stop_satisfy_max_gnorm(max_gnorm: f64) -> impl FnMut(&Progress) -> bool {
-    move |prgr| prgr.gx.vec2norm() <= max_gnorm
+
+#[inline]
+fn satisfying_max_gnorm(prgr: &Progress, max_gnorm: f64) -> bool {
+    prgr.gx.vec2norm() <= max_gnorm
 }
 
 /// Functiona value (fx) delta based stopping criterion
@@ -963,30 +971,29 @@ fn stop_satisfy_max_gnorm(max_gnorm: f64) -> impl FnMut(&Progress) -> bool {
 /// * pf: an array for storing previous values of the objective function.
 /// * delta: max fx delta allowed
 ///
-fn stop_satisfy_delta<'a>(pf: &'a mut [f64], delta: f64) -> impl FnMut(&'a Progress) -> bool {
-    move |prgr| {
-        let k = prgr.niter;
-        let fx = prgr.fx;
-        let past = pf.len();
-        if past < 1 {
-            return false;
-        }
-
-        // We don't test the stopping criterion while k < past.
-        if past <= k {
-            // Compute the relative improvement from the past.
-            let rate = (pf[(k % past) as usize] - fx).abs() / fx;
-            // The stopping criterion.
-            if rate < delta {
-                info!("The stopping criterion.");
-                return true;
-            }
-        }
-        // Store the current value of the objective function.
-        pf[(k % past) as usize] = fx;
-
-        false
+#[inline]
+fn satisfying_delta<'a>(prgr: &Progress, pf: &'a mut [f64], delta: f64) -> bool {
+    let k = prgr.niter;
+    let fx = prgr.fx;
+    let past = pf.len();
+    if past < 1 {
+        return false;
     }
+
+    // We don't test the stopping criterion while k < past.
+    if past <= k {
+        // Compute the relative improvement from the past.
+        let rate = (pf[(k % past) as usize] - fx).abs() / fx;
+        // The stopping criterion.
+        if rate < delta {
+            info!("The stopping criterion.");
+            return true;
+        }
+    }
+    // Store the current value of the objective function.
+    pf[(k % past) as usize] = fx;
+
+    false
 }
 // stopping conditions:1 ends here
 

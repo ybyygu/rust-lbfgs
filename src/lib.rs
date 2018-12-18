@@ -77,3 +77,45 @@ where
     LBFGS::default()
 }
 // lbfgs:1 ends here
+
+// tests
+// test functions
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*tests][tests:1]]
+/// Default test function (rosenbrock) adopted from liblbfgs sample.c
+pub fn default_evaluate() -> impl FnMut(&[f64], &mut [f64]) -> Result<f64> {
+    move |arr_x: &[f64], gx: &mut [f64]| {
+        let n = arr_x.len();
+
+        let mut fx = 0.0;
+        for i in (0..n).step_by(2) {
+            let t1 = 1.0 - arr_x[i];
+            let t2 = 10.0 * (arr_x[i + 1] - arr_x[i] * arr_x[i]);
+            gx[i + 1] = 20.0 * t2;
+            gx[i] = -2.0 * (arr_x[i] * gx[i + 1] + t1);
+            fx += t1 * t1 + t2 * t2;
+        }
+
+        Ok(fx)
+    }
+}
+
+/// Default progress monitor adopted from liblbfgs sample.c
+///
+/// # Notes
+///
+/// * Returning true will cancel the optimization process.
+///
+pub fn default_progress() -> impl FnMut(&Progress) -> bool {
+    move |prgr| {
+        println!("Iteration {}, Evaluation {}:", prgr.niter, prgr.neval);
+        println!(
+            " fx = {:-12.6} xnorm = {:-12.6}, gnorm = {:-12.6}, step = {}",
+            prgr.fx, prgr.xnorm, prgr.gnorm, prgr.step
+        );
+        println!("");
+
+        false
+    }
+}
+// tests:1 ends here
