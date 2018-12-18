@@ -64,7 +64,7 @@ fn test_lbfgs() {
     let progress = |prgr: &Progress| {
         let x = &prgr.x;
 
-        println!("Iteration {}:", &prgr.niter);
+        println!("Iteration {}, Evaluation {}:", &prgr.niter, &prgr.neval);
         println!("  fx = {}, x[0] = {}, x[1] = {}", &prgr.fx, x[0], x[1]);
         println!(
             "  xnorm = {}, gnorm = {}, step = {}",

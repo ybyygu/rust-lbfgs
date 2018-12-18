@@ -138,15 +138,22 @@ pub struct LbfgsParam {
     ///
     pub delta: f64,
 
-    /// The maximum number of iterations.
+    /// The maximum number of LBFGS iterations.
     ///
-    ///  The lbfgs() function terminates an optimization process with
-    ///  ::LBFGSERR_MAXIMUMITERATION status code when the iteration count
-    ///  exceedes this parameter. Setting this parameter to zero continues an
-    ///  optimization process until a convergence or error.
+    /// The lbfgs optimization terminates when the iteration count exceedes this
+    /// parameter.
     ///
-    /// The default value is 0.
+    /// Setting this parameter to zero continues an optimization process until a
+    /// convergence or error. The default value is 0.
     pub max_iterations: usize,
+
+    /// The maximum allowed number of evaluations of function value and
+    /// gradients. This number could be larger than max_iterations since line
+    /// search procedure may involve one or more evaluations.
+    ///
+    /// Setting this parameter to zero continues an optimization process until a
+    /// convergence or error. The default value is 0.
+    pub max_evaluations: usize,
 
     /// The line search options.
     ///
@@ -174,6 +181,7 @@ impl Default for LbfgsParam {
             past: 0,
             delta: 1e-5,
             max_iterations: 0,
+            max_evaluations: 0,
             orthantwise: false,
             owlqn: Orthantwise::default(),
             linesearch: LineSearch::default(),
@@ -218,7 +226,11 @@ where
     /// Orthantwise operations
     owlqn: Option<Orthantwise>,
 
+    /// Evaluated or not
     evaluated: bool,
+
+    /// The number of evaluation.
+    neval: usize,
 }
 
 impl<'a, E> Problem<'a, E>
@@ -235,6 +247,7 @@ where
             gp: vec![0.0; n],
             pg: vec![0.0; n],
             evaluated: false,
+            neval: 0,
             x,
             eval_fn,
             owlqn,
@@ -273,7 +286,13 @@ where
         // }
 
         self.evaluated = true;
+        self.neval += 1;
+
         Ok(())
+    }
+
+    pub fn number_of_evaluation(&self) -> usize {
+        self.neval
     }
 
     /// Test if `Problem` has been evaluated or not
@@ -361,19 +380,29 @@ where
 pub struct Progress<'a> {
     /// The current values of variables
     pub x: &'a [f64],
+
     /// The current gradient values of variables.
     pub gx: &'a [f64],
+
     /// The current value of the objective function.
     pub fx: f64,
+
     /// The Euclidean norm of the variables
     pub xnorm: f64,
+
     /// The Euclidean norm of the gradients.
     pub gnorm: f64,
+
     /// The line-search step used for this iteration.
     pub step: f64,
+
     /// The iteration count.
     pub niter: usize,
-    /// The number of evaluations called for this iteration.
+
+    /// The total number of evaluations.
+    pub neval: usize,
+
+    /// The number of function evaluation calls in line search procedure
     pub ncall: usize,
 }
 
@@ -388,9 +417,10 @@ impl<'a> Progress<'a> {
             fx: prb.fx,
             xnorm: prb.xnorm(),
             gnorm: prb.gnorm(),
+            neval: prb.number_of_evaluation(),
+            ncall,
             step,
             niter,
-            ncall,
         }
     }
 }
@@ -666,9 +696,18 @@ where
     ///
     /// The default value is 0.
     pub fn with_max_iterations(mut self, niter: usize) -> Self {
-        // FIXME: remove below
         self.param.max_iterations = niter;
+        self
+    }
 
+    /// The maximum allowed number of evaluations of function value and
+    /// gradients. This number could be larger than max_iterations since line
+    /// search procedure may involve one or more evaluations.
+    ///
+    /// Setting this parameter to zero continues an optimization process until a
+    /// convergence or error. The default value is 0.
+    pub fn with_max_evaluations(mut self, neval: usize) -> Self {
+        self.param.max_evaluations = neval;
         self
     }
 
@@ -732,7 +771,12 @@ where
     /// # Return
     /// 
     /// * on success, return final evaluated `Problem`.
-    pub fn minimize<'a, G>(self, x: &'a mut [f64], eval_fn: F, mut prgr_fn: G) -> Result<Problem<'a, F>>
+    pub fn minimize<'a, G>(
+        self,
+        x: &'a mut [f64],
+        eval_fn: F,
+        mut prgr_fn: G,
+    ) -> Result<Problem<'a, F>>
     where
         G: FnMut(&Progress) -> bool,
     {
@@ -788,6 +832,7 @@ where
 
             // Buildin tests for stopping conditions
             if stop_satisfy_max_iterations(param.max_iterations)(&prgr)
+                || stop_satisfy_max_evaluations(param.max_evaluations)(&prgr)
                 || stop_satisfy_scaled_gnorm(param.epsilon)(&prgr)
                 || stop_satisfy_delta(&mut pf, param.delta)(&prgr)
             {
@@ -876,9 +921,7 @@ fn stop_satisfy_scaled_gnorm(epsilon: f64) -> impl FnMut(&Progress) -> bool {
     }
 }
 
-/// Maximum number of iterations.
-///
-/// number of function evaluations
+/// Maximum number of lbfgs iterations.
 fn stop_satisfy_max_iterations(max_iterations: usize) -> impl FnMut(&Progress) -> bool {
     move |prgr| {
         if max_iterations == 0 {
@@ -892,6 +935,19 @@ fn stop_satisfy_max_iterations(max_iterations: usize) -> impl FnMut(&Progress) -
     }
 }
 
+/// Maximum number of function evaluations
+fn stop_satisfy_max_evaluations(max_evaluations: usize) -> impl FnMut(&Progress) -> bool {
+    move |prgr| {
+        if max_evaluations == 0 {
+            false
+        } else if prgr.neval >= max_evaluations {
+            warn!("max evaluations reached!");
+            true
+        } else {
+            false
+        }
+    }
+}
 fn stop_satisfy_max_gnorm(max_gnorm: f64) -> impl FnMut(&Progress) -> bool {
     move |prgr| prgr.gx.vec2norm() <= max_gnorm
 }
