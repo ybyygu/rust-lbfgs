@@ -70,24 +70,6 @@ use crate::math::LbfgsMath;
 use crate::line::*;
 // base:1 ends here
 
-// return value
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*return%20value][return value:1]]
-//
-//  Return values of lbfgs().
-//
-//   Roughly speaking, a negative value indicates an error.
-
-// The algorithm routine reaches the maximum number of iterations.
-pub const LBFGSERR_MAXIMUMITERATION: i32 = -997;
-// The line-search routine reaches the maximum number of evaluations.
-pub const LBFGSERR_MAXIMUMLINESEARCH: i32 = -998;
-// The line-search step became larger than lbfgs_parameter_t::max_step.
-pub const LBFGSERR_MAXIMUMSTEP: i32 = -999;
-// The line-search step became smaller than lbfgs_parameter_t::min_step.
-pub const LBFGSERR_MINIMUMSTEP: i32 = -1000;
-// return value:1 ends here
-
 // parameters
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*parameters][parameters:1]]
@@ -193,6 +175,8 @@ impl Default for LbfgsParam {
 // problem
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*problem][problem:1]]
+/// Represents an optimization problem.
+///
 /// `Problem` holds input variables `x`, gradient `gx` arrays, and function value `fx`.
 #[derive(Debug)]
 pub struct Problem<'a, E>

@@ -182,11 +182,11 @@ impl LineSearch {
     fn validate_step(&self, step: f64) -> Result<()> {
         // The step is the minimum value.
         if step < self.min_step {
-            bail!("LBFGSERR_MINIMUMSTEP");
+            bail!("The line-search step became smaller than LineSearch::min_step.");
         }
         // The step is the maximum value.
         if step > self.max_step {
-            bail!("LBFGSERR_MAXIMUMSTEP: VS");
+            bail!("The line-search step became larger than LineSearch::max_step.");
         }
 
         Ok(())
@@ -460,12 +460,12 @@ satisfies the sufficient decrease and curvature conditions."
         // FIXME: float == float?
         if *stp == param.max_step && f <= ftest1 && dg <= dgtest {
             // The step is the maximum value.
-            bail!("LBFGSERR_MAXIMUMSTEP: MT");
+            bail!("The line-search step became larger than LineSearch::max_step.");
         }
         // FIXME: float == float?
         if *stp == param.min_step && (ftest1 < f || dgtest <= dg) {
             // The step is the minimum value.
-            bail!("LBFGSERR_MINIMUMSTEP");
+            bail!("The line-search step became smaller than LineSearch::min_step.");
         }
 
         if f <= ftest1 && dg.abs() <= param.gtol * -dginit {
@@ -546,7 +546,7 @@ satisfies the sufficient decrease and curvature conditions."
     }
 
     // Maximum number of iteration.
-    bail!("LBFGSERR_MAXIMUMLINESEARCH");
+    bail!("The line-search routine reaches the maximum number of evaluations.");
 }
 // old:1 ends here
 
@@ -939,6 +939,6 @@ where
     }
 
     // Maximum number of iteration.
-    bail!("LBFGSERR_MAXIMUMLINESEARCH");
+    bail!("The line-search routine reaches the maximum number of evaluations.");
 }
 // old:1 ends here
