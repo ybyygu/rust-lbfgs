@@ -267,7 +267,6 @@ where
         &mut self.d
     }
 
-
     /// Compute the gradient in the search direction without sign checking.
     pub fn dg_unchecked(&self) -> f64 {
         self.gx.vecdot(&self.d)
@@ -313,7 +312,7 @@ where
     }
 
     /// Store the current position and gradient vectors.
-    pub fn update_state(&mut self) {
+    fn save_state(&mut self) {
         self.xp.veccpy(&self.x);
         self.gp.veccpy(&self.gx);
     }
@@ -507,7 +506,7 @@ impl Orthantwise {
     }
 
     /// Compute the L1 norm of the variables.
-    pub fn x1norm(&self, x: &[f64]) -> f64 {
+    fn x1norm(&self, x: &[f64]) -> f64 {
         let (start, end) = self.start_end(x);
 
         let mut s = 0.0;
@@ -519,7 +518,7 @@ impl Orthantwise {
     }
 
     /// Compute the psuedo-gradients.
-    pub fn pseudo_gradient(&self, pg: &mut [f64], x: &[f64], g: &[f64]) {
+    fn pseudo_gradient(&self, pg: &mut [f64], x: &[f64], g: &[f64]) {
         let (start, end) = self.start_end(x);
         let c = self.c;
 
@@ -557,7 +556,7 @@ impl Orthantwise {
     ///
     /// During the line search, each search point is projected onto the orthant
     /// of the previous point.
-    pub fn project(&self, x: &mut [f64], xp: &[f64], gp: &[f64]) {
+    fn project(&self, x: &mut [f64], xp: &[f64], gp: &[f64]) {
         let (start, end) = self.start_end(xp);
 
         for i in start..end {
@@ -568,7 +567,7 @@ impl Orthantwise {
         }
     }
 
-    pub fn constrain(&self, d: &mut [f64], pg: &[f64]) {
+    fn constrain(&self, d: &mut [f64], pg: &[f64]) {
         let (start, end) = self.start_end(pg);
 
         for i in start..end {
@@ -820,7 +819,7 @@ where
         let mut step = problem.initial_step();
 
         let mut end = 0;
-        let mut ls = 0i32;
+        let mut ls = 0;
         let linesearch = param.linesearch;
 
         // Initialize the limited memory.
@@ -833,10 +832,10 @@ where
         info!("start lbfgs loop...");
         for k in 1.. {
             // Store the current position and gradient vectors.
-            problem.update_state();
+            problem.save_state();
 
             // Monitor the progress.
-            let prgr = Progress::new(&problem, k, ls as usize, step);
+            let prgr = Progress::new(&problem, k, ls, step);
 
             // User defined callback function
             let cancel = prgr_fn(&prgr);

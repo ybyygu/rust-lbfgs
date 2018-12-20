@@ -209,7 +209,7 @@ impl LineSearch {
     ///
     /// * On success, return the number of line searching iterations
     ///
-    pub fn find<E>(&self, prb: &mut Problem<E>, step: &mut f64) -> Result<i32>
+    pub fn find<E>(&self, prb: &mut Problem<E>, step: &mut f64) -> Result<usize>
     where
         E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
     {
@@ -224,18 +224,17 @@ impl LineSearch {
 
         // Search for an optimal step.
         let ls = if self.algorithm == MoreThuente && !orthantwise {
-            line_search_morethuente(prb, step, &self)?
+            line_search_morethuente(prb, step, &self)
         } else {
-            line_search_backtracking(prb, step, &self, orthantwise)?
-        };
-
-        // Recover from failed line search?
-        // Revert to the previous point.
-        if ls < 0 {
+            line_search_backtracking(prb, step, &self, orthantwise)
+        }.unwrap_or_else(|err| {
+            // Revert to the previous point.
+            error!("line search failed, revert to the previous point!");
             prb.revert();
+            println!("{:?}", err);
 
-            bail!("line search failed, revert to the previous point!");
-        }
+            0
+        });
 
         Ok(ls)
     }
@@ -374,7 +373,7 @@ pub fn line_search_morethuente<E>(
     prb: &mut Problem<E>,
     stp: &mut f64,      // Step size
     param: &LineSearch, // line search parameters
-) -> Result<i32>
+) -> Result<usize>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
@@ -466,7 +465,7 @@ satisfies the sufficient decrease and curvature conditions."
 
         if f <= ftest1 && dg.abs() <= param.gtol * -dginit {
             // The sufficient decrease condition and the directional derivative condition hold.
-            return Ok(count as i32);
+            return Ok(count);
         } else {
             // In the first stage we seek a step for which the modified
             // function has a nonpositive value and nonnegative derivative.
@@ -889,7 +888,7 @@ pub fn line_search_backtracking<E>(
     stp: &mut f64,      // step length
     param: &LineSearch, // line search parameters
     orthantwise: bool,  // turn on OWL-QN algorithm
-) -> Result<i32>
+) -> Result<usize>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
@@ -913,7 +912,7 @@ where
         } else if param.algorithm == BacktrackingArmijo || orthantwise {
             // The sufficient decrease condition.
             // Exit with the Armijo condition.
-            return Ok(count as i32);
+            return Ok(count);
         } else {
             // Check the Wolfe condition.
             let dg = prb.dg_unchecked();
@@ -921,11 +920,11 @@ where
                 width = inc
             } else if param.algorithm == BacktrackingWolfe {
                 // Exit with the regular Wolfe condition.
-                return Ok(count as i32);
+                return Ok(count);
             } else if dg > -param.gtol * dginit {
                 width = dec
             } else {
-                return Ok(count as i32);
+                return Ok(count);
             }
         }
 
