@@ -1,4 +1,10 @@
 
+# v0.0.12
+
+-   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-18 Tue] </span></span> new parameter to control max allowed evaluations: max\_evaluations
+-   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-18 Tue] </span></span> force to set progress callback function in minimize method.
+
+
 # v0.0.11
 
 -   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-17 Mon] </span></span> assign lbfgs parameters using builder pattern

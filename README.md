@@ -1,12 +1,13 @@
+[![Build Status](https://travis-ci.org/ybyygu/rust-lbfgs.svg?branch=master)](https://travis-ci.org/ybyygu/rust-lbfgs)
+[![GPL3 licensed](https://img.shields.io/badge/license-GPL3-blue.svg)](./LICENSE)
+
 
 # LBFGS
 
-This repo contains my ongoing efforts to port Naoaki Okazaki's C library
-[libLBFGS](http://chokkan.org/software/liblbfgs/) to Rust. Check [rust-liblbfgs](https://github.com/ybyygu/rust-liblbfgs) for a working wrapper around the original
-C codes.
+Fast and safe Rust implementation of LBFGS and OWL-QN algorithms ported from
+Naoaki Okazaki's C library [libLBFGS](http://chokkan.org/software/liblbfgs/).
 
-[![Build Status](https://travis-ci.org/ybyygu/rust-lbfgs.svg?branch=master)](https://travis-ci.org/ybyygu/rust-lbfgs)
-[![GPL3 licensed](https://img.shields.io/badge/license-GPL3-blue.svg)](./LICENSE)
+Check [rust-liblbfgs](https://github.com/ybyygu/rust-liblbfgs) for a working wrapper around the original C codes.
 
 
 # Motivation
