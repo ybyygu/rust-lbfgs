@@ -25,13 +25,12 @@
 //! let mut prb = Problem::new(&mut x, default_evaluate(), None);
 //! prb.evaluate();
 //! // construct initial search direction
-//! let mut d = vec![0.0; N];
-//! prb.update_search_direction(&mut d);
+//! prb.update_search_direction();
 //! // Compute the initial step
-//! let mut step = d.vec2norminv();
+//! let mut step = prb.initial_step();
 //! 
 //! let ls = LineSearch::default();
-//! let ncall = ls.find(&mut prb, &d, &mut step).expect("line search");
+//! let ncall = ls.find(&mut prb, &mut step).expect("line search");
 //! ```
 
 // base
@@ -39,8 +38,6 @@
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
 use quicli::prelude::*;
 type Result<T> = ::std::result::Result<T, Error>;
-
-use crate::math::LbfgsMath;
 // base:1 ends here
 
 // algorithm
@@ -212,30 +209,30 @@ impl LineSearch {
     ///
     /// * On success, return the number of line searching iterations
     ///
-    pub fn find<E>(&self, prb: &mut Problem<E>, d: &[f64], step: &mut f64) -> Result<i32>
+    pub fn find<E>(&self, prb: &mut Problem<E>, step: &mut f64) -> Result<i32>
     where
         E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
     {
         // Check the input parameters for errors.
-        if !step.is_sign_positive() {
-            bail!("A logic error (negative line-search step) occurred.");
-        }
+        ensure!(
+            step.is_sign_positive(),
+            "A logic error (negative line-search step) occurred."
+        );
 
         // quick wrapper
         let orthantwise = prb.orthantwise();
 
         // Search for an optimal step.
         let ls = if self.algorithm == MoreThuente && !orthantwise {
-            line_search_morethuente(prb, d, step, &self)?
+            line_search_morethuente(prb, step, &self)?
         } else {
-            line_search_backtracking(prb, d, step, &self, orthantwise)?
+            line_search_backtracking(prb, step, &self, orthantwise)?
         };
 
         // Recover from failed line search?
         // Revert to the previous point.
         if ls < 0 {
-            prb.x.veccpy(&prb.xp);
-            prb.gx.veccpy(&prb.gp);
+            prb.revert();
 
             bail!("line search failed, revert to the previous point!");
         }
@@ -375,7 +372,6 @@ impl LineSearch {
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
 pub fn line_search_morethuente<E>(
     prb: &mut Problem<E>,
-    s: &[f64],          // Search direction array
     stp: &mut f64,      // Step size
     param: &LineSearch, // line search parameters
 ) -> Result<i32>
@@ -383,7 +379,7 @@ where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     // Initialize local variables.
-    let dginit = prb.dginit(s)?;
+    let dginit = prb.dginit()?;
     let mut brackt = false;
     let mut stage1 = 1;
     let mut uinfo = 0;
@@ -435,13 +431,13 @@ where
             *stp = stx
         }
 
-        // Compute the current value of x: x <- x + (*stp) * s.
-        prb.take_line_step(s, *stp);
+        // Compute the current value of x: x <- x + (*stp) * d.
+        prb.take_line_step(*stp);
 
         // Evaluate the function and gradient values.
         prb.evaluate()?;
         let f = prb.fx;
-        let dg = prb.gx.vecdot(s);
+        let dg = prb.dg_unchecked();
         let ftest1 = finit + *stp * dgtest;
 
         // Test for errors and convergence.
@@ -887,10 +883,9 @@ use self::LineSearchAlgorithm::*;
 
 /// `prb` holds input variables `x`, gradient `gx` arrays, and function value
 /// `fx`. on input it must contain the base point for the line search. on output
-/// it contains data on x + stp*s.
+/// it contains data on x + stp*d.
 pub fn line_search_backtracking<E>(
     prb: &mut Problem<E>,
-    s: &[f64],          // search direction
     stp: &mut f64,      // step length
     param: &LineSearch, // line search parameters
     orthantwise: bool,  // turn on OWL-QN algorithm
@@ -898,7 +893,7 @@ pub fn line_search_backtracking<E>(
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
-    let dginit = prb.dginit(s)?;
+    let dginit = prb.dginit()?;
     let dec: f64 = 0.5;
     let inc: f64 = 2.1;
 
@@ -908,7 +903,7 @@ where
 
     let mut width: f64;
     for count in 0..param.max_linesearch {
-        prb.take_line_step(s, *stp);
+        prb.take_line_step(*stp);
 
         // Evaluate the function and gradient values.
         prb.evaluate()?;
@@ -921,7 +916,7 @@ where
             return Ok(count as i32);
         } else {
             // Check the Wolfe condition.
-            let dg = prb.gx.vecdot(s);
+            let dg = prb.dg_unchecked();
             if dg < param.gtol * dginit {
                 width = inc
             } else if param.algorithm == BacktrackingWolfe {

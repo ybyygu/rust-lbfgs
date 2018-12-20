@@ -196,13 +196,16 @@ where
     pub gx: Vec<f64>,
 
     /// Cached position vector of previous step.
-    pub xp: Vec<f64>,
+    xp: Vec<f64>,
 
     /// Cached gradient vector of previous step.
-    pub gp: Vec<f64>,
+    gp: Vec<f64>,
 
     /// Pseudo gradient for OrthantWise Limited-memory Quasi-Newton (owlqn) algorithm.
-    pub pg: Vec<f64>,
+    pg: Vec<f64>,
+
+    /// Search direction
+    d: Vec<f64>,
 
     /// Store callback function for evaluating objective function.
     eval_fn: E,
@@ -230,6 +233,7 @@ where
             xp: vec![0.0; n],
             gp: vec![0.0; n],
             pg: vec![0.0; n],
+            d: vec![0.0; n],
             evaluated: false,
             neval: 0,
             x,
@@ -239,9 +243,9 @@ where
     }
 
     /// Compute the initial gradient in the search direction.
-    pub fn dginit(&self, d: &[f64]) -> Result<f64> {
+    pub fn dginit(&self) -> Result<f64> {
         if self.owlqn.is_none() {
-            let dginit = self.gx.vecdot(d);
+            let dginit = self.gx.vecdot(&self.d);
             ensure!(
                 dginit <= 0.0,
                 "The current search direction increases the objective function value."
@@ -249,8 +253,24 @@ where
 
             Ok(dginit)
         } else {
-            Ok(self.pg.vecdot(d))
+            Ok(self.pg.vecdot(&self.d))
         }
+    }
+
+    /// Return a reference to current search direction vector
+    pub fn search_direction(&self) -> &[f64] {
+        &self.d
+    }
+
+    /// Return a mutable reference to current search direction vector
+    pub fn search_direction_mut(&mut self) -> &mut [f64] {
+        &mut self.d
+    }
+
+
+    /// Compute the gradient in the search direction without sign checking.
+    pub fn dg_unchecked(&self) -> f64 {
+        self.gx.vecdot(&self.d)
     }
 
     // FIXME: improve
@@ -275,6 +295,7 @@ where
         Ok(())
     }
 
+    /// Return total number of evaluations.
     pub fn number_of_evaluation(&self) -> usize {
         self.neval
     }
@@ -297,28 +318,33 @@ where
         self.gp.veccpy(&self.gx);
     }
 
-    /// Compute the direction;
-    /// we assume the initial hessian matrix H_0 as the identity matrix.
-    pub fn update_search_direction(&self, d: &mut [f64]) {
+    /// Update search direction using evaluated gradient.
+    pub fn update_search_direction(&mut self) {
         if self.owlqn.is_some() {
-            d.vecncpy(&self.pg);
+            self.d.vecncpy(&self.pg);
         } else {
-            d.vecncpy(&self.gx);
+            self.d.vecncpy(&self.gx);
         }
     }
 
-    /// For line search
+    /// Take a line step along search direction.
     ///
-    /// Compute the current value of x: x <- x + (*stp) * s.
-    pub fn take_line_step(&mut self, s: &[f64], stp: f64) {
+    /// Compute the current value of x: x <- x + (*step) * d.
+    ///
+    pub fn take_line_step(&mut self, step: f64) {
         self.x.veccpy(&self.xp);
-        self.x.vecadd(s, stp);
+        self.x.vecadd(&self.d, step);
 
         // Choose the orthant for the new point.
         // The current point is projected onto the orthant.
         if let Some(owlqn) = self.owlqn {
             owlqn.project(&mut self.x, &self.xp, &self.gp);
         }
+    }
+
+    /// Compute the initial step
+    pub fn initial_step(&self) -> f64 {
+        self.d.vec2norminv()
     }
 
     /// Return gradient vector norm: ||gx||
@@ -336,9 +362,9 @@ where
     }
 
     /// Constrain the search direction for orthant-wise updates.
-    pub fn constrain_search_direction(&self, d: &mut [f64]) {
+    pub fn constrain_search_direction(&mut self) {
         if let Some(owlqn) = self.owlqn {
-            owlqn.constrain(d, &self.pg);
+            owlqn.constrain(&mut self.d, &self.pg);
         }
     }
 
@@ -351,6 +377,12 @@ where
 
     pub fn orthantwise(&self) -> bool {
         self.owlqn.is_some()
+    }
+
+    /// Revert to previous step
+    pub fn revert(&mut self) {
+        self.x.veccpy(&self.xp);
+        self.gx.veccpy(&self.gp);
     }
 }
 // problem:1 ends here
@@ -777,16 +809,15 @@ where
 
         // Evaluate the function value and its gradient.
         problem.evaluate()?;
+
         // Compute the L1 norm of the variable and add it to the object value.
         problem.update_owlqn_gradient();
 
-        // Compute the direction;
-        // we assume the initial hessian matrix H_0 as the identity matrix.
-        let mut d = vec![0.0; n];
-        problem.update_search_direction(&mut d);
+        // Compute the direction
+        problem.update_search_direction();
 
         // Compute the initial step:
-        let mut step = d.vec2norminv();
+        let mut step = problem.initial_step();
 
         let mut end = 0;
         let mut ls = 0i32;
@@ -818,7 +849,7 @@ where
             }
 
             // Search for an optimal step.
-            ls = linesearch.find(&mut problem, &d, &mut step)?;
+            ls = linesearch.find(&mut problem, &mut step)?;
             problem.update_owlqn_gradient();
 
             // Update vectors s and y:
@@ -845,10 +876,11 @@ where
             // pp. 773--782, 1980.
             end = (end + 1) % m;
             // Compute the steepest direction.
-            problem.update_search_direction(&mut d);
+            problem.update_search_direction();
 
             let mut j = end;
             let bound = m.min(k);
+            let d = problem.search_direction_mut();
             for _ in 0..bound {
                 j = (j + m - 1) % m;
                 let it = &mut lm_arr[j as usize];
@@ -863,14 +895,14 @@ where
             for _ in 0..bound {
                 let it = &mut lm_arr[j as usize];
                 // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
-                let beta = it.y.vecdot(&d) / it.ys;
+                let beta = it.y.vecdot(d) / it.ys;
                 // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
                 d.vecadd(&it.s, it.alpha - beta);
                 j = (j + 1) % m;
             }
 
             // Constrain the search direction for orthant-wise updates.
-            problem.constrain_search_direction(&mut d);
+            problem.constrain_search_direction();
 
             // Now the search direction d is ready. We try step = 1 first.
             step = 1.0
