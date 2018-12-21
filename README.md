@@ -64,19 +64,18 @@ Check [rust-liblbfgs](https://github.com/ybyygu/rust-liblbfgs) for a working wra
         Ok(fx)
     };
     
-    // 3. Carry out LBFGS optimization
     let prb = lbfgs()
-    .with_max_iterations(5)
-    .with_orthantwise(1.0, 0, 99) // enable OWL-QN
-    .minimize(
-        &mut x,                   // input variables
-        evaluate,                 // define how to evaluate function
-        |prgr| {                  // define progress monitor
-            println!("iter: {:}", prgr.niter);
-            false                 // returning true will cancel optimization
-        }
-    )
-    .expect("lbfgs owlqn minimize");
+        .with_max_iterations(5)
+        .with_orthantwise(1.0, 0, 99) // enable OWL-QN
+        .minimize(
+            &mut x,                   // input variables
+            evaluate,                 // define how to evaluate function
+            |prgr| {                  // define progress monitor
+                println!("iter: {:}", prgr.niter);
+                false                 // returning true will cancel optimization
+            }
+        )
+        .expect("lbfgs owlqn minimize");
     
     println!("fx = {:}", prb.fx);
 
