@@ -14,8 +14,7 @@
 //! use lbfgs::line::LineSearch;
 //! 
 //! const N: usize = 100;
-//! 
-//! let mut x = [0.0 as f64; N];
+//! let mut x = [0.0; N];
 //! for i in (0..N).step_by(2) {
 //!     x[i] = -1.2;
 //!     x[i + 1] = 1.0;
@@ -219,14 +218,11 @@ impl LineSearch {
             "A logic error (negative line-search step) occurred."
         );
 
-        // quick wrapper
-        let orthantwise = prb.orthantwise();
-
         // Search for an optimal step.
-        let ls = if self.algorithm == MoreThuente && !orthantwise {
+        let ls = if self.algorithm == MoreThuente && !prb.orthantwise() {
             line_search_morethuente(prb, step, &self)
         } else {
-            line_search_backtracking(prb, step, &self, orthantwise)
+            line_search_backtracking(prb, step, &self)
         }.unwrap_or_else(|err| {
             // Revert to the previous point.
             error!("line search failed, revert to the previous point!");
@@ -887,7 +883,6 @@ pub fn line_search_backtracking<E>(
     prb: &mut Problem<E>,
     stp: &mut f64,      // step length
     param: &LineSearch, // line search parameters
-    orthantwise: bool,  // turn on OWL-QN algorithm
 ) -> Result<usize>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
@@ -895,6 +890,9 @@ where
     let dginit = prb.dginit()?;
     let dec: f64 = 0.5;
     let inc: f64 = 2.1;
+
+    // quick wrapper
+    let orthantwise = prb.orthantwise();
 
     // The initial value of the objective function.
     let finit = prb.fx;

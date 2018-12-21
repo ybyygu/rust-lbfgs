@@ -1,8 +1,8 @@
-[![Build Status](https://travis-ci.org/ybyygu/rust-lbfgs.svg?branch=master)](https://travis-ci.org/ybyygu/rust-lbfgs)
-[![GPL3 licensed](https://img.shields.io/badge/license-GPL3-blue.svg)](./LICENSE)
-
 
 # LBFGS
+
+[![Build Status](https://travis-ci.org/ybyygu/rust-lbfgs.svg?branch=master)](https://travis-ci.org/ybyygu/rust-lbfgs)
+[![GPL3 licensed](https://img.shields.io/badge/license-GPL3-blue.svg)](./LICENSE)
 
 Fast and safe Rust implementation of LBFGS and OWL-QN algorithms ported from
 Naoaki Okazaki's C library [libLBFGS](http://chokkan.org/software/liblbfgs/).

@@ -311,12 +311,6 @@ where
         self.fx = src.fx;
     }
 
-    /// Store the current position and gradient vectors.
-    fn save_state(&mut self) {
-        self.xp.veccpy(&self.x);
-        self.gp.veccpy(&self.gx);
-    }
-
     /// Update search direction using evaluated gradient.
     pub fn update_search_direction(&mut self) {
         if self.owlqn.is_some() {
@@ -360,20 +354,6 @@ where
         self.x.vec2norm()
     }
 
-    /// Constrain the search direction for orthant-wise updates.
-    pub fn constrain_search_direction(&mut self) {
-        if let Some(owlqn) = self.owlqn {
-            owlqn.constrain(&mut self.d, &self.pg);
-        }
-    }
-
-    // FIXME
-    pub fn update_owlqn_gradient(&mut self) {
-        if let Some(owlqn) = self.owlqn {
-            owlqn.pseudo_gradient(&mut self.pg, &self.x, &self.gx);
-        }
-    }
-
     pub fn orthantwise(&self) -> bool {
         self.owlqn.is_some()
     }
@@ -382,6 +362,26 @@ where
     pub fn revert(&mut self) {
         self.x.veccpy(&self.xp);
         self.gx.veccpy(&self.gp);
+    }
+
+    /// Store the current position and gradient vectors.
+    fn save_state(&mut self) {
+        self.xp.veccpy(&self.x);
+        self.gp.veccpy(&self.gx);
+    }
+
+    /// Constrain the search direction for orthant-wise updates.
+    fn constrain_search_direction(&mut self) {
+        if let Some(owlqn) = self.owlqn {
+            owlqn.constrain(&mut self.d, &self.pg);
+        }
+    }
+
+    // FIXME
+    fn update_owlqn_gradient(&mut self) {
+        if let Some(owlqn) = self.owlqn {
+            owlqn.pseudo_gradient(&mut self.pg, &self.x, &self.gx);
+        }
     }
 }
 // problem:1 ends here
@@ -864,7 +864,6 @@ where
             // Notice that yy is used for scaling the hessian matrix H_0 (Cholesky factor).
             let ys = it.y.vecdot(&it.s);
             let yy = it.y.vecdot(&it.y);
-
             it.ys = ys;
 
             // Recursive formula to compute dir = -(H \cdot g).
@@ -917,6 +916,7 @@ where
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*stopping%20conditions][stopping conditions:1]]
 /// test if progress satisfying stop condition
+#[inline]
 fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress, pf: &mut [f64]) -> bool {
     // Buildin tests for stopping conditions
     if satisfying_max_iterations(&prgr, param.max_iterations)
