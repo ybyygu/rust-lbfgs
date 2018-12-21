@@ -795,8 +795,10 @@ where
     where
         G: FnMut(&Progress) -> bool,
     {
-        let n = x.len();
+        // Initialize the limited memory.
         let param = &self.param;
+        let m = param.m;
+        let mut lm_arr: Vec<_> = (0..m).map(|_| IterationData::new(x.len())).collect();
 
         // Allocate working space for LBFGS optimization
         let owlqn = if param.orthantwise {
@@ -819,12 +821,7 @@ where
         let mut step = problem.initial_step();
 
         let mut end = 0;
-        let mut ls = 0;
         let linesearch = param.linesearch;
-
-        // Initialize the limited memory.
-        let m = param.m;
-        let mut lm_arr: Vec<_> = (0..m).map(|_| IterationData::new(n)).collect();
 
         // Allocate an array for storing previous values of the objective function.
         let mut pf = vec![0.0; param.past as usize];
@@ -833,6 +830,10 @@ where
         for k in 1.. {
             // Store the current position and gradient vectors.
             problem.save_state();
+
+            // Search for an optimal step.
+            let ls = linesearch.find(&mut problem, &mut step)?;
+            problem.update_owlqn_gradient();
 
             // Monitor the progress.
             let prgr = Progress::new(&problem, k, ls, step);
@@ -846,10 +847,6 @@ where
             if satisfying_stop_conditions(param, prgr, &mut pf) {
                 break;
             }
-
-            // Search for an optimal step.
-            ls = linesearch.find(&mut problem, &mut step)?;
-            problem.update_owlqn_gradient();
 
             // Update vectors s and y:
             // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
