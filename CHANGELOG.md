@@ -1,4 +1,10 @@
 
+# v0.0.13
+
+-   <span class="timestamp-wrapper"><span class="timestamp">[2019-01-02 Wed] </span></span> new example: optimization of lj38 cluster
+-   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-21 Fri] </span></span> fixed progress report issue.
+
+
 # v0.0.12
 
 -   <span class="timestamp-wrapper"><span class="timestamp">[2018-12-18 Tue] </span></span> new parameter to control max allowed evaluations: max\_evaluations
