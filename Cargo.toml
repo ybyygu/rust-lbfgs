@@ -4,11 +4,12 @@
 [package]
 name = "lbfgs"
 edition = "2018"
-version = "0.0.12"
+version = "0.0.13"
 authors = ["Wenping Guo <ybyygu@gmail.com>"]
 
 [dependencies]
 quicli = "0.4"
+vecfx = {git = "https://github.com/ybyygu/vecfx.git"}
 
 [dev-dependencies]
 approx = "0.3"
