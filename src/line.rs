@@ -153,6 +153,9 @@ pub struct LineSearch {
     /// this value to 0, will completely disable line search.
     ///
     pub max_linesearch: usize,
+
+    /// Make line search conditions use only gradients.
+    pub gradient_only: bool,
 }
 
 // TODO: better defaults
@@ -165,6 +168,7 @@ impl Default for LineSearch {
             min_step: 1e-20,
             max_step: 1e20,
             max_linesearch: 40,
+            gradient_only: true,
             algorithm: LineSearchAlgorithm::default(),
         }
     }
@@ -459,7 +463,10 @@ satisfies the sufficient decrease and curvature conditions."
             bail!("The line-search step became smaller than LineSearch::min_step.");
         }
 
-        if f <= ftest1 && dg.abs() <= param.gtol * -dginit {
+        if param.gradient_only && dg.abs() <= param.gtol * -dginit {
+            // the directional derivative condition hold.
+            return Ok(count);
+        } else if f <= ftest1 && dg.abs() <= param.gtol * -dginit {
             // The sufficient decrease condition and the directional derivative condition hold.
             return Ok(count);
         } else {
@@ -541,9 +548,9 @@ satisfies the sufficient decrease and curvature conditions."
 }
 // old:1 ends here
 
-// new
+// core
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*new][new:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*core][core:1]]
 /// Represents the original MCSTEP subroutine by J. Nocera, which is a variant
 /// of More' and Thuente's routine.
 ///
@@ -757,7 +764,7 @@ mod mcstep {
         Ok(0)
     }
 }
-// new:1 ends here
+// core:1 ends here
 
 // interpolation
 

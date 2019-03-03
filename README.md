@@ -16,7 +16,7 @@ Check [rust-liblbfgs](https://github.com/ybyygu/rust-liblbfgs) for a working wra
 -   Learn how a great optimization algorithm is implemented in real world.
 -   Learn how to "replace the jet engine while still flying" [URL](http://jensimmons.com/post/jan-4-2017/replacing-jet-engine-while-still-flying)
 -   Make it more maintainable with Rust high level abstraction.
--   Improve it to meet my needs in computational chemistry.
+-   Improve it to meet my needs for computational chemistry.
 
 
 # Todo
