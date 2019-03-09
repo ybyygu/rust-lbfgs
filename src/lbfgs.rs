@@ -246,14 +246,22 @@ where
     pub fn dginit(&self) -> Result<f64> {
         if self.owlqn.is_none() {
             let dginit = self.gx.vecdot(&self.d);
-            ensure!(
-                dginit <= 0.0,
-                "The current search direction increases the objective function value."
-            );
+            if dginit > 0.0 {
+                warn!("The current search direction increases the objective function value. dginit = {:-0.4}", dginit);
+            }
 
             Ok(dginit)
         } else {
             Ok(self.pg.vecdot(&self.d))
+        }
+    }
+
+    /// Update search direction using evaluated gradient.
+    pub fn update_search_direction(&mut self) {
+        if self.owlqn.is_some() {
+            self.d.vecncpy(&self.pg);
+        } else {
+            self.d.vecncpy(&self.gx);
         }
     }
 
@@ -309,15 +317,6 @@ where
         self.x.clone_from_slice(&src.x);
         self.gx.clone_from_slice(&src.gx);
         self.fx = src.fx;
-    }
-
-    /// Update search direction using evaluated gradient.
-    pub fn update_search_direction(&mut self) {
-        if self.owlqn.is_some() {
-            self.d.vecncpy(&self.pg);
-        } else {
-            self.d.vecncpy(&self.gx);
-        }
     }
 
     /// Take a line step along search direction.
@@ -814,7 +813,7 @@ where
         // Compute the L1 norm of the variable and add it to the object value.
         problem.update_owlqn_gradient();
 
-        // Compute the direction
+        // Compute the search direction with current gradient.
         problem.update_search_direction();
 
         // Compute the initial step:
@@ -848,53 +847,16 @@ where
                 break;
             }
 
-            // Update vectors s and y:
-            // s_{k+1} = x_{k+1} - x_{k} = \step * d_{k}.
-            // y_{k+1} = g_{k+1} - g_{k}.
+            // Update LBFGS iteration data.
             let it = &mut lm_arr[end];
-            it.s.vecdiff(&problem.x, &problem.xp);
-            it.y.vecdiff(&problem.gx, &problem.gp);
+            let gamma = it.update(&problem.x, &problem.xp, &problem.gx, &problem.gp);
 
-            // Compute scalars ys and yy:
-            // ys = y^t \cdot s = 1 / \rho.
-            // yy = y^t \cdot y.
-            // Notice that yy is used for scaling the hessian matrix H_0 (Cholesky factor).
-            let ys = it.y.vecdot(&it.s);
-            let yy = it.y.vecdot(&it.y);
-            it.ys = ys;
-
-            // Recursive formula to compute dir = -(H \cdot g).
-            // This is described in page 779 of:
-            // Jorge Nocedal.
-            // Updating Quasi-Newton Matrices with Limited Storage.
-            // Mathematics of Computation, Vol. 35, No. 151,
-            // pp. 773--782, 1980.
-            end = (end + 1) % m;
-            // Compute the steepest direction.
+            // Compute the steepest direction
             problem.update_search_direction();
-
-            let mut j = end;
-            let bound = m.min(k);
             let d = problem.search_direction_mut();
-            for _ in 0..bound {
-                j = (j + m - 1) % m;
-                let it = &mut lm_arr[j as usize];
 
-                // \alpha_{j} = \rho_{j} s^{t}_{j} \cdot q_{k+1}.
-                it.alpha = it.s.vecdot(&d) / it.ys;
-                // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
-                d.vecadd(&it.y, -it.alpha);
-            }
-            d.vecscale(ys / yy);
-
-            for _ in 0..bound {
-                let it = &mut lm_arr[j as usize];
-                // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
-                let beta = it.y.vecdot(d) / it.ys;
-                // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
-                d.vecadd(&it.s, it.alpha - beta);
-                j = (j + 1) % m;
-            }
+            // Apply LBFGS recursion procedure.
+            end = lbfgs_two_loop_recursion(&mut lm_arr, d, gamma, m, k, end);
 
             // Constrain the search direction for orthant-wise updates.
             problem.constrain_search_direction();
@@ -908,6 +870,96 @@ where
     }
 }
 // src:1 ends here
+
+// recursion
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*recursion][recursion:1]]
+/// Algorithm 7.4, in Nocedal, J.; Wright, S. Numerical Optimization; Springer Science & Business Media, 2006.
+fn lbfgs_two_loop_recursion(
+    lm_arr: &mut [IterationData],
+    d: &mut [f64], // search direction
+    gamma: f64,    // H_k^{0} = \gamma I
+    m: usize,
+    k: usize,
+    end: usize,
+) -> usize {
+    let end = (end + 1) % m;
+    let mut j = end;
+    let bound = m.min(k);
+
+    // L-BFGS two-loop recursion, part1
+    for _ in 0..bound {
+        j = (j + m - 1) % m;
+        let it = &mut lm_arr[j as usize];
+
+        // \alpha_{j} = \rho_{j} s^{t}_{j} \cdot q_{k+1}.
+        it.alpha = it.s.vecdot(&d) / it.ys;
+        // q_{i} = q_{i+1} - \alpha_{i} y_{i}.
+        d.vecadd(&it.y, -it.alpha);
+    }
+    d.vecscale(gamma);
+
+    // L-BFGS two-loop recursion, part2
+    for _ in 0..bound {
+        let it = &mut lm_arr[j as usize];
+        // \beta_{j} = \rho_{j} y^t_{j} \cdot \gamma_{i}.
+        let beta = it.y.vecdot(d) / it.ys;
+        // \gamma_{i+1} = \gamma_{i} + (\alpha_{j} - \beta_{j}) s_{j}.
+        d.vecadd(&it.s, it.alpha - beta);
+        j = (j + 1) % m;
+    }
+
+    end
+}
+// recursion:1 ends here
+
+// iteration data
+
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*iteration%20data][iteration data:1]]
+/// Internal iternation data for L-BFGS
+#[derive(Clone)]
+struct IterationData {
+    pub alpha: f64,
+
+    pub s: Vec<f64>,
+
+    pub y: Vec<f64>,
+
+    /// vecdot(y, s)
+    pub ys: f64,
+}
+
+impl IterationData {
+    fn new(n: usize) -> Self {
+        IterationData {
+            alpha: 0.0,
+            ys: 0.0,
+            s: vec![0.0; n],
+            y: vec![0.0; n],
+        }
+    }
+
+    /// Update LBFGS iteration state, returns Cholesky factor \gamma for scaling
+    /// the initial inverse Hessian matrix $H_k^0$
+    fn update(&mut self, x: &[f64], xp: &[f64], gx: &[f64], gp: &[f64]) -> f64 {
+        // Update vectors s and y:
+        // s_{k} = x_{k+1} - x_{k} = \alpha * d_{k}.
+        // y_{k} = g_{k+1} - g_{k}.
+        self.s.vecdiff(x, xp);
+        self.y.vecdiff(gx, gp);
+
+        // Compute scalars ys and yy:
+        // ys = y^t \cdot s = 1 / \rho.
+        // yy = y^t \cdot y.
+        // Notice that yy is used for scaling the intial inverse hessian matrix H_0 (Cholesky factor).
+        let ys = self.y.vecdot(&self.s);
+        let yy = self.y.vecdot(&self.y);
+        self.ys = ys;
+
+        ys / yy
+    }
+}
+// iteration data:1 ends here
 
 // stopping conditions
 
@@ -1008,31 +1060,3 @@ fn satisfying_delta<'a>(prgr: &Progress, pf: &'a mut [f64], delta: f64) -> bool 
     false
 }
 // stopping conditions:1 ends here
-
-// iteration data
-
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*iteration%20data][iteration data:1]]
-/// Internal iternation data for L-BFGS
-#[derive(Clone)]
-struct IterationData {
-    pub alpha: f64,
-
-    pub s: Vec<f64>,
-
-    pub y: Vec<f64>,
-
-    /// vecdot(y, s)
-    pub ys: f64,
-}
-
-impl IterationData {
-    fn new(n: usize) -> Self {
-        IterationData {
-            alpha: 0.0,
-            ys: 0.0,
-            s: vec![0.0; n],
-            y: vec![0.0; n],
-        }
-    }
-}
-// iteration data:1 ends here

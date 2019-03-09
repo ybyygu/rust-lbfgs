@@ -168,7 +168,7 @@ impl Default for LineSearch {
             min_step: 1e-20,
             max_step: 1e20,
             max_linesearch: 40,
-            gradient_only: true,
+            gradient_only: false,
             algorithm: LineSearchAlgorithm::default(),
         }
     }
@@ -369,6 +369,8 @@ impl LineSearch {
 // old
 
 // [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+use crate::math::*;
+
 pub fn line_search_morethuente<E>(
     prb: &mut Problem<E>,
     stp: &mut f64,      // Step size
@@ -431,6 +433,14 @@ where
         }
 
         // Compute the current value of x: x <- x + (*stp) * d.
+        // scale the displacement when it is too large
+        // let mut d = prb.search_direction().to_vec();
+        // d.vecscale(*stp);
+        // let dn = d.vec2norm();
+        // // dbg!(dn);
+        // if dn > 0.1 {
+        //     *stp *= 0.1 / dn;
+        // }
         prb.take_line_step(*stp);
 
         // Evaluate the function and gradient values.
@@ -907,13 +917,22 @@ where
 
     let mut width: f64;
     for count in 0..param.max_linesearch {
+        // Compute the current value of x: x <- x + (*stp) * d.
+        // scale the displacement when it is too large
+        let mut d = prb.search_direction().to_vec();
+        d.vecscale(*stp);
+        let dn = d.vec2norm();
+        // dbg!(dn);
+        if dn > 0.1 {
+            *stp *= 0.1 / dn;
+        }
         prb.take_line_step(*stp);
 
         // Evaluate the function and gradient values.
         prb.evaluate()?;
 
         if prb.fx > finit + *stp * dgtest {
-            width = dec
+            width = dec;
         } else if param.algorithm == BacktrackingArmijo || orthantwise {
             // The sufficient decrease condition.
             // Exit with the Armijo condition.
@@ -933,11 +952,25 @@ where
             }
         }
 
-        param.validate_step(*stp)?;
+        // allow energy rises
+        if param.gradient_only {
+            info!("allow energy rises");
+            let dg = prb.dg_unchecked();
+            //if dbg!(dg) <= dbg!(-param.gtol * dginit) {
+            if dg <= -param.gtol * dginit {
+                return Ok(count);
+            }
+        }
+
+        if !param.gradient_only {
+            param.validate_step(*stp)?;
+        }
         *stp *= width
     }
 
     // Maximum number of iteration.
-    bail!("The line-search routine reaches the maximum number of evaluations.");
+    error!("The line-search routine reaches the maximum number of evaluations.");
+
+    Ok(param.max_linesearch)
 }
 // old:1 ends here
