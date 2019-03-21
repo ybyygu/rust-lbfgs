@@ -149,6 +149,9 @@ pub struct LbfgsParam {
 
     // FIXME: better name
     pub owlqn: Orthantwise,
+
+    /// A factor for scaling initial step size.
+    pub initial_step_size: f64,
 }
 
 impl Default for LbfgsParam {
@@ -167,6 +170,7 @@ impl Default for LbfgsParam {
             orthantwise: false,
             owlqn: Orthantwise::default(),
             linesearch: LineSearch::default(),
+            initial_step_size: 1.0,
         }
     }
 }
@@ -627,6 +631,18 @@ where
         self
     }
 
+    /// Set initial step size for optimization. The default value is 1.0.
+    pub fn with_initial_step_size(mut self, b: f64) -> Self {
+        assert!(
+            b.is_sign_positive(),
+            "Invalid beta parameter for scaling the initial step size."
+        );
+
+        self.param.initial_step_size = b;
+
+        self
+    }
+
     /// Set orthantwise parameters
     pub fn with_orthantwise(mut self, c: f64, start: usize, end: usize) -> Self {
         assert!(
@@ -817,7 +833,7 @@ where
         problem.update_search_direction();
 
         // Compute the initial step:
-        let mut step = problem.initial_step();
+        let mut step = problem.initial_step() * param.initial_step_size;
 
         let mut end = 0;
         let linesearch = param.linesearch;
