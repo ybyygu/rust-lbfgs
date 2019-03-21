@@ -26,7 +26,7 @@
 //! // construct initial search direction
 //! prb.update_search_direction();
 //! // Compute the initial step
-//! let mut step = prb.initial_step();
+//! let mut step = 1.0/prb.search_direction().vec2norm();
 //! 
 //! let ls = LineSearch::default();
 //! let ncall = ls.find(&mut prb, &mut step).expect("line search");
@@ -224,7 +224,11 @@ impl LineSearch {
 
         // Search for an optimal step.
         let ls = if self.algorithm == MoreThuente && !prb.orthantwise() {
-            line_search_morethuente(prb, step, &self)
+            if !self.gradient_only {
+                line_search_morethuente(prb, step, &self)
+            } else {
+                bail!("Gradient only optimization is incompatible with MoreThuente line search.");
+            }
         } else {
             line_search_backtracking(prb, step, &self)
         }.unwrap_or_else(|err| {
@@ -366,9 +370,9 @@ impl LineSearch {
 
 // Original documentation by J. Nocera (lbfgs.f):1 ends here
 
-// old
+// core
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*core][core:1]]
 use crate::math::*;
 
 pub fn line_search_morethuente<E>(
@@ -432,15 +436,6 @@ where
             *stp = stx
         }
 
-        // Compute the current value of x: x <- x + (*stp) * d.
-        // scale the displacement when it is too large
-        // let mut d = prb.search_direction().to_vec();
-        // d.vecscale(*stp);
-        // let dn = d.vec2norm();
-        // // dbg!(dn);
-        // if dn > 0.1 {
-        //     *stp *= 0.1 / dn;
-        // }
         prb.take_line_step(*stp);
 
         // Evaluate the function and gradient values.
@@ -556,7 +551,7 @@ satisfies the sufficient decrease and curvature conditions."
     // Maximum number of iteration.
     bail!("The line-search routine reaches the maximum number of evaluations.");
 }
-// old:1 ends here
+// core:1 ends here
 
 // core
 
@@ -888,9 +883,9 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
 }
 // interpolation:1 ends here
 
-// old
+// core
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*old][old:1]]
+// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*core][core:1]]
 use self::LineSearchAlgorithm::*;
 
 /// `prb` holds input variables `x`, gradient `gx` arrays, and function value
@@ -917,15 +912,6 @@ where
 
     let mut width: f64;
     for count in 0..param.max_linesearch {
-        // Compute the current value of x: x <- x + (*stp) * d.
-        // scale the displacement when it is too large
-        let mut d = prb.search_direction().to_vec();
-        d.vecscale(*stp);
-        let dn = d.vec2norm();
-        // dbg!(dn);
-        if dn > 0.1 {
-            *stp *= 0.1 / dn;
-        }
         prb.take_line_step(*stp);
 
         // Evaluate the function and gradient values.
@@ -973,4 +959,4 @@ where
 
     Ok(param.max_linesearch)
 }
-// old:1 ends here
+// core:1 ends here

@@ -151,7 +151,11 @@ pub struct LbfgsParam {
     pub owlqn: Orthantwise,
 
     /// A factor for scaling initial step size.
-    pub initial_step_size: f64,
+    pub initial_inverse_hessian: f64,
+
+    // The maximum allowed step size for each optimization step, useful for
+    // preventing wild step.
+    pub max_step_size: f64
 }
 
 impl Default for LbfgsParam {
@@ -170,7 +174,8 @@ impl Default for LbfgsParam {
             orthantwise: false,
             owlqn: Orthantwise::default(),
             linesearch: LineSearch::default(),
-            initial_step_size: 1.0,
+            initial_inverse_hessian: 1.0,
+            max_step_size: 1.0,
         }
     }
 }
@@ -336,11 +341,6 @@ where
         if let Some(owlqn) = self.owlqn {
             owlqn.project(&mut self.x, &self.xp, &self.gp);
         }
-    }
-
-    /// Compute the initial step
-    pub fn initial_step(&self) -> f64 {
-        self.d.vec2norminv()
     }
 
     /// Return gradient vector norm: ||gx||
@@ -638,7 +638,16 @@ where
             "Invalid beta parameter for scaling the initial step size."
         );
 
-        self.param.initial_step_size = b;
+        self.param.initial_inverse_hessian = b;
+
+        self
+    }
+
+    /// Set the maximum allowed step size for optimization. The default value is 1.0.
+    pub fn with_max_step_size(mut self, s: f64) -> Self {
+        assert!(s.is_sign_positive(), "Invalid max_step_size parameter.");
+
+        self.param.max_step_size = s;
 
         self
     }
@@ -685,6 +694,15 @@ where
         );
 
         self.param.linesearch.gtol = gtol;
+
+        self
+    }
+
+    /// Try to follow gradient only during optimization, by allowing object
+    /// value rises, which removes the sufficient decrease condition constrain
+    /// in line search.
+    pub fn with_gradient_only(mut self) -> Self {
+        self.param.linesearch.gradient_only = true;
 
         self
     }
@@ -833,7 +851,9 @@ where
         problem.update_search_direction();
 
         // Compute the initial step:
-        let mut step = problem.initial_step() * param.initial_step_size;
+        let max_step_size = param.max_step_size;
+        let h0 = param.initial_inverse_hessian;
+        let mut step = problem.search_direction().vec2norminv() * h0;
 
         let mut end = 0;
         let linesearch = param.linesearch;
@@ -874,11 +894,13 @@ where
             // Apply LBFGS recursion procedure.
             end = lbfgs_two_loop_recursion(&mut lm_arr, d, gamma, m, k, end);
 
+            // Now the search direction d is ready. Constrains the step size to
+            // prevent wild steps.
+            let dnorm = d.vec2norm();
+            step = max_step_size.min(dnorm) / dnorm;
+
             // Constrain the search direction for orthant-wise updates.
             problem.constrain_search_direction();
-
-            // Now the search direction d is ready. We try step = 1 first.
-            step = 1.0
         }
 
         // Return the final value of the objective function.
