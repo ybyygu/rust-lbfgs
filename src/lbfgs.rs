@@ -153,9 +153,12 @@ pub struct LbfgsParam {
     /// A factor for scaling initial step size.
     pub initial_inverse_hessian: f64,
 
-    // The maximum allowed step size for each optimization step, useful for
-    // preventing wild step.
-    pub max_step_size: f64
+    /// The maximum allowed step size for each optimization step, useful for
+    /// preventing wild step.
+    pub max_step_size: f64,
+
+    /// Powell damping
+    pub damping: bool,
 }
 
 impl Default for LbfgsParam {
@@ -176,6 +179,7 @@ impl Default for LbfgsParam {
             linesearch: LineSearch::default(),
             initial_inverse_hessian: 1.0,
             max_step_size: 1.0,
+            damping: false,
         }
     }
 }
@@ -652,6 +656,13 @@ where
         self
     }
 
+    /// Enable Powell damping.
+    pub fn with_damping(mut self) -> Self {
+        self.param.damping = true;
+
+        self
+    }
+
     /// Set orthantwise parameters
     pub fn with_orthantwise(mut self, c: f64, start: usize, end: usize) -> Self {
         assert!(
@@ -700,9 +711,13 @@ where
 
     /// Try to follow gradient only during optimization, by allowing object
     /// value rises, which removes the sufficient decrease condition constrain
-    /// in line search.
+    /// in line search. This option also implies Powell damping and
+    /// BacktrackingStrongWolfe line search for improving robustness.
     pub fn with_gradient_only(mut self) -> Self {
         self.param.linesearch.gradient_only = true;
+        self.param.damping = true;
+        self.param.linesearch.algorithm = LineSearchAlgorithm::BacktrackingStrongWolfe;
+        self.param.linesearch.max_linesearch = 2;
 
         self
     }
@@ -862,6 +877,11 @@ where
         let mut pf = vec![0.0; param.past as usize];
 
         info!("start lbfgs loop...");
+        // Apply Powell damping or not
+        let damping = param.damping;
+        if damping {
+            info!("Powell damping Enabled.");
+        }
         for k in 1.. {
             // Store the current position and gradient vectors.
             problem.save_state();
@@ -885,7 +905,14 @@ where
 
             // Update LBFGS iteration data.
             let it = &mut lm_arr[end];
-            let gamma = it.update(&problem.x, &problem.xp, &problem.gx, &problem.gp);
+            let gamma = it.update(
+                &problem.x,
+                &problem.xp,
+                &problem.gx,
+                &problem.gp,
+                step,
+                damping,
+            );
 
             // Compute the steepest direction
             problem.update_search_direction();
@@ -977,9 +1004,26 @@ impl IterationData {
         }
     }
 
-    /// Update LBFGS iteration state, returns Cholesky factor \gamma for scaling
-    /// the initial inverse Hessian matrix $H_k^0$
-    fn update(&mut self, x: &[f64], xp: &[f64], gx: &[f64], gp: &[f64]) -> f64 {
+    /// Updates L-BFGS correction pairs, returns Cholesky factor \gamma for
+    /// scaling the initial inverse Hessian matrix $H_k^0$
+    ///
+    /// # Arguments
+    ///
+    /// * x, xp: current position, and previous position
+    /// * gx, gp: current gradient and previous gradient
+    /// * step: step size along search direction
+    /// * damping: applying Powell damping to the gradient difference `y` helps
+    ///   stabilize L-BFGS from numerical noise in function value and gradient
+    ///
+    fn update(
+        &mut self,
+        x: &[f64],
+        xp: &[f64],
+        gx: &[f64],
+        gp: &[f64],
+        step: f64,
+        damping: bool,
+    ) -> f64 {
         // Update vectors s and y:
         // s_{k} = x_{k+1} - x_{k} = \alpha * d_{k}.
         // y_{k} = g_{k+1} - g_{k}.
@@ -993,6 +1037,43 @@ impl IterationData {
         let ys = self.y.vecdot(&self.s);
         let yy = self.y.vecdot(&self.y);
         self.ys = ys;
+
+        // Al-Baali2014JOTA: Damped Techniques for the Limited Memory BFGS
+        // Method for Large-Scale Optimization. J. Optim. Theory Appl. 2014,
+        // 161 (2), 688–699.
+        //
+        // Nocedal suggests an equivalent value of 0.8 for sigma2 (Damped BFGS
+        // updating)
+        let sigma2 = 0.6;
+        let sigma3 = 3.0;
+        if damping {
+            debug!(
+                "Applying Powell damping, sigma2 = {}, sigma3 = {}",
+                sigma2, sigma3
+            );
+
+            // B_k * Sk = B_k * (x_k + step*d_k - x_k) = B_k * step * d_k = -g_k * step
+            let mut bs = gp.to_vec();
+            bs.vecscale(-step);
+            // s_k^T * B_k * s_k
+            let sbs = self.s.vecdot(&bs);
+
+            if ys < (1.0 - sigma2) * sbs {
+                debug!("damping case1");
+                let theta = sigma2 * sbs / (sbs - ys);
+                bs.vecscale(1.0 - theta);
+                bs.vecadd(&self.y, theta);
+                self.y.veccpy(&bs);
+            } else if ys > (1.0 + sigma3) * sbs {
+                debug!("damping case2");
+                let theta = sigma3 * sbs / (ys - sbs);
+                bs.vecscale(1.0 - theta);
+                bs.vecadd(&self.y, theta);
+            } else {
+                debug!("damping case3");
+                // for theta = 1.0, yk = yk, so do nothing here.
+            }
+        }
 
         ys / yy
     }
