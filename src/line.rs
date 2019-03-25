@@ -468,7 +468,7 @@ satisfies the sufficient decrease and curvature conditions."
             bail!("The line-search step became smaller than LineSearch::min_step.");
         }
 
-        if param.gradient_only && dg.abs() <= param.gtol * -dginit {
+        if dg.abs() <= param.gtol * -dginit {
             // the directional derivative condition hold.
             return Ok(count);
         } else if f <= ftest1 && dg.abs() <= param.gtol * -dginit {
@@ -549,7 +549,9 @@ satisfies the sufficient decrease and curvature conditions."
     }
 
     // Maximum number of iteration.
-    bail!("The line-search routine reaches the maximum number of evaluations.");
+    warn!("The line-search routine reaches the maximum number of evaluations.");
+
+    Ok(param.max_linesearch)
 }
 // core:1 ends here
 
@@ -939,23 +941,21 @@ where
         }
 
         // allow energy rises
+        // only check strong wolfe condition
         if param.gradient_only {
             info!("allow energy rises");
             let dg = prb.dg_unchecked();
-            //if dbg!(dg) <= dbg!(-param.gtol * dginit) {
-            if dg <= -param.gtol * dginit {
+            if dg.abs() <= -param.gtol * dginit.abs() {
                 return Ok(count);
             }
         }
 
-        if !param.gradient_only {
-            param.validate_step(*stp)?;
-        }
+        param.validate_step(*stp)?;
         *stp *= width
     }
 
     // Maximum number of iteration.
-    error!("The line-search routine reaches the maximum number of evaluations.");
+    warn!("The line-search routine reaches the maximum number of evaluations.");
 
     Ok(param.max_linesearch)
 }

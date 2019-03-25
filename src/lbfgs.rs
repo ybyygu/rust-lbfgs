@@ -657,8 +657,8 @@ where
     }
 
     /// Enable Powell damping.
-    pub fn with_damping(mut self) -> Self {
-        self.param.damping = true;
+    pub fn with_damping(mut self, damped: bool) -> Self {
+        self.param.damping = damped;
 
         self
     }
@@ -717,7 +717,13 @@ where
         self.param.linesearch.gradient_only = true;
         self.param.damping = true;
         self.param.linesearch.algorithm = LineSearchAlgorithm::BacktrackingStrongWolfe;
-        self.param.linesearch.max_linesearch = 2;
+
+        self
+    }
+
+    /// Set the max number of iterations for line search.
+    pub fn with_max_linesearch(mut self, n: usize) -> Self {
+        self.param.linesearch.max_linesearch = n;
 
         self
     }
