@@ -21,9 +21,9 @@ Check [rust-liblbfgs](https://github.com/ybyygu/rust-liblbfgs) for a working wra
 
 # Todo
 
--   [ ] add option to disable line search for gradient only optimization
 -   [ ] Parallel with rayon
 -   [ ] SIMD support
+-   [X] add option to disable line search for gradient only optimization
 -   [X] Fix issues inherited from liblbfgs [URL](https://github.com/chokkan/liblbfgs/pulls)
 
 
@@ -32,6 +32,7 @@ Check [rust-liblbfgs](https://github.com/ybyygu/rust-liblbfgs) for a working wra
 -   Clean and safe Rust implementation.
 -   OWL-QN algorithm.
 -   Closure based callback interfaces.
+-   Damped L-BFGS algorithm.
 
 
 # Usage

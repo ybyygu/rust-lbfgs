@@ -1,4 +1,10 @@
 
+# v0.0.14
+
+-   <span class="timestamp-wrapper"><span class="timestamp">[2019-03-22 Fri] </span></span> Damped LBFGS algorithm
+-   <span class="timestamp-wrapper"><span class="timestamp">[2019-03-22 Fri] </span></span> Gradient only optimization.
+
+
 # v0.0.13
 
 -   <span class="timestamp-wrapper"><span class="timestamp">[2019-01-02 Wed] </span></span> new example: optimization of lj38 cluster
