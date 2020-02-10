@@ -8,7 +8,7 @@
 extern crate criterion;
 
 use criterion::Criterion;
-use lbfgs::lbfgs;
+use liblbfgs::lbfgs;
 
 // Default evaluator adopted from liblbfgs sample.c
 //

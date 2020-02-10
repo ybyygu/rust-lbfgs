@@ -4,7 +4,7 @@
 // :END:
 // # The Rosenbrock function
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*rosenbrock][rosenbrock:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*rosenbrock][rosenbrock:1]]
 //! Multidimensional Rosenbrock test function
 //!
 //! Defined as
@@ -22,7 +22,7 @@ use approx::*;
 
 #[test]
 fn test_lbfgs() {
-    use lbfgs::{default_evaluate, default_progress, lbfgs, Progress};
+    use liblbfgs::{default_evaluate, default_progress, lbfgs, Progress};
 
     const N: usize = 100;
 

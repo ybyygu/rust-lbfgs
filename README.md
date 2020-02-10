@@ -38,7 +38,7 @@ Check [rust-liblbfgs](https://github.com/ybyygu/rust-liblbfgs) for a working wra
 # Usage
 
     // 0. Import the lib
-    use lbfgs::lbfgs;
+    use liblbfgs::lbfgs;
     
     const N: usize = 100;
     

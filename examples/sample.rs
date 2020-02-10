@@ -4,8 +4,8 @@
 // :END:
 // Adopted from sample.c in original source.
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*sample.rs][sample.rs:1]]
-use lbfgs::{lbfgs, Progress};
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*sample.rs][sample.rs:1]]
+use liblbfgs::{lbfgs, Progress};
 
 fn main() {
     const N: usize = 100;

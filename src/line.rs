@@ -8,10 +8,10 @@
 //!
 //! # Example
 //! ```
-//! use lbfgs::math::LbfgsMath;
-//! use lbfgs::Problem;
-//! use lbfgs::default_evaluate;
-//! use lbfgs::line::LineSearch;
+//! use liblbfgs::math::LbfgsMath;
+//! use liblbfgs::Problem;
+//! use liblbfgs::default_evaluate;
+//! use liblbfgs::line::LineSearch;
 //! 
 //! const N: usize = 100;
 //! let mut x = [0.0; N];

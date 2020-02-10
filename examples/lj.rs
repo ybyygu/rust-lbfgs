@@ -3,7 +3,7 @@
 // :header-args: :noweb yes :tangle examples/lj.rs
 // :END:
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lj.rs][lj.rs:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*lj.rs][lj.rs:1]]
 use vecfx::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -70,7 +70,7 @@ impl LennardJones {
 }
 
 fn main() {
-    use lbfgs::{lbfgs, Progress};
+    use liblbfgs::{lbfgs, Progress};
     let mut lj = LennardJones::default();
 
     // LJ38

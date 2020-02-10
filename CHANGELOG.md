@@ -1,4 +1,10 @@
 
+# v0.0.15
+
+-   <span class="timestamp-wrapper"><span class="timestamp">[2020-02-10 Mon] </span></span> remove quicli dependency
+-   <span class="timestamp-wrapper"><span class="timestamp">[2020-02-10 Mon] </span></span> rename package as liblbfgs
+
+
 # v0.0.14
 
 -   <span class="timestamp-wrapper"><span class="timestamp">[2019-03-22 Fri] </span></span> Damped LBFGS algorithm

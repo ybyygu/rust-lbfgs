@@ -2,7 +2,7 @@
 
 # [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*cargo][cargo:1]]
 [package]
-name = "lbfgs"
+name = "liblbfgs"
 edition = "2018"
 version = "0.0.15"
 authors = ["Wenping Guo <ybyygu@gmail.com>"]
@@ -11,7 +11,7 @@ homepage = "https://github.com/ybyygu/rust-lbfgs"
 repository = "https://github.com/ybyygu/rust-lbfgs"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
-exclude = ["bin/*", "docs/*"]
+exclude = ["bin/*", "docs/*", "liblbfgs/", "*.note*"]
 
 [dependencies]
 log = "^0.4"

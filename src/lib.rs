@@ -11,7 +11,7 @@
 //! # Example
 //! ```
 //! // 0. Import the lib
-//! use lbfgs::lbfgs;
+//! use liblbfgs::lbfgs;
 //! 
 //! const N: usize = 100;
 //! 
