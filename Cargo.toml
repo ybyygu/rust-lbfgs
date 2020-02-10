@@ -1,19 +1,26 @@
 # cargo                                                             :Scratch:
 
-# [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*cargo][cargo:1]]
+# [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*cargo][cargo:1]]
 [package]
 name = "lbfgs"
 edition = "2018"
-version = "0.0.14"
+version = "0.0.15"
 authors = ["Wenping Guo <ybyygu@gmail.com>"]
+description = "Fast and safe Rust implementation of LBFGS and OWL-QN algorithms ported from Naoaki Okazaki's C library libLBFGS."
+homepage = "https://github.com/ybyygu/rust-lbfgs"
+repository = "https://github.com/ybyygu/rust-lbfgs"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+exclude = ["bin/*", "docs/*"]
 
 [dependencies]
-quicli = "0.4"
-vecfx = {git = "https://github.com/ybyygu/vecfx.git"}
+log = "^0.4"
+anyhow = "1"
 
 [dev-dependencies]
 approx = "0.3"
 criterion = "0.2"
+vecfx = "0.0.8"
 
 [[bench]]
 name = "rosenbrock"

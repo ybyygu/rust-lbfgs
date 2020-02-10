@@ -34,14 +34,13 @@
 
 // base
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
-use quicli::prelude::*;
-type Result<T> = ::std::result::Result<T, Error>;
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*base][base:1]]
+use crate::core::*;
 // base:1 ends here
 
 // algorithm
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*algorithm][algorithm:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*algorithm][algorithm:1]]
 /// Line search algorithms.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum LineSearchAlgorithm {
@@ -97,7 +96,7 @@ impl Default for LineSearchAlgorithm {
 
 // paramters
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*paramters][paramters:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*paramters][paramters:1]]
 #[derive(Debug, Copy, Clone)]
 pub struct LineSearch {
     /// Various line search algorithms.
@@ -177,7 +176,7 @@ impl Default for LineSearch {
 
 // adhoc
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*adhoc][adhoc:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*adhoc][adhoc:1]]
 impl LineSearch {
     fn validate_step(&self, step: f64) -> Result<()> {
         // The step is the minimum value.
@@ -196,7 +195,7 @@ impl LineSearch {
 
 // entry
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*entry][entry:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*entry][entry:1]]
 use crate::lbfgs::Problem;
 
 impl LineSearch {
@@ -366,13 +365,13 @@ impl LineSearch {
 // Jorge J. More', David J. Thuente
 
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*Original%20documentation%20by%20J.%20Nocera%20(lbfgs.f)][Original documentation by J. Nocera (lbfgs.f):1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*Original documentation by J. Nocera (lbfgs.f)][Original documentation by J. Nocera (lbfgs.f):1]]
 
 // Original documentation by J. Nocera (lbfgs.f):1 ends here
 
 // core
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*core][core:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 use crate::math::*;
 
 pub fn line_search_morethuente<E>(
@@ -557,7 +556,7 @@ satisfies the sufficient decrease and curvature conditions."
 
 // core
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*core][core:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 /// Represents the original MCSTEP subroutine by J. Nocera, which is a variant
 /// of More' and Thuente's routine.
 ///
@@ -574,8 +573,7 @@ mod mcstep {
         quard_minimizer2,
     };
 
-    use quicli::prelude::*;
-    type Result<T> = ::std::result::Result<T, Error>;
+    use crate::core::*;
 
     ///
     /// Update a safeguarded trial value and interval for line search.
@@ -775,7 +773,7 @@ mod mcstep {
 
 // interpolation
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*interpolation][interpolation:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*interpolation][interpolation:1]]
 /// Find a minimizer of an interpolated cubic function.
 ///
 /// # Arguments
@@ -887,7 +885,7 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
 
 // core
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*core][core:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 use self::LineSearchAlgorithm::*;
 
 /// `prb` holds input variables `x`, gradient `gx` arrays, and function value

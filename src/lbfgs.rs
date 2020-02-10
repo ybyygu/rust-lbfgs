@@ -1,6 +1,6 @@
 // header
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*header][header:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*header][header:1]]
 //!       Limited memory BFGS (L-BFGS).
 //
 //  Copyright (c) 1990, Jorge Nocedal
@@ -62,9 +62,8 @@
 
 // base
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
-use quicli::prelude::*;
-type Result<T> = ::std::result::Result<T, Error>;
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*base][base:1]]
+use crate::core::*;
 
 use crate::math::LbfgsMath;
 use crate::line::*;
@@ -72,7 +71,7 @@ use crate::line::*;
 
 // parameters
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*parameters][parameters:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*parameters][parameters:1]]
 /// L-BFGS optimization parameters.
 ///
 /// Call lbfgs_parameter_t::default() function to initialize parameters to the
@@ -187,7 +186,7 @@ impl Default for LbfgsParam {
 
 // problem
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*problem][problem:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*problem][problem:1]]
 /// Represents an optimization problem.
 ///
 /// `Problem` holds input variables `x`, gradient `gx` arrays, and function value `fx`.
@@ -395,7 +394,7 @@ where
 
 // progress
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*progress][progress:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*progress][progress:1]]
 /// Store optimization progress data, for progress monitor
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -450,7 +449,7 @@ impl<'a> Progress<'a> {
 
 // orthantwise
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*orthantwise][orthantwise:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*orthantwise][orthantwise:1]]
 /// Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) algorithm
 #[derive(Copy, Clone, Debug)]
 pub struct Orthantwise {
@@ -588,7 +587,7 @@ impl Orthantwise {
 
 // builder
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*builder][builder:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*builder][builder:1]]
 #[derive(Debug, Clone)]
 pub struct LBFGS<F>
 where
@@ -823,7 +822,7 @@ where
 
 // src
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*src][src:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*src][src:1]]
 impl<F> LBFGS<F>
 where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
@@ -944,7 +943,7 @@ where
 
 // recursion
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*recursion][recursion:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*recursion][recursion:1]]
 /// Algorithm 7.4, in Nocedal, J.; Wright, S. Numerical Optimization; Springer Science & Business Media, 2006.
 fn lbfgs_two_loop_recursion(
     lm_arr: &mut [IterationData],
@@ -986,7 +985,7 @@ fn lbfgs_two_loop_recursion(
 
 // iteration data
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*iteration%20data][iteration data:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*iteration data][iteration data:1]]
 /// Internal iternation data for L-BFGS
 #[derive(Clone)]
 struct IterationData {
@@ -1088,7 +1087,7 @@ impl IterationData {
 
 // stopping conditions
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*stopping%20conditions][stopping conditions:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*stopping conditions][stopping conditions:1]]
 /// test if progress satisfying stop condition
 #[inline]
 fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress, pf: &mut [f64]) -> bool {

@@ -3,10 +3,7 @@
 // :header-args: :tangle benches/rosenbrock.rs
 // :END:
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*rosenbrock][rosenbrock:1]]
-use quicli::prelude::*;
-type Result<T> = ::std::result::Result<T, Error>;
-
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*rosenbrock][rosenbrock:1]]
 #[macro_use]
 extern crate criterion;
 

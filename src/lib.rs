@@ -56,19 +56,23 @@
 
 // base
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*base][base:1]]
-use quicli::prelude::*;
-type Result<T> = ::std::result::Result<T, Error>;
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*base][base:1]]
+use crate::core::*;
 
 mod lbfgs;
-pub mod math;
 pub mod line;
+pub mod math;
 pub use crate::lbfgs::*;
+
+pub(crate) mod core {
+    pub use anyhow::*;
+    pub use log::{debug, error, info, trace, warn};
+}
 // base:1 ends here
 
 // lbfgs
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*lbfgs][lbfgs:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*lbfgs][lbfgs:1]]
 pub fn lbfgs<F>() -> LBFGS<F>
 where
     F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
@@ -80,7 +84,7 @@ where
 // tests
 // test functions
 
-// [[file:~/Workspace/Programming/rust-libs/lbfgs/lbfgs.note::*tests][tests:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*tests][tests:1]]
 /// Default test function (rosenbrock) adopted from liblbfgs sample.c
 pub fn default_evaluate() -> impl FnMut(&[f64], &mut [f64]) -> Result<f64> {
     move |arr_x: &[f64], gx: &mut [f64]| {
