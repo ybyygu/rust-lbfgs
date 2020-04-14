@@ -32,13 +32,9 @@
 //! let ncall = ls.find(&mut prb, &mut step).expect("line search");
 //! ```
 
-// base
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*base][base:1]]
 use crate::core::*;
 // base:1 ends here
-
-// algorithm
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*algorithm][algorithm:1]]
 /// Line search algorithms.
@@ -93,8 +89,6 @@ impl Default for LineSearchAlgorithm {
     }
 }
 // algorithm:1 ends here
-
-// paramters
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*paramters][paramters:1]]
 #[derive(Debug, Copy, Clone)]
@@ -174,8 +168,6 @@ impl Default for LineSearch {
 }
 // paramters:1 ends here
 
-// adhoc
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*adhoc][adhoc:1]]
 impl LineSearch {
     fn validate_step(&self, step: f64) -> Result<()> {
@@ -192,8 +184,6 @@ impl LineSearch {
     }
 }
 // adhoc:1 ends here
-
-// entry
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*entry][entry:1]]
 use crate::lbfgs::Problem;
@@ -244,132 +234,9 @@ impl LineSearch {
 }
 // entry:1 ends here
 
-// Original documentation by J. Nocera (lbfgs.f)
-//                 subroutine mcsrch
-
-// A slight modification of the subroutine CSRCH of More' and Thuente.
-// The changes are to allow reverse communication, and do not affect
-// the performance of the routine.
-
-// The purpose of mcsrch is to find a step which satisfies
-// a sufficient decrease condition and a curvature condition.
-
-// At each stage the subroutine updates an interval of
-// uncertainty with endpoints stx and sty. the interval of
-// uncertainty is initially chosen so that it contains a
-// minimizer of the modified function
-
-//      f(x+stp*s) - f(x) - ftol*stp*(gradf(x)'s).
-
-// If a step is obtained for which the modified function
-// has a nonpositive function value and nonnegative derivative,
-// then the interval of uncertainty is chosen so that it
-// contains a minimizer of f(x+stp*s).
-
-// The algorithm is designed to find a step which satisfies
-// the sufficient decrease condition
-
-//       f(x+stp*s) <= f(x) + ftol*stp*(gradf(x)'s),
-
-// and the curvature condition
-
-//       abs(gradf(x+stp*s)'s)) <= gtol*abs(gradf(x)'s).
-
-// If ftol is less than gtol and if, for example, the function
-// is bounded below, then there is always a step which satisfies
-// both conditions. if no step can be found which satisfies both
-// conditions, then the algorithm usually stops when rounding
-// errors prevent further progress. in this case stp only
-// satisfies the sufficient decrease condition.
-
-// The subroutine statement is
-
-//    subroutine mcsrch(n,x,f,g,s,stp,ftol,xtol, maxfev,info,nfev,wa)
-// where
-
-//   n is a positive integer input variable set to the number
-//     of variables.
-
-//   x is an array of length n. on input it must contain the
-//     base point for the line search. on output it contains
-//     x + stp*s.
-
-//   f is a variable. on input it must contain the value of f
-//     at x. on output it contains the value of f at x + stp*s.
-
-//   g is an array of length n. on input it must contain the
-//     gradient of f at x. on output it contains the gradient
-//     of f at x + stp*s.
-
-//   s is an input array of length n which specifies the
-//     search direction.
-
-//   stp is a nonnegative variable. on input stp contains an
-//     initial estimate of a satisfactory step. on output
-//     stp contains the final estimate.
-
-//   ftol and gtol are nonnegative input variables. (in this reverse
-//     communication implementation gtol is defined in a common
-//     statement.) termination occurs when the sufficient decrease
-//     condition and the directional derivative condition are
-//     satisfied.
-
-//   xtol is a nonnegative input variable. termination occurs
-//     when the relative width of the interval of uncertainty
-//     is at most xtol.
-
-//   stpmin and stpmax are nonnegative input variables which
-//     specify lower and upper bounds for the step. (In this reverse
-//     communication implementatin they are defined in a common
-//     statement).
-
-//   maxfev is a positive integer input variable. termination
-//     occurs when the number of calls to fcn is at least
-//     maxfev by the end of an iteration.
-
-//   info is an integer output variable set as follows:
-
-//     info = 0  improper input parameters.
-
-//     info =-1  a return is made to compute the function and gradient.
-
-//     info = 1  the sufficient decrease condition and the
-//               directional derivative condition hold.
-
-//     info = 2  relative width of the interval of uncertainty
-//               is at most xtol.
-
-//     info = 3  number of calls to fcn has reached maxfev.
-
-//     info = 4  the step is at the lower bound stpmin.
-
-//     info = 5  the step is at the upper bound stpmax.
-
-//     info = 6  rounding errors prevent further progress.
-//               there may not be a step which satisfies the
-//               sufficient decrease and curvature conditions.
-//               tolerances may be too small.
-
-//   nfev is an integer output variable set to the number of
-//     calls to fcn.
-
-//   wa is a work array of length n.
-
-// subprograms called
-
-//   mcstep
-
-//   fortran-supplied...abs,max,min
-
-// ARgonne National Laboratory. Minpack Project. June 1983
-// Jorge J. More', David J. Thuente
-
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*Original documentation by J. Nocera (lbfgs.f)][Original documentation by J. Nocera (lbfgs.f):1]]
 
 // Original documentation by J. Nocera (lbfgs.f):1 ends here
-
-// core
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 use crate::math::*;
@@ -553,8 +420,6 @@ satisfies the sufficient decrease and curvature conditions."
     Ok(param.max_linesearch)
 }
 // core:1 ends here
-
-// core
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 /// Represents the original MCSTEP subroutine by J. Nocera, which is a variant
@@ -771,8 +636,6 @@ mod mcstep {
 }
 // core:1 ends here
 
-// interpolation
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*interpolation][interpolation:1]]
 /// Find a minimizer of an interpolated cubic function.
 ///
@@ -828,6 +691,7 @@ fn cubic_minimizer2(
     xmin : f64,
     xmax : f64,
 ) {
+    // STP - STX
     let d = v - u;
     let theta = (fu - fv) * 3.0 / d + du + dv;
     let mut p = theta.abs();
@@ -838,6 +702,7 @@ fn cubic_minimizer2(
     let a = theta / s;
 
     let mut gamma = s * (0f64.max(a * a - du / s * (dv / s)).sqrt());
+    // STX < STP
     if u < v {
         gamma = -gamma
     }
@@ -846,7 +711,9 @@ fn cubic_minimizer2(
     r = p / q;
     if r < 0.0 && gamma != 0.0 {
         *cm = v - r * d;
-    } else if a < 0 as f64 {
+    // } else if a < 0 as f64 {
+    //  ELSE IF (STP .GT. STX) THEN
+    } else if v > u {
         *cm = xmax;
     } else {
         *cm = xmin;
@@ -882,8 +749,6 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
     *qm = v + dv / (dv - du) * a;
 }
 // interpolation:1 ends here
-
-// core
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 use self::LineSearchAlgorithm::*;
