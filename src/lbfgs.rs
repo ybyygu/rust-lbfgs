@@ -1,5 +1,3 @@
-// header
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*header][header:1]]
 //!       Limited memory BFGS (L-BFGS).
 //
@@ -60,16 +58,12 @@
 // licence.
 // header:1 ends here
 
-// base
-
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*base][base:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*imports][imports:1]]
 use crate::core::*;
 
 use crate::math::LbfgsMath;
 use crate::line::*;
-// base:1 ends here
-
-// parameters
+// imports:1 ends here
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*parameters][parameters:1]]
 /// L-BFGS optimization parameters.
@@ -184,16 +178,13 @@ impl Default for LbfgsParam {
 }
 // parameters:1 ends here
 
-// problem
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*problem][problem:1]]
+use crate::builder::EvaluateLbfgs;
+
 /// Represents an optimization problem.
 ///
 /// `Problem` holds input variables `x`, gradient `gx` arrays, and function value `fx`.
-#[derive(Debug)]
-pub struct Problem<'a, E>
-where
-    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+pub struct Problem<'a>
 {
     /// x is an array of length n. on input it must contain the base point for
     /// the line search.
@@ -220,7 +211,7 @@ where
     d: Vec<f64>,
 
     /// Store callback function for evaluating objective function.
-    eval_fn: E,
+    eval_fn: Box<dyn EvaluateLbfgs + 'a>,
 
     /// Orthantwise operations
     owlqn: Option<Orthantwise>,
@@ -232,12 +223,10 @@ where
     neval: usize,
 }
 
-impl<'a, E> Problem<'a, E>
-where
-    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+impl<'a> Problem<'a>
 {
     /// Initialize problem with array length n
-    pub fn new(x: &'a mut [f64], eval_fn: E, owlqn: Option<Orthantwise>) -> Self {
+    pub fn new<E: EvaluateLbfgs + 'a>(x: &'a mut [f64], eval: E, owlqn: Option<Orthantwise>) -> Self {
         let n = x.len();
         Problem {
             fx: 0.0,
@@ -249,7 +238,7 @@ where
             evaluated: false,
             neval: 0,
             x,
-            eval_fn,
+            eval_fn: Box::new(eval),
             owlqn,
         }
     }
@@ -294,7 +283,7 @@ where
 
     // FIXME: improve
     pub fn evaluate(&mut self) -> Result<()> {
-        self.fx = (self.eval_fn)(&self.x, &mut self.gx)?;
+        self.fx = self.eval_fn.evaluate(&self.x, &mut self.gx)?;
 
         // Compute the L1 norm of the variables and add it to the object value.
         if let Some(owlqn) = self.owlqn {
@@ -325,7 +314,7 @@ where
     }
 
     /// Copies all elements from src into self.
-    pub fn clone_from(&mut self, src: &Problem<E>) {
+    pub fn clone_from(&mut self, src: &Problem) {
         self.x.clone_from_slice(&src.x);
         self.gx.clone_from_slice(&src.gx);
         self.fx = src.fx;
@@ -392,8 +381,6 @@ where
 }
 // problem:1 ends here
 
-// progress
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*progress][progress:1]]
 /// Store optimization progress data, for progress monitor
 #[repr(C)]
@@ -428,10 +415,7 @@ pub struct Progress<'a> {
 }
 
 impl<'a> Progress<'a> {
-    fn new<E>(prb: &'a Problem<E>, niter: usize, ncall: usize, step: f64) -> Self
-    where
-        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-    {
+    fn new(prb: &'a Problem, niter: usize, ncall: usize, step: f64) -> Self {
         Progress {
             x: &prb.x,
             gx: &prb.gx,
@@ -445,9 +429,32 @@ impl<'a> Progress<'a> {
         }
     }
 }
-// progress:1 ends here
 
-// orthantwise
+pub struct Report {
+    /// The current value of the objective function.
+    pub fx: f64,
+
+    /// The Euclidean norm of the variables
+    pub xnorm: f64,
+
+    /// The Euclidean norm of the gradients.
+    pub gnorm: f64,
+
+    /// The total number of evaluations.
+    pub neval: usize,
+}
+
+impl Report {
+    fn new(prb: &Problem) -> Self {
+        Self {
+            fx: prb.fx,
+            xnorm: prb.xnorm(),
+            gnorm: prb.gnorm(),
+            neval: prb.number_of_evaluation(),
+        }
+    }
+}
+// progress:1 ends here
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*orthantwise][orthantwise:1]]
 /// Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) algorithm
@@ -585,36 +592,22 @@ impl Orthantwise {
 }
 // orthantwise:1 ends here
 
-// builder
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*builder][builder:1]]
-#[derive(Debug, Clone)]
-pub struct LBFGS<F>
-where
-    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
+pub struct Lbfgs {
     // FIXME: make it private
     pub param: LbfgsParam,
-    evaluate: Option<F>,
 }
 
-impl<F> Default for LBFGS<F>
-where
-    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
+impl Default for Lbfgs {
     fn default() -> Self {
-        LBFGS {
+        Lbfgs {
             param: LbfgsParam::default(),
-            evaluate: None,
         }
     }
 }
 
 /// Create lbfgs optimizer with epsilon convergence
-impl<F> LBFGS<F>
-where
-    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
+impl Lbfgs {
     /// Set scaled gradient norm for converence test
     ///
     /// This parameter determines the accuracy with which the solution is to be
@@ -624,10 +617,7 @@ where
     ///
     /// where ||.|| denotes the Euclidean (L2) norm. The default value is 1e-5.
     pub fn with_epsilon(mut self, epsilon: f64) -> Self {
-        assert!(
-            epsilon.is_sign_positive(),
-            "Invalid parameter epsilon specified."
-        );
+        assert!(epsilon.is_sign_positive(), "Invalid parameter epsilon specified.");
 
         self.param.epsilon = epsilon;
 
@@ -803,12 +793,8 @@ where
     pub fn with_linesearch_algorithm(mut self, algo: &str) -> Self {
         match algo {
             "MoreThuente" => self.param.linesearch.algorithm = LineSearchAlgorithm::MoreThuente,
-            "BacktrackingArmijo" => {
-                self.param.linesearch.algorithm = LineSearchAlgorithm::BacktrackingArmijo
-            }
-            "BacktrackingStrongWolfe" => {
-                self.param.linesearch.algorithm = LineSearchAlgorithm::BacktrackingStrongWolfe
-            }
+            "BacktrackingArmijo" => self.param.linesearch.algorithm = LineSearchAlgorithm::BacktrackingArmijo,
+            "BacktrackingStrongWolfe" => self.param.linesearch.algorithm = LineSearchAlgorithm::BacktrackingStrongWolfe,
             "BacktrackingWolfe" | "Backtracking" => {
                 self.param.linesearch.algorithm = LineSearchAlgorithm::BacktrackingWolfe
             }
@@ -820,13 +806,8 @@ where
 }
 // builder:1 ends here
 
-// src
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*src][src:1]]
-impl<F> LBFGS<F>
-where
-    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
+impl Lbfgs {
     /// Start the L-BFGS optimization; this will invoke the callback functions evaluate
     /// and progress.
     /// 
@@ -839,13 +820,9 @@ where
     /// # Return
     /// 
     /// * on success, return final evaluated `Problem`.
-    pub fn minimize<'a, G>(
-        self,
-        x: &'a mut [f64],
-        eval_fn: F,
-        mut prgr_fn: G,
-    ) -> Result<Problem<'a, F>>
+    pub fn minimize<'a, E, G>(self, x: &'a mut [f64], eval_fn: E, mut prgr_fn: G) -> Result<Report>
     where
+        E: EvaluateLbfgs + 'a,
         G: FnMut(&Progress) -> bool,
     {
         // Initialize the limited memory.
@@ -910,14 +887,7 @@ where
 
             // Update LBFGS iteration data.
             let it = &mut lm_arr[end];
-            let gamma = it.update(
-                &problem.x,
-                &problem.xp,
-                &problem.gx,
-                &problem.gp,
-                step,
-                damping,
-            );
+            let gamma = it.update(&problem.x, &problem.xp, &problem.gx, &problem.gp, step, damping);
 
             // Compute the steepest direction
             problem.update_search_direction();
@@ -936,12 +906,10 @@ where
         }
 
         // Return the final value of the objective function.
-        Ok(problem)
+        Ok(Report::new(&problem))
     }
 }
 // src:1 ends here
-
-// recursion
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*recursion][recursion:1]]
 /// Algorithm 7.4, in Nocedal, J.; Wright, S. Numerical Optimization; Springer Science & Business Media, 2006.
@@ -983,8 +951,6 @@ fn lbfgs_two_loop_recursion(
 }
 // recursion:1 ends here
 
-// iteration data
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*iteration data][iteration data:1]]
 /// Internal iternation data for L-BFGS
 #[derive(Clone)]
@@ -1020,15 +986,7 @@ impl IterationData {
     /// * damping: applying Powell damping to the gradient difference `y` helps
     ///   stabilize L-BFGS from numerical noise in function value and gradient
     ///
-    fn update(
-        &mut self,
-        x: &[f64],
-        xp: &[f64],
-        gx: &[f64],
-        gp: &[f64],
-        step: f64,
-        damping: bool,
-    ) -> f64 {
+    fn update(&mut self, x: &[f64], xp: &[f64], gx: &[f64], gp: &[f64], step: f64, damping: bool) -> f64 {
         // Update vectors s and y:
         // s_{k} = x_{k+1} - x_{k} = \alpha * d_{k}.
         // y_{k} = g_{k+1} - g_{k}.
@@ -1052,10 +1010,7 @@ impl IterationData {
         let sigma2 = 0.6;
         let sigma3 = 3.0;
         if damping {
-            debug!(
-                "Applying Powell damping, sigma2 = {}, sigma3 = {}",
-                sigma2, sigma3
-            );
+            debug!("Applying Powell damping, sigma2 = {}, sigma3 = {}", sigma2, sigma3);
 
             // B_k * Sk = B_k * (x_k + step*d_k - x_k) = B_k * step * d_k = -g_k * step
             let mut bs = gp.to_vec();
@@ -1084,8 +1039,6 @@ impl IterationData {
     }
 }
 // iteration data:1 ends here
-
-// stopping conditions
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*stopping conditions][stopping conditions:1]]
 /// test if progress satisfying stop condition

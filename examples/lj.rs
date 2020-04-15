@@ -1,8 +1,3 @@
-// lj.rs
-// :PROPERTIES:
-// :header-args: :noweb yes :tangle examples/lj.rs
-// :END:
-
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*lj.rs][lj.rs:1]]
 use vecfx::*;
 
@@ -116,7 +111,7 @@ fn main() {
 
     lbfgs().minimize(
         &mut positions,
-        |x, gx| {
+        |x: &[f64], gx: &mut [f64]| {
             let energy = lj.evaluate(x.as_3d(), gx.as_mut_3d());
             gx.vecscale(-1.0);
             Ok(energy)

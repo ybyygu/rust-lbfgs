@@ -54,11 +54,10 @@
 //! println!("fx = {:}", prb.fx);
 //! ```
 
-// base
-
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*base][base:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*imports][imports:1]]
 use crate::core::*;
 
+mod builder;
 mod lbfgs;
 pub mod line;
 pub mod math;
@@ -68,21 +67,15 @@ pub(crate) mod core {
     pub use anyhow::*;
     pub use log::{debug, error, info, trace, warn};
 }
-// base:1 ends here
-
-// lbfgs
+// imports:1 ends here
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*lbfgs][lbfgs:1]]
-pub fn lbfgs<F>() -> LBFGS<F>
-where
-    F: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
-    LBFGS::default()
+use crate::lbfgs::Lbfgs;
+
+pub fn lbfgs() -> Lbfgs {
+    Lbfgs::default()
 }
 // lbfgs:1 ends here
-
-// tests
-// test functions
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*tests][tests:1]]
 /// Default test function (rosenbrock) adopted from liblbfgs sample.c

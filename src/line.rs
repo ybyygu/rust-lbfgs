@@ -201,10 +201,7 @@ impl LineSearch {
     ///
     /// * On success, return the number of line searching iterations
     ///
-    pub fn find<E>(&self, prb: &mut Problem<E>, step: &mut f64) -> Result<usize>
-    where
-        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-    {
+    pub fn find(&self, prb: &mut Problem, step: &mut f64) -> Result<usize> {
         // Check the input parameters for errors.
         ensure!(
             step.is_sign_positive(),
@@ -220,7 +217,8 @@ impl LineSearch {
             }
         } else {
             line_search_backtracking(prb, step, &self)
-        }.unwrap_or_else(|err| {
+        }
+        .unwrap_or_else(|err| {
             // Revert to the previous point.
             error!("line search failed, revert to the previous point!");
             prb.revert();
@@ -241,14 +239,11 @@ impl LineSearch {
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 use crate::math::*;
 
-pub fn line_search_morethuente<E>(
-    prb: &mut Problem<E>,
+pub fn line_search_morethuente(
+    prb: &mut Problem,
     stp: &mut f64,      // Step size
     param: &LineSearch, // line search parameters
-) -> Result<usize>
-where
-    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
+) -> Result<usize> {
     // Initialize local variables.
     let dginit = prb.dginit()?;
     let mut brackt = false;
@@ -277,10 +272,7 @@ where
         // Set the minimum and maximum steps to correspond to the
         // present interval of uncertainty.
         let (stmin, stmax) = if brackt {
-            (
-                if stx <= sty { stx } else { sty },
-                if stx >= sty { stx } else { sty },
-            )
+            (if stx <= sty { stx } else { sty }, if stx >= sty { stx } else { sty })
         } else {
             (stx, *stp + 4.0 * (*stp - stx))
         };
@@ -295,8 +287,7 @@ where
 
         // If an unusual termination is to occur then let
         // stp be the lowest point obtained so far.
-        if brackt
-            && (*stp <= stmin || stmax <= *stp || param.max_linesearch <= count + 1 || uinfo != 0)
+        if brackt && (*stp <= stmin || stmax <= *stp || param.max_linesearch <= count + 1 || uinfo != 0)
             || brackt && stmax - stmin <= param.xtol * stmax
         {
             *stp = stx
@@ -431,12 +422,7 @@ satisfies the sufficient decrease and curvature conditions."
 /// Documentation is adopted from the original Fortran codes.
 mod mcstep {
     // dependencies
-    use super::{
-        cubic_minimizer,
-        cubic_minimizer2,
-        quard_minimizer,
-        quard_minimizer2,
-    };
+    use super::{cubic_minimizer, cubic_minimizer2, quard_minimizer, quard_minimizer2};
 
     use crate::core::*;
 
@@ -680,17 +666,7 @@ fn cubic_minimizer(cm: &mut f64, u: f64, fu: f64, du: f64, v: f64, fv: f64, dv: 
 ///  * xmin:   The minimum value.
 ///  * xmax:   The maximum value.
 #[inline]
-fn cubic_minimizer2(
-    cm   : &mut f64,
-    u    : f64,
-    fu   : f64,
-    du   : f64,
-    v    : f64,
-    fv   : f64,
-    dv   : f64,
-    xmin : f64,
-    xmax : f64,
-) {
+fn cubic_minimizer2(cm: &mut f64, u: f64, fu: f64, du: f64, v: f64, fv: f64, dv: f64, xmin: f64, xmax: f64) {
     // STP - STX
     let d = v - u;
     let theta = (fu - fv) * 3.0 / d + du + dv;
@@ -756,14 +732,11 @@ use self::LineSearchAlgorithm::*;
 /// `prb` holds input variables `x`, gradient `gx` arrays, and function value
 /// `fx`. on input it must contain the base point for the line search. on output
 /// it contains data on x + stp*d.
-pub fn line_search_backtracking<E>(
-    prb: &mut Problem<E>,
+pub fn line_search_backtracking(
+    prb: &mut Problem,
     stp: &mut f64,      // step length
     param: &LineSearch, // line search parameters
-) -> Result<usize>
-where
-    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
+) -> Result<usize> {
     let dginit = prb.dginit()?;
     let dec: f64 = 0.5;
     let inc: f64 = 2.1;
