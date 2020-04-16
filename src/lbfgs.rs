@@ -184,8 +184,7 @@ use crate::builder::EvaluateLbfgs;
 /// Represents an optimization problem.
 ///
 /// `Problem` holds input variables `x`, gradient `gx` arrays, and function value `fx`.
-pub struct Problem<'a>
-{
+pub struct Problem<'a> {
     /// x is an array of length n. on input it must contain the base point for
     /// the line search.
     pub x: &'a mut [f64],
@@ -223,8 +222,7 @@ pub struct Problem<'a>
     neval: usize,
 }
 
-impl<'a> Problem<'a>
-{
+impl<'a> Problem<'a> {
     /// Initialize problem with array length n
     pub fn new<E: EvaluateLbfgs + 'a>(x: &'a mut [f64], eval: E, owlqn: Option<Orthantwise>) -> Self {
         let n = x.len();
@@ -248,7 +246,10 @@ impl<'a> Problem<'a>
         if self.owlqn.is_none() {
             let dginit = self.gx.vecdot(&self.d);
             if dginit > 0.0 {
-                warn!("The current search direction increases the objective function value. dginit = {:-0.4}", dginit);
+                warn!(
+                    "The current search direction increases the objective function value. dginit = {:-0.4}",
+                    dginit
+                );
             }
 
             Ok(dginit)
@@ -360,20 +361,20 @@ impl<'a> Problem<'a>
     }
 
     /// Store the current position and gradient vectors.
-    fn save_state(&mut self) {
+    pub fn save_state(&mut self) {
         self.xp.veccpy(&self.x);
         self.gp.veccpy(&self.gx);
     }
 
     /// Constrain the search direction for orthant-wise updates.
-    fn constrain_search_direction(&mut self) {
+    pub fn constrain_search_direction(&mut self) {
         if let Some(owlqn) = self.owlqn {
             owlqn.constrain(&mut self.d, &self.pg);
         }
     }
 
     // FIXME
-    fn update_owlqn_gradient(&mut self) {
+    pub fn update_owlqn_gradient(&mut self) {
         if let Some(owlqn) = self.owlqn {
             owlqn.pseudo_gradient(&mut self.pg, &self.x, &self.gx);
         }
@@ -806,7 +807,7 @@ impl Lbfgs {
 }
 // builder:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*src][src:1]]
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*hack][hack:1]]
 impl Lbfgs {
     /// Start the L-BFGS optimization; this will invoke the callback functions evaluate
     /// and progress.
@@ -825,10 +826,41 @@ impl Lbfgs {
         E: EvaluateLbfgs + 'a,
         G: FnMut(&Progress) -> bool,
     {
+        // FIXME: change
+        let mut state = crate::builder::Lbfgs::default();
+        state.vars = self.param.clone();
+        info!("start lbfgs loop...");
+        state.minimize(x, eval_fn)?;
+        for _ in 0.. {
+            let converged = state.check_convergence()?;
+            if converged {
+                break;
+            }
+            let prgr = state.get_progress();
+            let cancel = prgr_fn(&prgr);
+            if cancel {
+                info!("The minimization process has been canceled.");
+                break;
+            }
+            state.propagate()?;
+        }
+
+        // Return the final value of the objective function.
+        Ok(Report::new(&state.prbl.unwrap()))
+    }
+}
+// hack:1 ends here
+
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*new entry][new entry:1]]
+impl<'a> crate::builder::Lbfgs<'a> {
+    /// <<lbfgs-minimize-doc>>
+    pub fn minimize<E>(&mut self, x: &'a mut [f64], eval_fn: E) -> Result<()>
+    where
+        E: EvaluateLbfgs + 'a,
+    {
         // Initialize the limited memory.
-        let param = &self.param;
-        let m = param.m;
-        let mut lm_arr: Vec<_> = (0..m).map(|_| IterationData::new(x.len())).collect();
+        let param = &self.vars;
+        self.lm_arr = (0..param.m).map(|_| IterationData::new(x.len())).collect();
 
         // Allocate working space for LBFGS optimization
         let owlqn = if param.orthantwise {
@@ -848,68 +880,79 @@ impl Lbfgs {
         problem.update_search_direction();
 
         // Compute the initial step:
-        let max_step_size = param.max_step_size;
         let h0 = param.initial_inverse_hessian;
-        let mut step = problem.search_direction().vec2norminv() * h0;
+        self.step = problem.search_direction().vec2norminv() * h0;
 
-        let mut end = 0;
-        let linesearch = param.linesearch;
-
-        // Allocate an array for storing previous values of the objective function.
-        let mut pf = vec![0.0; param.past as usize];
-
-        info!("start lbfgs loop...");
         // Apply Powell damping or not
         let damping = param.damping;
         if damping {
             info!("Powell damping Enabled.");
         }
-        for k in 1.. {
-            // Store the current position and gradient vectors.
-            problem.save_state();
 
-            // Search for an optimal step.
-            let ls = linesearch.find(&mut problem, &mut step)?;
-            problem.update_owlqn_gradient();
+        self.prbl = Some(problem);
+        Ok(())
+    }
 
-            // Monitor the progress.
-            let prgr = Progress::new(&problem, k, ls, step);
+    fn check_convergence(&mut self) -> Result<bool> {
+        self.k += 1;
 
-            // User defined callback function
-            let cancel = prgr_fn(&prgr);
-            if cancel {
-                info!("The minimization process has been canceled.");
-                break;
-            }
-            if satisfying_stop_conditions(param, prgr, &mut pf) {
-                break;
-            }
+        let mut problem = self.prbl.take().unwrap();
 
-            // Update LBFGS iteration data.
-            let it = &mut lm_arr[end];
-            let gamma = it.update(&problem.x, &problem.xp, &problem.gx, &problem.gp, step, damping);
+        // Store the current position and gradient vectors.
+        problem.save_state();
 
-            // Compute the steepest direction
-            problem.update_search_direction();
-            let d = problem.search_direction_mut();
+        // Search for an optimal step.
+        self.ncall = self.vars.linesearch.find(&mut problem, &mut self.step)?;
+        problem.update_owlqn_gradient();
 
-            // Apply LBFGS recursion procedure.
-            end = lbfgs_two_loop_recursion(&mut lm_arr, d, gamma, m, k, end);
+        // Monitor the progress.
+        self.prbl = Some(problem);
+        let prgr = self.get_progress();
+        let converged = satisfying_stop_conditions(&self.vars, prgr);
+        Ok(converged)
+    }
 
-            // Now the search direction d is ready. Constrains the step size to
-            // prevent wild steps.
-            let dnorm = d.vec2norm();
-            step = max_step_size.min(dnorm) / dnorm;
+    fn get_progress(&self) -> Progress {
+        let problem = self.prbl.as_ref().expect("xxb");
+        Progress::new(&problem, self.k, self.ncall, self.step)
+    }
 
-            // Constrain the search direction for orthant-wise updates.
-            problem.constrain_search_direction();
-        }
+    fn propagate(&mut self) -> Result<()> {
+        let mut problem = self.prbl.take().unwrap();
 
-        // Return the final value of the objective function.
-        Ok(Report::new(&problem))
+        // Update LBFGS iteration data.
+        let it = &mut self.lm_arr[self.end];
+        let gamma = it.update(
+            &problem.x,
+            &problem.xp,
+            &problem.gx,
+            &problem.gp,
+            self.step,
+            self.vars.damping,
+        );
+
+        // Compute the steepest direction
+        problem.update_search_direction();
+        let d = problem.search_direction_mut();
+
+        // Apply LBFGS recursion procedure.
+        self.end = lbfgs_two_loop_recursion(&mut self.lm_arr, d, gamma, self.vars.m, self.k, self.end);
+
+        // Now the search direction d is ready. Constrains the step size to
+        // prevent wild steps.
+        let dnorm = d.vec2norm();
+        self.step = self.vars.max_step_size.min(dnorm) / dnorm;
+
+        // Constrain the search direction for orthant-wise updates.
+        problem.constrain_search_direction();
+
+        // save back
+        self.prbl = Some(problem);
+
+        Ok(())
     }
 }
-// src:1 ends here
+// new entry:1 ends here
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*recursion][recursion:1]]
 /// Algorithm 7.4, in Nocedal, J.; Wright, S. Numerical Optimization; Springer Science & Business Media, 2006.
@@ -954,7 +997,7 @@ fn lbfgs_two_loop_recursion(
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*iteration data][iteration data:1]]
 /// Internal iternation data for L-BFGS
 #[derive(Clone)]
-struct IterationData {
+pub(crate) struct IterationData {
     pub alpha: f64,
 
     pub s: Vec<f64>,
@@ -966,7 +1009,7 @@ struct IterationData {
 }
 
 impl IterationData {
-    fn new(n: usize) -> Self {
+    pub fn new(n: usize) -> Self {
         IterationData {
             alpha: 0.0,
             ys: 0.0,
@@ -1043,12 +1086,12 @@ impl IterationData {
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*stopping conditions][stopping conditions:1]]
 /// test if progress satisfying stop condition
 #[inline]
-fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress, pf: &mut [f64]) -> bool {
+fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress) -> bool {
     // Buildin tests for stopping conditions
     if satisfying_max_iterations(&prgr, param.max_iterations)
         || satisfying_max_evaluations(&prgr, param.max_evaluations)
         || satisfying_scaled_gnorm(&prgr, param.epsilon)
-        || satisfying_delta(&prgr, pf, param.delta)
+    // || satisfying_delta(&prgr, pf, param.delta)
     // || satisfying_max_gnorm(&prgr, self.param.max_gnorm)
     {
         return true;
@@ -1076,7 +1119,7 @@ fn satisfying_max_iterations(prgr: &Progress, max_iterations: usize) -> bool {
     if max_iterations == 0 {
         false
     } else if prgr.niter >= max_iterations {
-        warn!("max_iterations reached!");
+        warn!("max iterations reached!");
         true
     } else {
         false

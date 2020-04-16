@@ -22,19 +22,35 @@ where
 // traits:1 ends here
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*base][base:1]]
+use crate::lbfgs::IterationData;
+use crate::lbfgs::Problem;
+
 pub struct Lbfgs<'a> {
+    /// LBFGS parameters
     pub(crate) vars: LbfgsParam,
+
     /// Define how to evaluate gradient and value
-    eval: Option<Box<dyn EvaluateLbfgs + 'a>>,
-    end: usize,
+    pub(crate) prbl: Option<Problem<'a>>,
+    pub(crate) end: usize,
+    pub(crate) step: f64,
+    pub(crate) k: usize,
+    pub(crate) lm_arr: Vec<IterationData>,
+    pub(crate) pf: Vec<f64>,
+    pub(crate) ncall: usize,
 }
 
 impl<'a> Default for Lbfgs<'a> {
     fn default() -> Self {
         Self {
             vars: LbfgsParam::default(),
-            eval: None,
+            prbl: None,
             end: 0,
+            step: 0.0,
+            k: 0,
+            // FIXME: ??
+            lm_arr: vec![],
+            pf: vec![],
+            ncall: 0,
         }
     }
 }
@@ -250,15 +266,3 @@ impl<'a> Lbfgs<'a>
     }
 }
 // parameters:1 ends here
-
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*evaluation][evaluation:1]]
-impl<'a> Lbfgs<'a> {
-    pub fn evaluate_with<P: 'a>(mut self, p: P) -> Self
-    where
-        P: EvaluateLbfgs,
-    {
-        self.eval = Some(Box::new(p));
-        self
-    }
-}
-// evaluation:1 ends here
