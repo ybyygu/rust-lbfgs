@@ -179,14 +179,13 @@ impl Default for LbfgsParam {
 // parameters:1 ends here
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*problem][problem:1]]
-// use crate::builder::EvaluateLbfgs;
-
-pub trait EvaluateLbfgs = FnMut(&[f64], &mut [f64]) -> Result<f64>;
-
 /// Represents an optimization problem.
 ///
 /// `Problem` holds input variables `x`, gradient `gx` arrays, and function value `fx`.
-pub struct Problem<'a> {
+pub struct Problem<'a, E>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
     /// x is an array of length n. on input it must contain the base point for
     /// the line search.
     pub x: &'a mut [f64],
@@ -212,7 +211,7 @@ pub struct Problem<'a> {
     d: Vec<f64>,
 
     /// Store callback function for evaluating objective function.
-    eval_fn: Box<dyn EvaluateLbfgs + 'a>,
+    eval_fn: E,
 
     /// Orthantwise operations
     owlqn: Option<Orthantwise>,
@@ -224,9 +223,12 @@ pub struct Problem<'a> {
     neval: usize,
 }
 
-impl<'a> Problem<'a> {
+impl<'a, E> Problem<'a, E>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
     /// Initialize problem with array length n
-    pub fn new<E: EvaluateLbfgs + 'a>(x: &'a mut [f64], eval: E, owlqn: Option<Orthantwise>) -> Self {
+    pub fn new(x: &'a mut [f64], eval: E, owlqn: Option<Orthantwise>) -> Self {
         let n = x.len();
         Problem {
             fx: 0.0,
@@ -238,7 +240,7 @@ impl<'a> Problem<'a> {
             evaluated: false,
             neval: 0,
             x,
-            eval_fn: Box::new(eval),
+            eval_fn: eval,
             owlqn,
         }
     }
@@ -317,7 +319,7 @@ impl<'a> Problem<'a> {
     }
 
     /// Copies all elements from src into self.
-    pub fn clone_from(&mut self, src: &Problem) {
+    pub fn clone_from(&mut self, src: &Problem<E>) {
         self.x.clone_from_slice(&src.x);
         self.gx.clone_from_slice(&src.gx);
         self.fx = src.fx;
@@ -418,7 +420,10 @@ pub struct Progress<'a> {
 }
 
 impl<'a> Progress<'a> {
-    fn new(prb: &'a Problem, niter: usize, ncall: usize, step: f64) -> Self {
+    fn new<E>(prb: &'a Problem<E>, niter: usize, ncall: usize, step: f64) -> Self
+    where
+        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    {
         Progress {
             x: &prb.x,
             gx: &prb.gx,
@@ -448,7 +453,10 @@ pub struct Report {
 }
 
 impl Report {
-    fn new(prb: &Problem) -> Self {
+    fn new<E>(prb: &Problem<E>) -> Self
+    where
+        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    {
         Self {
             fx: prb.fx,
             xnorm: prb.xnorm(),
@@ -817,7 +825,7 @@ impl Lbfgs {
     /// * on success, return final evaluated `Problem`.
     pub fn minimize<E, G>(self, x: &mut [f64], eval_fn: E, mut prgr_fn: G) -> Result<Report>
     where
-        E: EvaluateLbfgs,
+        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
         G: FnMut(&Progress) -> bool,
     {
         let mut state = self.build(x, eval_fn)?;
@@ -841,33 +849,36 @@ impl Lbfgs {
 }
 // hack:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*new][new:1]]
-use crate::builder::LbfgsState;
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*state][state:1]]
+/// LBFGS optimization state allowing iterative propagation
+pub struct LbfgsState<'a, E>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
+    /// LBFGS parameters
+    vars: LbfgsParam,
 
+    /// Define how to evaluate gradient and value
+    prbl: Option<Problem<'a, E>>,
+    end: usize,
+    step: f64,
+    k: usize,
+    lm_arr: Vec<IterationData>,
+    pf: Vec<f64>,
+    ncall: usize,
+}
+// state:1 ends here
+
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*build][build:1]]
 impl Lbfgs {
     /// Build LBFGS state struct for iteration.
-    pub fn build<'a, E>(self, x: &'a mut [f64], eval_fn: E) -> Result<LbfgsState<'a>>
+    pub fn build<'a, E>(self, x: &'a mut [f64], eval_fn: E) -> Result<LbfgsState<'a, E>>
     where
-        E: EvaluateLbfgs + 'a,
-    {
-        let mut state = LbfgsState::default();
-        state.vars = self.param.clone();
-        state.initialize(x, eval_fn)?;
-
-        Ok(state)
-    }
-}
-// new:1 ends here
-
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*new entry][new entry:1]]
-impl<'a> LbfgsState<'a> {
-    fn initialize<E>(&mut self, x: &'a mut [f64], eval_fn: E) -> Result<()>
-    where
-        E: EvaluateLbfgs + 'a,
+        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
     {
         // Initialize the limited memory.
-        let param = &self.vars;
-        self.lm_arr = (0..param.m).map(|_| IterationData::new(x.len())).collect();
+        let param = &self.param;
+        let lm_arr = (0..param.m).map(|_| IterationData::new(x.len())).collect();
 
         // Allocate working space for LBFGS optimization
         let owlqn = if param.orthantwise {
@@ -888,7 +899,7 @@ impl<'a> LbfgsState<'a> {
 
         // Compute the initial step:
         let h0 = param.initial_inverse_hessian;
-        self.step = problem.search_direction().vec2norminv() * h0;
+        let step = problem.search_direction().vec2norminv() * h0;
 
         // Apply Powell damping or not
         let damping = param.damping;
@@ -896,10 +907,27 @@ impl<'a> LbfgsState<'a> {
             info!("Powell damping Enabled.");
         }
 
-        self.prbl = Some(problem);
-        Ok(())
-    }
+        let state = LbfgsState {
+            vars: self.param.clone(),
+            prbl: Some(problem),
+            end: 0,
+            step,
+            k: 0,
+            lm_arr,
+            pf: vec![],
+            ncall: 0,
+        };
 
+        Ok(state)
+    }
+}
+// build:1 ends here
+
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*propagate][propagate:1]]
+impl<'a, E> LbfgsState<'a, E>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
     /// Check if stopping critera met. Panics if not initialized.
     pub fn is_converged(&mut self) -> bool {
         // Monitor the progress.
@@ -913,8 +941,9 @@ impl<'a> LbfgsState<'a> {
         Report::new(self.prbl.as_ref().expect("problem for report"))
     }
 
-    /// Propagate in next LBFGS step. Panics if not initialized.
-    pub fn propagate(&mut self) -> Result<()> {
+    /// Propagate in next LBFGS step. Return optimization progress on success.
+    /// Panics if not initialized.
+    pub fn propagate(&mut self) -> Result<Progress> {
         self.k += 1;
 
         // Store the current position and gradient vectors.
@@ -955,7 +984,8 @@ impl<'a> LbfgsState<'a> {
         // Constrain the search direction for orthant-wise updates.
         problem.constrain_search_direction();
 
-        Ok(())
+        let progress = self.get_progress();
+        Ok(progress)
     }
 
     fn get_progress(&self) -> Progress {
@@ -963,7 +993,7 @@ impl<'a> LbfgsState<'a> {
         Progress::new(&problem, self.k, self.ncall, self.step)
     }
 }
-// new entry:1 ends here
+// propagate:1 ends here
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*recursion][recursion:1]]
 /// Algorithm 7.4, in Nocedal, J.; Wright, S. Numerical Optimization; Springer Science & Business Media, 2006.
@@ -1008,7 +1038,7 @@ fn lbfgs_two_loop_recursion(
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*iteration data][iteration data:1]]
 /// Internal iternation data for L-BFGS
 #[derive(Clone)]
-pub(crate) struct IterationData {
+struct IterationData {
     alpha: f64,
 
     s: Vec<f64>,

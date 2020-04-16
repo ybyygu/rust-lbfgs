@@ -201,7 +201,10 @@ impl LineSearch {
     ///
     /// * On success, return the number of line searching iterations
     ///
-    pub fn find(&self, prb: &mut Problem, step: &mut f64) -> Result<usize> {
+    pub fn find<E>(&self, prb: &mut Problem<E>, step: &mut f64) -> Result<usize>
+    where
+        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+    {
         // Check the input parameters for errors.
         ensure!(
             step.is_sign_positive(),
@@ -239,11 +242,14 @@ impl LineSearch {
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 use crate::math::*;
 
-pub fn line_search_morethuente(
-    prb: &mut Problem,
+pub fn line_search_morethuente<E>(
+    prb: &mut Problem<E>,
     stp: &mut f64,      // Step size
     param: &LineSearch, // line search parameters
-) -> Result<usize> {
+) -> Result<usize>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
     // Initialize local variables.
     let dginit = prb.dginit()?;
     let mut brackt = false;
@@ -406,7 +412,7 @@ satisfies the sufficient decrease and curvature conditions."
     }
 
     // Maximum number of iteration.
-    warn!("The line-search routine reaches the maximum number of evaluations.");
+    info!("The line-search routine reaches the maximum number of evaluations.");
 
     Ok(param.max_linesearch)
 }
@@ -732,11 +738,14 @@ use self::LineSearchAlgorithm::*;
 /// `prb` holds input variables `x`, gradient `gx` arrays, and function value
 /// `fx`. on input it must contain the base point for the line search. on output
 /// it contains data on x + stp*d.
-pub fn line_search_backtracking(
-    prb: &mut Problem,
+pub fn line_search_backtracking<E>(
+    prb: &mut Problem<E>,
     stp: &mut f64,      // step length
     param: &LineSearch, // line search parameters
-) -> Result<usize> {
+) -> Result<usize>
+where
+    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
+{
     let dginit = prb.dginit()?;
     let dec: f64 = 0.5;
     let inc: f64 = 2.1;
@@ -791,7 +800,7 @@ pub fn line_search_backtracking(
     }
 
     // Maximum number of iteration.
-    warn!("The line-search routine reaches the maximum number of evaluations.");
+    info!("The line-search routine reaches the maximum number of evaluations.");
 
     Ok(param.max_linesearch)
 }
