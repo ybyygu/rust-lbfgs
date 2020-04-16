@@ -55,6 +55,8 @@
 //! ```
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*imports][imports:1]]
+#![feature(trait_alias)]
+
 use crate::core::*;
 
 mod builder;

@@ -179,7 +179,9 @@ impl Default for LbfgsParam {
 // parameters:1 ends here
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*problem][problem:1]]
-use crate::builder::EvaluateLbfgs;
+// use crate::builder::EvaluateLbfgs;
+
+pub trait EvaluateLbfgs = FnMut(&[f64], &mut [f64]) -> Result<f64>;
 
 /// Represents an optimization problem.
 ///
@@ -284,7 +286,8 @@ impl<'a> Problem<'a> {
 
     // FIXME: improve
     pub fn evaluate(&mut self) -> Result<()> {
-        self.fx = self.eval_fn.evaluate(&self.x, &mut self.gx)?;
+        self.fx = (self.eval_fn)(&self.x, &mut self.gx)?;
+        // self.fx = self.eval_fn.evaluate(&self.x, &mut self.gx)?;
 
         // Compute the L1 norm of the variables and add it to the object value.
         if let Some(owlqn) = self.owlqn {
@@ -296,7 +299,6 @@ impl<'a> Problem<'a> {
         // Compute the L1 norm of the variable and add it to the object value.
         // fx += self.owlqn.x1norm(x);
         // self.owlqn.pseudo_gradient(&mut pg, &x, &g);
-        // }
 
         self.evaluated = true;
         self.neval += 1;
@@ -594,17 +596,9 @@ impl Orthantwise {
 // orthantwise:1 ends here
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*builder][builder:1]]
+#[derive(Default, Debug, Clone)]
 pub struct Lbfgs {
-    // FIXME: make it private
-    pub param: LbfgsParam,
-}
-
-impl Default for Lbfgs {
-    fn default() -> Self {
-        Lbfgs {
-            param: LbfgsParam::default(),
-        }
-    }
+    param: LbfgsParam,
 }
 
 /// Create lbfgs optimizer with epsilon convergence
@@ -821,19 +815,15 @@ impl Lbfgs {
     /// # Return
     /// 
     /// * on success, return final evaluated `Problem`.
-    pub fn minimize<'a, E, G>(self, x: &'a mut [f64], eval_fn: E, mut prgr_fn: G) -> Result<Report>
+    pub fn minimize<E, G>(self, x: &mut [f64], eval_fn: E, mut prgr_fn: G) -> Result<Report>
     where
-        E: EvaluateLbfgs + 'a,
+        E: EvaluateLbfgs,
         G: FnMut(&Progress) -> bool,
     {
-        // FIXME: change
-        let mut state = crate::builder::Lbfgs::default();
-        state.vars = self.param.clone();
+        let mut state = self.build(x, eval_fn)?;
         info!("start lbfgs loop...");
-        state.minimize(x, eval_fn)?;
         for _ in 0.. {
-            let converged = state.check_convergence()?;
-            if converged {
+            if state.is_converged() {
                 break;
             }
             let prgr = state.get_progress();
@@ -846,15 +836,32 @@ impl Lbfgs {
         }
 
         // Return the final value of the objective function.
-        Ok(Report::new(&state.prbl.unwrap()))
+        Ok(state.report())
     }
 }
 // hack:1 ends here
 
+// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*new][new:1]]
+use crate::builder::LbfgsState;
+
+impl Lbfgs {
+    /// Build LBFGS state struct for iteration.
+    pub fn build<'a, E>(self, x: &'a mut [f64], eval_fn: E) -> Result<LbfgsState<'a>>
+    where
+        E: EvaluateLbfgs + 'a,
+    {
+        let mut state = LbfgsState::default();
+        state.vars = self.param.clone();
+        state.initialize(x, eval_fn)?;
+
+        Ok(state)
+    }
+}
+// new:1 ends here
+
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*new entry][new entry:1]]
-impl<'a> crate::builder::Lbfgs<'a> {
-    /// <<lbfgs-minimize-doc>>
-    pub fn minimize<E>(&mut self, x: &'a mut [f64], eval_fn: E) -> Result<()>
+impl<'a> LbfgsState<'a> {
+    fn initialize<E>(&mut self, x: &'a mut [f64], eval_fn: E) -> Result<()>
     where
         E: EvaluateLbfgs + 'a,
     {
@@ -893,32 +900,34 @@ impl<'a> crate::builder::Lbfgs<'a> {
         Ok(())
     }
 
-    fn check_convergence(&mut self) -> Result<bool> {
+    /// Check if stopping critera met. Panics if not initialized.
+    pub fn is_converged(&mut self) -> bool {
+        // Monitor the progress.
+        let prgr = self.get_progress();
+        let converged = satisfying_stop_conditions(&self.vars, prgr);
+        converged
+    }
+
+    /// Report minimization progress. Panics if not initialized yet.
+    pub fn report(&self) -> Report {
+        Report::new(self.prbl.as_ref().expect("problem for report"))
+    }
+
+    /// Propagate in next LBFGS step. Panics if not initialized.
+    pub fn propagate(&mut self) -> Result<()> {
         self.k += 1;
 
-        let mut problem = self.prbl.take().unwrap();
-
         // Store the current position and gradient vectors.
+        let problem = self.prbl.as_mut().expect("problem for propagate");
         problem.save_state();
 
         // Search for an optimal step.
-        self.ncall = self.vars.linesearch.find(&mut problem, &mut self.step)?;
+        self.ncall = self
+            .vars
+            .linesearch
+            .find(problem, &mut self.step)
+            .context("Failure during line search")?;
         problem.update_owlqn_gradient();
-
-        // Monitor the progress.
-        self.prbl = Some(problem);
-        let prgr = self.get_progress();
-        let converged = satisfying_stop_conditions(&self.vars, prgr);
-        Ok(converged)
-    }
-
-    fn get_progress(&self) -> Progress {
-        let problem = self.prbl.as_ref().expect("xxb");
-        Progress::new(&problem, self.k, self.ncall, self.step)
-    }
-
-    fn propagate(&mut self) -> Result<()> {
-        let mut problem = self.prbl.take().unwrap();
 
         // Update LBFGS iteration data.
         let it = &mut self.lm_arr[self.end];
@@ -946,10 +955,12 @@ impl<'a> crate::builder::Lbfgs<'a> {
         // Constrain the search direction for orthant-wise updates.
         problem.constrain_search_direction();
 
-        // save back
-        self.prbl = Some(problem);
-
         Ok(())
+    }
+
+    fn get_progress(&self) -> Progress {
+        let problem = self.prbl.as_ref().expect("problem for progress");
+        Progress::new(&problem, self.k, self.ncall, self.step)
     }
 }
 // new entry:1 ends here
@@ -998,18 +1009,18 @@ fn lbfgs_two_loop_recursion(
 /// Internal iternation data for L-BFGS
 #[derive(Clone)]
 pub(crate) struct IterationData {
-    pub alpha: f64,
+    alpha: f64,
 
-    pub s: Vec<f64>,
+    s: Vec<f64>,
 
-    pub y: Vec<f64>,
+    y: Vec<f64>,
 
     /// vecdot(y, s)
-    pub ys: f64,
+    ys: f64,
 }
 
 impl IterationData {
-    pub fn new(n: usize) -> Self {
+    fn new(n: usize) -> Self {
         IterationData {
             alpha: 0.0,
             ys: 0.0,
