@@ -1,4 +1,4 @@
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*header][header:1]]
+// [[file:../lbfgs.note::*header][header:1]]
 //!       Limited memory BFGS (L-BFGS).
 //
 //  Copyright (c) 1990, Jorge Nocedal
@@ -58,14 +58,14 @@
 // licence.
 // header:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*imports][imports:1]]
+// [[file:../lbfgs.note::*imports][imports:1]]
 use crate::core::*;
 
 use crate::math::LbfgsMath;
 use crate::line::*;
 // imports:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*parameters][parameters:1]]
+// [[file:../lbfgs.note::*parameters][parameters:1]]
 /// L-BFGS optimization parameters.
 ///
 /// Call lbfgs_parameter_t::default() function to initialize parameters to the
@@ -178,7 +178,7 @@ impl Default for LbfgsParam {
 }
 // parameters:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*problem][problem:1]]
+// [[file:../lbfgs.note::*problem][problem:1]]
 /// Represents an optimization problem.
 ///
 /// `Problem` holds input variables `x`, gradient `gx` arrays, and function value `fx`.
@@ -386,7 +386,7 @@ where
 }
 // problem:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*progress][progress:1]]
+// [[file:../lbfgs.note::*progress][progress:1]]
 /// Store optimization progress data, for progress monitor
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -467,7 +467,7 @@ impl Report {
 }
 // progress:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*orthantwise][orthantwise:1]]
+// [[file:../lbfgs.note::*orthantwise][orthantwise:1]]
 /// Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) algorithm
 #[derive(Copy, Clone, Debug)]
 pub struct Orthantwise {
@@ -603,7 +603,7 @@ impl Orthantwise {
 }
 // orthantwise:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*builder][builder:1]]
+// [[file:../lbfgs.note::*builder][builder:1]]
 #[derive(Default, Debug, Clone)]
 pub struct Lbfgs {
     param: LbfgsParam,
@@ -809,7 +809,7 @@ impl Lbfgs {
 }
 // builder:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*hack][hack:1]]
+// [[file:../lbfgs.note::*hack][hack:1]]
 impl Lbfgs {
     /// Start the L-BFGS optimization; this will invoke the callback functions evaluate
     /// and progress.
@@ -849,7 +849,7 @@ impl Lbfgs {
 }
 // hack:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*state][state:1]]
+// [[file:../lbfgs.note::*state][state:1]]
 /// LBFGS optimization state allowing iterative propagation
 pub struct LbfgsState<'a, E>
 where
@@ -869,7 +869,7 @@ where
 }
 // state:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*build][build:1]]
+// [[file:../lbfgs.note::*build][build:1]]
 impl Lbfgs {
     /// Build LBFGS state struct for iteration.
     pub fn build<'a, E>(self, x: &'a mut [f64], eval_fn: E) -> Result<LbfgsState<'a, E>>
@@ -923,7 +923,7 @@ impl Lbfgs {
 }
 // build:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*propagate][propagate:1]]
+// [[file:../lbfgs.note::*propagate][propagate:1]]
 impl<'a, E> LbfgsState<'a, E>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
@@ -945,6 +945,12 @@ where
     /// Panics if not initialized.
     pub fn propagate(&mut self) -> Result<Progress> {
         self.k += 1;
+
+        // special case: already converged at the first point
+        if self.k == 1 {
+            let progress = self.get_progress();
+            return Ok(progress);
+        }
 
         // Store the current position and gradient vectors.
         let problem = self.prbl.as_mut().expect("problem for propagate");
@@ -974,7 +980,7 @@ where
         let d = problem.search_direction_mut();
 
         // Apply LBFGS recursion procedure.
-        self.end = lbfgs_two_loop_recursion(&mut self.lm_arr, d, gamma, self.vars.m, self.k, self.end);
+        self.end = lbfgs_two_loop_recursion(&mut self.lm_arr, d, gamma, self.vars.m, self.k - 1, self.end);
 
         // Now the search direction d is ready. Constrains the step size to
         // prevent wild steps.
@@ -995,7 +1001,7 @@ where
 }
 // propagate:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*recursion][recursion:1]]
+// [[file:../lbfgs.note::*recursion][recursion:1]]
 /// Algorithm 7.4, in Nocedal, J.; Wright, S. Numerical Optimization; Springer Science & Business Media, 2006.
 fn lbfgs_two_loop_recursion(
     lm_arr: &mut [IterationData],
@@ -1035,7 +1041,7 @@ fn lbfgs_two_loop_recursion(
 }
 // recursion:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*iteration data][iteration data:1]]
+// [[file:../lbfgs.note::*iteration data][iteration data:1]]
 /// Internal iternation data for L-BFGS
 #[derive(Clone)]
 struct IterationData {
@@ -1124,7 +1130,7 @@ impl IterationData {
 }
 // iteration data:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*stopping conditions][stopping conditions:1]]
+// [[file:../lbfgs.note::*stopping conditions][stopping conditions:1]]
 /// test if progress satisfying stop condition
 #[inline]
 fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress) -> bool {
