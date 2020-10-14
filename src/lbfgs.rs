@@ -1109,18 +1109,18 @@ impl IterationData {
             let sbs = self.s.vecdot(&bs);
 
             if ys < (1.0 - sigma2) * sbs {
-                debug!("damping case1");
+                trace!("damping case1");
                 let theta = sigma2 * sbs / (sbs - ys);
                 bs.vecscale(1.0 - theta);
                 bs.vecadd(&self.y, theta);
                 self.y.veccpy(&bs);
             } else if ys > (1.0 + sigma3) * sbs {
-                debug!("damping case2");
+                trace!("damping case2");
                 let theta = sigma3 * sbs / (ys - sbs);
                 bs.vecscale(1.0 - theta);
                 bs.vecadd(&self.y, theta);
             } else {
-                debug!("damping case3");
+                trace!("damping case3");
                 // for theta = 1.0, yk = yk, so do nothing here.
             }
         }
