@@ -8,7 +8,7 @@ description = "Fast and safe Rust implementation of LBFGS and OWL-QN algorithms 
 homepage = "https://github.com/ybyygu/rust-lbfgs"
 repository = "https://github.com/ybyygu/rust-lbfgs"
 readme = "README.md"
-license = "MIT OR Apache-2.0"
+license = "GPL-3.0-only"
 exclude = ["bin/*", "docs/*", "liblbfgs/", "*.note*"]
 
 [dependencies]
