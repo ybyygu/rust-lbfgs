@@ -2,7 +2,7 @@
 # LBFGS
 
 [![Build Status](https://travis-ci.org/ybyygu/rust-lbfgs.svg?branch=master)](https://travis-ci.org/ybyygu/rust-lbfgs)
-[![GPL3 licensed](https://img.shields.io/badge/license-GPL3-blue.svg)](./LICENSE)
+[![GPL3 licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Fast and safe Rust implementation of LBFGS and OWL-QN algorithms ported from
 Naoaki Okazaki's C library [libLBFGS](http://chokkan.org/software/liblbfgs/).
@@ -37,24 +37,25 @@ Check [rust-liblbfgs](https://github.com/ybyygu/rust-liblbfgs) for a working wra
 
 # Usage
 
-    // 0. Import the lib
-    use liblbfgs::lbfgs;
-    
-    const N: usize = 100;
-    
-    // 1. Initialize data
-    let mut x = [0.0 as f64; N];
-    for i in (0..N).step_by(2) {
-        x[i] = -1.2;
-        x[i + 1] = 1.0;
-    }
-    
-    // 2. Defining how to evaluate function and gradient
-    let evaluate = |x: &[f64], gx: &mut [f64]| {
-        let n = x.len();
-    
-        let mut fx = 0.0;
-        for i in (0..n).step_by(2) {
+```rust
+// 0. Import the lib
+use liblbfgs::lbfgs;
+
+const N: usize = 100;
+
+// 1. Initialize data
+let mut x = [0.0 as f64; N];
+for i in (0..N).step_by(2) {
+    x[i] = -1.2;
+    x[i + 1] = 1.0;
+}
+
+// 2. Defining how to evaluate function and gradient
+let evaluate = |x: &[f64], gx: &mut [f64]| {
+    let n = x.len();
+
+    let mut fx = 0.0;
+    for i in (0..n).step_by(2) {
             let t1 = 1.0 - x[i];
             let t2 = 10.0 * (x[i + 1] - x[i] * x[i]);
             gx[i + 1] = 20.0 * t2;
@@ -64,21 +65,22 @@ Check [rust-liblbfgs](https://github.com/ybyygu/rust-liblbfgs) for a working wra
     
         Ok(fx)
     };
-    
-    let prb = lbfgs()
-        .with_max_iterations(5)
-        .with_orthantwise(1.0, 0, 99) // enable OWL-QN
-        .minimize(
-            &mut x,                   // input variables
-            evaluate,                 // define how to evaluate function
-            |prgr| {                  // define progress monitor
-                println!("iter: {:}", prgr.niter);
-                false                 // returning true will cancel optimization
-            }
-        )
-        .expect("lbfgs owlqn minimize");
-    
-    println!("fx = {:}", prb.fx);
+
+let prb = lbfgs()
+    .with_max_iterations(5)
+    .with_orthantwise(1.0, 0, 99) // enable OWL-QN
+    .minimize(
+        &mut x,                   // input variables
+        evaluate,                 // define how to evaluate function
+        |prgr| {                  // define progress monitor
+            println!("iter: {:}", prgr.niter);
+            false                 // returning true will cancel optimization
+        }
+    )
+    .expect("lbfgs owlqn minimize");
+
+println!("fx = {:}", prb.fx);
+```
 
 The callback functions are native Rust FnMut closures, possible to
 capture/change variables in the environment.
