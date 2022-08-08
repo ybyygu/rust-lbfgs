@@ -1,8 +1,8 @@
 # [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*cargo][cargo:1]]
 [package]
 name = "liblbfgs"
-edition = "2018"
-version = "0.0.16"
+edition = "2021"
+version = "0.1.0"
 authors = ["Wenping Guo <ybyygu@gmail.com>"]
 description = "Fast and safe Rust implementation of LBFGS and OWL-QN algorithms ported from Naoaki Okazaki's C library libLBFGS."
 homepage = "https://github.com/ybyygu/rust-lbfgs"
@@ -16,8 +16,8 @@ log = "0.4"
 anyhow = "1"
 
 [dev-dependencies]
-approx = "0.3"
-criterion = "0.2"
+approx = "0.5"
+criterion = "0.3"
 vecfx = "0.1"
 
 [[bench]]
