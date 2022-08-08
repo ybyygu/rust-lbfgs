@@ -56,15 +56,15 @@ let evaluate = |x: &[f64], gx: &mut [f64]| {
 
     let mut fx = 0.0;
     for i in (0..n).step_by(2) {
-            let t1 = 1.0 - x[i];
-            let t2 = 10.0 * (x[i + 1] - x[i] * x[i]);
-            gx[i + 1] = 20.0 * t2;
-            gx[i] = -2.0 * (x[i] * gx[i + 1] + t1);
-            fx += t1 * t1 + t2 * t2;
-        }
+        let t1 = 1.0 - x[i];
+        let t2 = 10.0 * (x[i + 1] - x[i] * x[i]);
+        gx[i + 1] = 20.0 * t2;
+        gx[i] = -2.0 * (x[i] * gx[i + 1] + t1);
+        fx += t1 * t1 + t2 * t2;
+    }
     
-        Ok(fx)
-    };
+    Ok(fx)
+};
 
 let prb = lbfgs()
     .with_max_iterations(5)
