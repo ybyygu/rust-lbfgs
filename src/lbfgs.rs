@@ -604,12 +604,12 @@ impl Orthantwise {
 // orthantwise:1 ends here
 
 // [[file:../lbfgs.note::*builder][builder:1]]
+/// LBFGS optimizer.
 #[derive(Default, Debug, Clone)]
 pub struct Lbfgs {
     param: LbfgsParam,
 }
 
-/// Create lbfgs optimizer with epsilon convergence
 impl Lbfgs {
     /// Set scaled gradient norm for converence test
     ///
