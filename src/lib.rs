@@ -3,7 +3,7 @@
 //
 //  Copyright (c) 1990, Jorge Nocedal
 //  Copyright (c) 2007-2010 Naoaki Okazaki
-//  Copyright (c) 2018-2019 Wenping Guo
+//  Copyright (c) 2018-2022 Wenping Guo
 //  All rights reserved.
 //
 //! Limited memory BFGS (L-BFGS) algorithm ported from liblbfgs
@@ -12,20 +12,20 @@
 //! ```
 //! // 0. Import the lib
 //! use liblbfgs::lbfgs;
-//! 
+//!
 //! const N: usize = 100;
-//! 
+//!
 //! // 1. Initialize data
 //! let mut x = [0.0 as f64; N];
 //! for i in (0..N).step_by(2) {
 //!     x[i] = -1.2;
 //!     x[i + 1] = 1.0;
 //! }
-//! 
+//!
 //! // 2. Defining how to evaluate function and gradient
 //! let evaluate = |x: &[f64], gx: &mut [f64]| {
 //!     let n = x.len();
-//! 
+//!
 //!     let mut fx = 0.0;
 //!     for i in (0..n).step_by(2) {
 //!         let t1 = 1.0 - x[i];
@@ -34,10 +34,10 @@
 //!         gx[i] = -2.0 * (x[i] * gx[i + 1] + t1);
 //!         fx += t1 * t1 + t2 * t2;
 //!     }
-//! 
+//!
 //!     Ok(fx)
 //! };
-//! 
+//!
 //! let prb = lbfgs()
 //!     .with_max_iterations(5)
 //!     .with_orthantwise(1.0, 0, 99) // enable OWL-QN
@@ -50,7 +50,7 @@
 //!         }
 //!     )
 //!     .expect("lbfgs owlqn minimize");
-//! 
+//!
 //! println!("fx = {:}", prb.fx);
 //! ```
 

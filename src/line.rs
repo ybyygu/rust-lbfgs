@@ -1,7 +1,7 @@
 // docs
 // Copyright (c) 1990, Jorge Nocedal
 // Copyright (c) 2007-2010 Naoaki Okazaki
-// Copyright (c) 2018-2019 Wenping Guo
+// Copyright (c) 2018-2022 Wenping Guo
 // All rights reserved.
 
 //! # Find a satisfactory step length along predefined search direction
@@ -12,14 +12,14 @@
 //! use liblbfgs::Problem;
 //! use liblbfgs::default_evaluate;
 //! use liblbfgs::line::LineSearch;
-//! 
+//!
 //! const N: usize = 100;
 //! let mut x = [0.0; N];
 //! for i in (0..N).step_by(2) {
 //!     x[i] = -1.2;
 //!     x[i + 1] = 1.0;
 //! }
-//! 
+//!
 //! // construct problem
 //! let mut prb = Problem::new(&mut x, default_evaluate(), None);
 //! prb.evaluate();
@@ -27,7 +27,7 @@
 //! prb.update_search_direction();
 //! // Compute the initial step
 //! let mut step = 1.0/prb.search_direction().vec2norm();
-//! 
+//!
 //! let ls = LineSearch::default();
 //! let ncall = ls.find(&mut prb, &mut step).expect("line search");
 //! ```
@@ -208,7 +208,7 @@ impl LineSearch {
         // Check the input parameters for errors.
         ensure!(
             step.is_sign_positive(),
-            "A logic error (negative line-search step) occurred."
+            "A logic error (negative line-search step: {step}) occurred."
         );
 
         // Search for an optimal step.

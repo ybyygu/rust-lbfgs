@@ -3,7 +3,7 @@
 //
 //  Copyright (c) 1990, Jorge Nocedal
 //  Copyright (c) 2007-2010 Naoaki Okazaki
-//  Copyright (c) 2018-2019 Wenping Guo
+//  Copyright (c) 2018-2022 Wenping Guo
 //  All rights reserved.
 //
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -61,8 +61,8 @@
 // [[file:../lbfgs.note::*imports][imports:1]]
 use crate::core::*;
 
-use crate::math::LbfgsMath;
 use crate::line::*;
+use crate::math::LbfgsMath;
 // imports:1 ends here
 
 // [[file:../lbfgs.note::*parameters][parameters:1]]
@@ -495,14 +495,15 @@ pub struct Orthantwise {
     /// the L1 norm. Setting b (0 < b < N), one can protect variables, x_1, ...,
     /// x_{b-1} (e.g., a bias term of logistic regression) from being
     /// regularized. The default value is zero.
-    pub start: i32,
+    pub start: usize,
 
     /// End index for computing L1 norm of the variables.
     ///
-    /// This parameter is valid only for OWL-QN method (i.e., \ref orthantwise_c
-    /// != 0). This parameter e (0 < e <= N) specifies the index number at which
-    /// the library stops computing the L1 norm of the variables x,
-    pub end: i32,
+    /// This parameter is valid only for OWL-QN method (i.e., \ref
+    /// orthantwise_c != 0). This parameter e (0 < e <= N) specifies
+    /// the index number at which the library stops computing the L1
+    /// norm of the variables x.
+    pub end: Option<usize>,
 }
 
 impl Default for Orthantwise {
@@ -510,21 +511,19 @@ impl Default for Orthantwise {
         Orthantwise {
             c: 1.0,
             start: 0,
-            end: -1,
+            end: None,
         }
     }
 }
 
 impl Orthantwise {
-    // FIXME: remove
-    // a dirty wrapper for start and end
+    /// a dirty wrapper for start and end parameters in orthantwise optimization
     fn start_end(&self, x: &[f64]) -> (usize, usize) {
-        let start = self.start as usize;
-        let end = if self.end < 0 {
-            x.len()
-        } else {
-            self.end as usize
-        };
+        let start = self.start;
+        let n = x.len();
+        // do not panic when end parameter is too large
+        let end = self.end.unwrap_or(n).min(n);
+        assert!(start < end, "invalid start for orthantwise: {start} (end = {end})");
 
         (start, end)
     }
@@ -656,7 +655,7 @@ impl Lbfgs {
     }
 
     /// Set orthantwise parameters
-    pub fn with_orthantwise(mut self, c: f64, start: usize, end: usize) -> Self {
+    pub fn with_orthantwise(mut self, c: f64, start: usize, end: impl Into<Option<usize>>) -> Self {
         assert!(
             c.is_sign_positive(),
             "Invalid parameter orthantwise c parameter specified."
@@ -665,8 +664,8 @@ impl Lbfgs {
 
         self.param.orthantwise = true;
         self.param.owlqn.c = c;
-        self.param.owlqn.start = start as i32;
-        self.param.owlqn.end = end as i32;
+        self.param.owlqn.start = start;
+        self.param.owlqn.end = end.into();
 
         self
     }
@@ -813,15 +812,15 @@ impl Lbfgs {
 impl Lbfgs {
     /// Start the L-BFGS optimization; this will invoke the callback functions evaluate
     /// and progress.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * x       : The array of input variables.
     /// * evaluate: A closure for evaluating function value and gradient
     /// * progress: A closure for monitor progress or defining stopping condition
-    /// 
+    ///
     /// # Return
-    /// 
+    ///
     /// * on success, return final evaluated `Problem`.
     pub fn minimize<E, G>(self, x: &mut [f64], eval_fn: E, mut prgr_fn: G) -> Result<Report>
     where
@@ -960,7 +959,7 @@ where
         self.ncall = self
             .vars
             .linesearch
-            .find(problem, &mut self.step)
+            .find(problem, &mut dbg!(self.step))
             .context("Failure during line search")?;
         problem.update_owlqn_gradient();
 

@@ -2,7 +2,7 @@
 [package]
 name = "liblbfgs"
 edition = "2021"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Wenping Guo <ybyygu@gmail.com>"]
 description = "Fast and safe Rust implementation of LBFGS and OWL-QN algorithms ported from Naoaki Okazaki's C library libLBFGS."
 homepage = "https://github.com/ybyygu/rust-lbfgs"
