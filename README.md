@@ -62,13 +62,13 @@ let evaluate = |x: &[f64], gx: &mut [f64]| {
         gx[i] = -2.0 * (x[i] * gx[i + 1] + t1);
         fx += t1 * t1 + t2 * t2;
     }
-    
+
     Ok(fx)
 };
 
 let prb = lbfgs()
     .with_max_iterations(5)
-    .with_orthantwise(1.0, 0, 99) // enable OWL-QN
+    // .with_orthantwise(1.0, 0, 99) // enable OWL-QN
     .minimize(
         &mut x,                   // input variables
         evaluate,                 // define how to evaluate function
@@ -90,4 +90,3 @@ Full codes with comments are available in examples/sample.rs.
 Run the example:
 
     cargo run --example sample
-
