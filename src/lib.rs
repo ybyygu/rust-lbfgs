@@ -69,8 +69,9 @@ pub(crate) mod core {
 // imports:1 ends here
 
 // [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*lbfgs][lbfgs:1]]
-use crate::lbfgs::Lbfgs;
+pub use crate::lbfgs::Lbfgs;
 
+/// Create a default LBFGS optimizer.
 pub fn lbfgs() -> Lbfgs {
     Lbfgs::default()
 }
