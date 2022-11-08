@@ -289,7 +289,6 @@ where
     // FIXME: improve
     pub fn evaluate(&mut self) -> Result<()> {
         self.fx = (self.eval_fn)(&self.x, &mut self.gx)?;
-        // self.fx = self.eval_fn.evaluate(&self.x, &mut self.gx)?;
 
         // Compute the L1 norm of the variables and add it to the object value.
         if let Some(owlqn) = self.owlqn {
@@ -598,6 +597,7 @@ impl Orthantwise {
                 d[i] = 0.0;
             }
         }
+        assert_ne!(d.vec2norm(), 0.0, "invalid direction vector after constraints: {d:?}");
     }
 }
 // orthantwise:1 ends here
@@ -959,8 +959,9 @@ where
         self.ncall = self
             .vars
             .linesearch
-            .find(problem, &mut dbg!(self.step))
+            .find(problem, &mut self.step)
             .context("Failure during line search")?;
+
         problem.update_owlqn_gradient();
 
         // Update LBFGS iteration data.
@@ -984,6 +985,7 @@ where
         // Now the search direction d is ready. Constrains the step size to
         // prevent wild steps.
         let dnorm = d.vec2norm();
+        ensure!(dnorm.is_sign_positive(), "invalid norm value: {dnorm}, dvector = {d:?}");
         self.step = self.vars.max_step_size.min(dnorm) / dnorm;
 
         // Constrain the search direction for orthant-wise updates.
@@ -1088,6 +1090,8 @@ impl IterationData {
         // Notice that yy is used for scaling the intial inverse hessian matrix H_0 (Cholesky factor).
         let ys = self.y.vecdot(&self.s);
         let yy = self.y.vecdot(&self.y);
+        assert_ne!(yy, 0.0, "invalid gradient vectors gx = gp: {gx:?}");
+
         self.ys = ys;
 
         // Al-Baali2014JOTA: Damped Techniques for the Limited Memory BFGS
