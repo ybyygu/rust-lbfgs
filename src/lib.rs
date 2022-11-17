@@ -58,6 +58,8 @@
 use crate::core::*;
 
 mod lbfgs;
+mod orthantwise;
+
 pub mod line;
 pub mod math;
 pub use crate::lbfgs::*;
