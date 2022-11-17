@@ -470,7 +470,7 @@ impl Report {
 /// Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) algorithm
 #[derive(Copy, Clone, Debug)]
 pub struct Orthantwise {
-    /// Coeefficient for the L1 norm of variables.
+    /// Coefficient for the L1 norm of variables.
     ///
     ///  Setting this parameter to a positive value activates Orthant-Wise
     ///  Limited-memory Quasi-Newton (OWL-QN) method, which minimizes the
@@ -687,7 +687,7 @@ impl Lbfgs {
     /// inexpensive with respect to the cost of the iteration (which is
     /// sometimes the case when solving very large problems) it may be
     /// advantageous to set this parameter to a small value. A typical small
-    /// value is 0.1. This parameter shuold be greater than the ftol parameter
+    /// value is 0.1. This parameter should be greater than the ftol parameter
     /// (1e-4) and smaller than 1.0.
     pub fn with_linesearch_gtol(mut self, gtol: f64) -> Self {
         assert!(

@@ -1,4 +1,3 @@
-# [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*cargo][cargo:1]]
 [package]
 name = "liblbfgs"
 edition = "2021"
@@ -23,4 +22,3 @@ vecfx = "0.1"
 [[bench]]
 name = "rosenbrock"
 harness = false
-# cargo:1 ends here
