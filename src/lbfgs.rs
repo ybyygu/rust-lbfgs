@@ -336,7 +336,7 @@ where
         // Choose the orthant for the new point.
         // The current point is projected onto the orthant.
         if let Some(owlqn) = self.owlqn {
-            owlqn.project(&mut self.x, &self.xp, &self.gp);
+            owlqn.constraint_line_search(&mut self.x, &self.xp, &self.gp);
         }
     }
 
@@ -373,14 +373,14 @@ where
     /// Constrain the search direction for orthant-wise updates.
     pub fn constrain_search_direction(&mut self) {
         if let Some(owlqn) = self.owlqn {
-            owlqn.constrain(&mut self.d, &self.pg);
+            owlqn.constrain_search_direction(&mut self.d, &self.pg);
         }
     }
 
     // FIXME
     pub fn update_owlqn_gradient(&mut self) {
         if let Some(owlqn) = self.owlqn {
-            owlqn.pseudo_gradient(&mut self.pg, &self.x, &self.gx);
+            owlqn.compute_pseudo_gradient(&mut self.pg, &self.x, &self.gx);
         }
     }
 }
@@ -948,6 +948,8 @@ impl IterationData {
         // s_{k} = x_{k+1} - x_{k} = \alpha * d_{k}.
         // y_{k} = g_{k+1} - g_{k}.
         self.s.vecdiff(x, xp);
+        let d = self.s.vec2norm();
+        assert_ne!(d, 0.0, "x not changed with step {step}\n x = {xp:?}");
         self.y.vecdiff(gx, gp);
 
         // Compute scalars ys and yy:
@@ -956,7 +958,7 @@ impl IterationData {
         // Notice that yy is used for scaling the intial inverse hessian matrix H_0 (Cholesky factor).
         let ys = self.y.vecdot(&self.s);
         let yy = self.y.vecdot(&self.y);
-        assert_ne!(yy, 0.0, "invalid gradient vectors gx = gp: {gx:?}");
+        assert_ne!(yy, 0.0, "gx not changed\n g = {gx:?}");
 
         self.ys = ys;
 

@@ -1,18 +1,23 @@
-//! Represents Orthant-Wise Limited-memory Quasi-Newton (OWL-QN)
-//! algorithm, which minimizes the objective function F(x) combined
+//! Implements the Orthant-Wise Limited-memory Quasi-Newton (OWL-QN)
+//! algorithm.
+//!
+//! OWL-QN algorithm minimizes the objective function F(x) combined
 //! with the L1 norm |x| of the variables, {F(x) + C |x|}.
 //!
 //! As the L1 norm |x| is not differentiable at zero, the library
 //! modifies function and gradient evaluations from a client program
 //! suitably; a client program thus have only to return the function
 //! value F(x) and gradients G(x) as usual.
+//!
+//! # Reference
+//! - Andrew, G.; Gao, J. Scalable Training of L 1-Regularized Log-Linear Models. In Proceedings of the 24th international conference on Machine learning; ACM, 2007; pp 33–40.
 
 use crate::math::*;
 
 /// Orthant-Wise Limited-memory Quasi-Newton (OWL-QN) algorithm
 #[derive(Copy, Clone, Debug)]
 pub struct Orthantwise {
-    /// Coefficient for the L1 norm of variables.
+    /// The weight for the L1 regularization.
     ///
     /// This parameter is the coefficient for the |x|, i.e., C. The
     /// default value is 1.
@@ -74,7 +79,7 @@ impl Orthantwise {
     }
 
     /// Compute the psuedo-gradient.
-    pub(crate) fn pseudo_gradient(&self, pg: &mut [f64], x: &[f64], g: &[f64]) {
+    pub(crate) fn compute_pseudo_gradient(&self, pg: &mut [f64], x: &[f64], g: &[f64]) {
         let (start, end) = self.start_end(x);
 
         for i in 0..start {
@@ -83,6 +88,7 @@ impl Orthantwise {
 
         // Compute the psuedo-gradient (see Eq 4)
         let c = self.c;
+        assert!(c.is_sign_positive(), "invalid orthantwise param c: {c}");
         for i in start..end {
             // Differentiable.
             if x[i] != 0.0 {
@@ -107,27 +113,68 @@ impl Orthantwise {
 
     /// Choose the orthant for the new point.
     ///
-    /// During the line search, each search point is projected onto the orthant
-    /// of the previous point.
-    pub(crate) fn project(&self, x: &mut [f64], xp: &[f64], gp: &[f64]) {
+    /// During the line search, each search point is projected onto
+    /// the orthant of the previous point.
+    pub(crate) fn constraint_line_search(&self, x: &mut [f64], xp: &[f64], gp: &[f64]) {
         let (start, end) = self.start_end(xp);
 
+        // let epsilon = xp
+        //     .iter()
+        //     .zip(gp)
+        //     .map(|(&xpi, &gpi)| if xpi == 0.0 { signum(-gpi) } else { signum(xpi) });
+        // project(x[start..end].iter_mut(), epsilon.skip(start));
+
+        // FIXME: after constraint, x may be identical to xp, which
+        // will lead to convergence failure.
         for i in start..end {
-            let sign = if xp[i] == 0.0 { -gp[i] } else { xp[i] };
-            if x[i] * sign <= 0.0 {
+            let epsilon = if xp[i] == 0.0 { signum(-gp[i]) } else { signum(xp[i]) };
+            if epsilon != signum(x[i]) {
                 x[i] = 0.0
             }
         }
     }
 
-    pub(crate) fn constrain(&self, d: &mut [f64], pg: &[f64]) {
+    /// Constrain the search direction for orthant-wise updates.
+    ///
+    /// # Parameters
+    /// * d: direction vector
+    /// * pg: previous gradient vector
+    pub(crate) fn constrain_search_direction(&self, d: &mut [f64], pg: &[f64]) {
         let (start, end) = self.start_end(pg);
 
+        // p^k = pi(d^k; v^k)
+        // where v^k = - pg^k
+        // project(d[start..end].iter_mut(), pg[start..end].iter().map(|x| -x));
         for i in start..end {
-            if d[i] * pg[i] >= 0.0 {
+            if signum(d[i]) == signum(pg[i]) {
                 d[i] = 0.0;
             }
         }
+
+        // just cite the comment from here:
+        //
+        // https://github.com/scalanlp/breeze/blob/28cfe3a0799bdf2d4191b93c43e751ef9f49285a/math/src/main/scala/breeze/optimize/OWLQN.scala#L45
+        //
+        // there are some cases where the algorithm won't converge
+        // (confirmed with the author, Galen Andrew).
         assert_ne!(d.vec2norm(), 0.0, "invalid direction vector after constraints: {d:?}");
+    }
+}
+
+// pi alignment operator - projection of x on orthat defined by y
+fn project<'a>(x: impl Iterator<Item = &'a mut f64>, y: impl Iterator<Item = f64>) {
+    for (xi, yi) in x.zip(y) {
+        if signum(*xi) != signum(yi) {
+            *xi = 0.0;
+        }
+    }
+}
+
+// follow the mathematical definition
+fn signum(x: f64) -> f64 {
+    if x.is_nan() || x == 0.0 {
+        0.0
+    } else {
+        x.signum()
     }
 }

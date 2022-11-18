@@ -1,4 +1,3 @@
-// docs
 // Copyright (c) 1990, Jorge Nocedal
 // Copyright (c) 2007-2010 Naoaki Okazaki
 // Copyright (c) 2018-2022 Wenping Guo
@@ -32,11 +31,8 @@
 //! let ncall = ls.find(&mut prb, &mut step).expect("line search");
 //! ```
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*base][base:1]]
 use crate::core::*;
-// base:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*algorithm][algorithm:1]]
 /// Line search algorithms.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum LineSearchAlgorithm {
@@ -88,9 +84,7 @@ impl Default for LineSearchAlgorithm {
         LineSearchAlgorithm::MoreThuente
     }
 }
-// algorithm:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*paramters][paramters:1]]
 #[derive(Debug, Copy, Clone)]
 pub struct LineSearch {
     /// Various line search algorithms.
@@ -166,9 +160,7 @@ impl Default for LineSearch {
         }
     }
 }
-// paramters:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*adhoc][adhoc:1]]
 impl LineSearch {
     fn validate_step(&self, step: f64) -> Result<()> {
         // The step is the minimum value.
@@ -183,9 +175,7 @@ impl LineSearch {
         Ok(())
     }
 }
-// adhoc:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*entry][entry:1]]
 use crate::lbfgs::Problem;
 
 impl LineSearch {
