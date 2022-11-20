@@ -68,7 +68,8 @@ let evaluate = |x: &[f64], gx: &mut [f64]| {
 
 let prb = lbfgs()
     .with_max_iterations(5)
-    // .with_orthantwise(1.0, 0, 99) // enable OWL-QN
+    // .with_orthantwise(1.0, 0, 99) // enable OWL-QN algorithm
+    // .with_orthantwise(1.0, 0, None) // with end parameter auto determined
     .minimize(
         &mut x,                   // input variables
         evaluate,                 // define how to evaluate function

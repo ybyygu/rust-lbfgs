@@ -1,4 +1,3 @@
-//
 //  Copyright (c) 1990, Jorge Nocedal
 //  Copyright (c) 2007-2010 Naoaki Okazaki
 //  Copyright (c) 2018-2022 Wenping Guo
@@ -38,7 +37,8 @@
 //!
 //! let prb = lbfgs()
 //!     .with_max_iterations(5)
-//!     .with_orthantwise(1.0, 0, 99) // enable OWL-QN
+//!     //.with_orthantwise(1.0, 0, 99) // enable OWL-QN algorithm
+//!     //.with_orthantwise(1.0, 0, None) // with end parameter auto determined
 //!     .minimize(
 //!         &mut x,                   // input variables
 //!         evaluate,                 // define how to evaluate function
@@ -52,21 +52,23 @@
 //! println!("fx = {:}", prb.fx);
 //! ```
 
-use crate::core::*;
-
+mod core;
 mod lbfgs;
 mod orthantwise;
 
-pub mod line;
-pub mod math;
-pub use crate::lbfgs::*;
-
-pub(crate) mod core {
+mod common {
     pub use anyhow::*;
     pub use log::{debug, error, info, trace, warn};
 }
 
+use crate::common::*;
+use crate::core::*;
+
+pub mod line;
+pub mod math;
+pub use crate::core::{Problem, Progress, Report};
 pub use crate::lbfgs::Lbfgs;
+pub use crate::orthantwise::*;
 
 /// Create a default LBFGS optimizer.
 pub fn lbfgs() -> Lbfgs {

@@ -1,4 +1,4 @@
-//! Backend for lbfgs vector operations
+//! Backend for L-BFGS vector operations
 
 /// Abstracting lbfgs required math operations
 pub trait LbfgsMath<T> {

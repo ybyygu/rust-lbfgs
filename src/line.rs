@@ -31,7 +31,9 @@
 //! let ncall = ls.find(&mut prb, &mut step).expect("line search");
 //! ```
 
-use crate::core::*;
+use crate::common::*;
+use crate::core::Problem;
+use crate::math::*;
 
 /// Line search algorithms.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -176,8 +178,6 @@ impl LineSearch {
     }
 }
 
-use crate::lbfgs::Problem;
-
 impl LineSearch {
     /// Unified entry for line searches
     ///
@@ -223,9 +223,6 @@ impl LineSearch {
         Ok(ls)
     }
 }
-
-
-use crate::math::*;
 
 pub fn line_search_morethuente<E>(
     prb: &mut Problem<E>,
@@ -413,7 +410,7 @@ mod mcstep {
     // dependencies
     use super::{cubic_minimizer, cubic_minimizer2, quard_minimizer, quard_minimizer2};
 
-    use crate::core::*;
+    use crate::common::*;
 
     ///
     /// Update a safeguarded trial value and interval for line search.
