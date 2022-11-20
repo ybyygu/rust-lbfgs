@@ -223,13 +223,8 @@ impl LineSearch {
         Ok(ls)
     }
 }
-// entry:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*Original documentation by J. Nocera (lbfgs.f)][Original documentation by J. Nocera (lbfgs.f):1]]
 
-// Original documentation by J. Nocera (lbfgs.f):1 ends here
-
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 use crate::math::*;
 
 pub fn line_search_morethuente<E>(
@@ -406,9 +401,7 @@ satisfies the sufficient decrease and curvature conditions."
 
     Ok(param.max_linesearch)
 }
-// core:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 /// Represents the original MCSTEP subroutine by J. Nocera, which is a variant
 /// of More' and Thuente's routine.
 ///
@@ -616,9 +609,7 @@ mod mcstep {
         Ok(0)
     }
 }
-// core:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*interpolation][interpolation:1]]
 /// Find a minimizer of an interpolated cubic function.
 ///
 /// # Arguments
@@ -720,9 +711,7 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
     let a = u - v;
     *qm = v + dv / (dv - du) * a;
 }
-// interpolation:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 use self::LineSearchAlgorithm::*;
 
 /// `prb` holds input variables `x`, gradient `gx` arrays, and function value
@@ -794,4 +783,3 @@ where
 
     Ok(param.max_linesearch)
 }
-// core:1 ends here

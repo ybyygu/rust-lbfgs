@@ -1,5 +1,3 @@
-// docs
-
 //
 //  Copyright (c) 1990, Jorge Nocedal
 //  Copyright (c) 2007-2010 Naoaki Okazaki
@@ -54,7 +52,6 @@
 //! println!("fx = {:}", prb.fx);
 //! ```
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*imports][imports:1]]
 use crate::core::*;
 
 mod lbfgs;
@@ -68,18 +65,14 @@ pub(crate) mod core {
     pub use anyhow::*;
     pub use log::{debug, error, info, trace, warn};
 }
-// imports:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*lbfgs][lbfgs:1]]
 pub use crate::lbfgs::Lbfgs;
 
 /// Create a default LBFGS optimizer.
 pub fn lbfgs() -> Lbfgs {
     Lbfgs::default()
 }
-// lbfgs:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*tests][tests:1]]
 /// Default test function (rosenbrock) adopted from liblbfgs sample.c
 pub fn default_evaluate() -> impl FnMut(&[f64], &mut [f64]) -> Result<f64> {
     move |arr_x: &[f64], gx: &mut [f64]| {
@@ -115,4 +108,3 @@ pub fn default_progress() -> impl FnMut(&Progress) -> bool {
         false
     }
 }
-// tests:1 ends here

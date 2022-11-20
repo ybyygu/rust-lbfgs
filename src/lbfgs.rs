@@ -1,4 +1,3 @@
-// [[file:../lbfgs.note::*header][header:1]]
 //!       Limited memory BFGS (L-BFGS).
 //
 //  Copyright (c) 1990, Jorge Nocedal
@@ -52,21 +51,18 @@
 //       Scalable training of L1-regularized log-linear models.
 //       In <i>Proceedings of the 24th International Conference on Machine
 //       Learning (ICML 2007)</i>, pp. 33-40, 2007.
-
+//
 // I would like to thank the original author, Jorge Nocedal, who has been
 // distributing the effieicnt and explanatory implementation in an open source
 // licence.
-// header:1 ends here
 
-// [[file:../lbfgs.note::*imports][imports:1]]
 use crate::core::*;
 use crate::orthantwise::*;
 
 use crate::line::*;
 use crate::math::LbfgsMath;
-// imports:1 ends here
 
-// [[file:../lbfgs.note::*parameters][parameters:1]]
+
 /// L-BFGS optimization parameters.
 ///
 /// Call lbfgs_parameter_t::default() function to initialize parameters to the
@@ -177,9 +173,7 @@ impl Default for LbfgsParam {
         }
     }
 }
-// parameters:1 ends here
 
-// [[file:../lbfgs.note::*problem][problem:1]]
 /// Represents an optimization problem.
 ///
 /// `Problem` holds input variables `x`, gradient `gx` arrays, and function value `fx`.
@@ -384,9 +378,7 @@ where
         }
     }
 }
-// problem:1 ends here
 
-// [[file:../lbfgs.note::*progress][progress:1]]
 /// Store optimization progress data, for progress monitor
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -465,10 +457,7 @@ impl Report {
         }
     }
 }
-// progress:1 ends here
 
-// [[file:../lbfgs.note::*orthantwise][orthantwise:1]]
-// [[file:../lbfgs.note::*builder][builder:1]]
 /// LBFGS optimizer.
 #[derive(Default, Debug, Clone)]
 pub struct Lbfgs {
@@ -672,9 +661,7 @@ impl Lbfgs {
         self
     }
 }
-// builder:1 ends here
 
-// [[file:../lbfgs.note::*hack][hack:1]]
 impl Lbfgs {
     /// Start the L-BFGS optimization; this will invoke the callback functions evaluate
     /// and progress.
@@ -732,9 +719,7 @@ where
     pf: Vec<f64>,
     ncall: usize,
 }
-// state:1 ends here
 
-// [[file:../lbfgs.note::*build][build:1]]
 impl Lbfgs {
     /// Build LBFGS state struct for iteration.
     pub fn build<'a, E>(self, x: &'a mut [f64], eval_fn: E) -> Result<LbfgsState<'a, E>>
@@ -866,9 +851,7 @@ where
         Progress::new(&problem, self.k, self.ncall, self.step)
     }
 }
-// propagate:1 ends here
 
-// [[file:../lbfgs.note::*recursion][recursion:1]]
 /// Algorithm 7.4, in Nocedal, J.; Wright, S. Numerical Optimization; Springer Science & Business Media, 2006.
 fn lbfgs_two_loop_recursion(
     lm_arr: &mut [IterationData],
@@ -906,9 +889,7 @@ fn lbfgs_two_loop_recursion(
 
     end
 }
-// recursion:1 ends here
 
-// [[file:../lbfgs.note::*iteration data][iteration data:1]]
 /// Internal iternation data for L-BFGS
 #[derive(Clone)]
 struct IterationData {
@@ -999,9 +980,7 @@ impl IterationData {
         ys / yy
     }
 }
-// iteration data:1 ends here
 
-// [[file:../lbfgs.note::*stopping conditions][stopping conditions:1]]
 /// test if progress satisfying stop condition
 #[inline]
 fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress) -> bool {
@@ -1097,4 +1076,3 @@ fn satisfying_delta<'a>(prgr: &Progress, pf: &'a mut [f64], delta: f64) -> bool 
 
     false
 }
-// stopping conditions:1 ends here
