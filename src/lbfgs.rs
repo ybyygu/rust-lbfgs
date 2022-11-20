@@ -134,10 +134,7 @@ pub struct LbfgsParam {
     pub linesearch: LineSearch,
 
     /// Enable OWL-QN regulation or not
-    pub orthantwise: bool,
-
-    // FIXME: better name
-    pub owlqn: Orthantwise,
+    pub orthantwise: Option<Orthantwise>,
 
     /// A factor for scaling initial step size.
     pub initial_inverse_hessian: f64,
@@ -163,8 +160,7 @@ impl Default for LbfgsParam {
             delta: 1e-5,
             max_iterations: 0,
             max_evaluations: 0,
-            orthantwise: false,
-            owlqn: Orthantwise::default(),
+            orthantwise: None,
             linesearch: LineSearch::default(),
             initial_inverse_hessian: 1.0,
             max_step_size: 1.0,
@@ -288,12 +284,6 @@ where
         if let Some(owlqn) = self.owlqn {
             self.fx += owlqn.x1norm(&self.x)
         }
-
-        // FIXME: to be better
-        // if self.orthantwise {
-        // Compute the L1 norm of the variable and add it to the object value.
-        // fx += self.owlqn.x1norm(x);
-        // self.owlqn.pseudo_gradient(&mut pg, &x, &g);
 
         self.evaluated = true;
         self.neval += 1;
@@ -517,10 +507,13 @@ impl Lbfgs {
         );
         warn!("Only the backtracking line search is available for OWL-QN algorithm.");
 
-        self.param.orthantwise = true;
-        self.param.owlqn.c = c;
-        self.param.owlqn.start = start;
-        self.param.owlqn.end = end.into();
+        self.param.orthantwise = Orthantwise {
+            c,
+            start,
+            end: end.into(),
+            ..Default::default()
+        }
+        .into();
 
         self
     }
@@ -730,13 +723,7 @@ impl Lbfgs {
         let param = &self.param;
         let lm_arr = (0..param.m).map(|_| IterationData::new(x.len())).collect();
 
-        // Allocate working space for LBFGS optimization
-        let owlqn = if param.orthantwise {
-            Some(param.owlqn.clone())
-        } else {
-            None
-        };
-        let mut problem = Problem::new(x, eval_fn, owlqn);
+        let mut problem = Problem::new(x, eval_fn, param.orthantwise);
 
         // Evaluate the function value and its gradient.
         problem.evaluate()?;
