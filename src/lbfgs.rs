@@ -62,7 +62,6 @@ use crate::orthantwise::*;
 use crate::line::*;
 use crate::math::LbfgsMath;
 
-
 /// L-BFGS optimization parameters.
 ///
 /// Call lbfgs_parameter_t::default() function to initialize parameters to the
@@ -430,6 +429,7 @@ impl<'a> Progress<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Report {
     /// The current value of the objective function.
     pub fx: f64,
@@ -824,7 +824,7 @@ where
             &problem.gp,
             self.step,
             self.vars.damping,
-        );
+        )?;
 
         // Compute the steepest direction
         problem.update_search_direction();
@@ -924,13 +924,13 @@ impl IterationData {
     /// * damping: applying Powell damping to the gradient difference `y` helps
     ///   stabilize L-BFGS from numerical noise in function value and gradient
     ///
-    fn update(&mut self, x: &[f64], xp: &[f64], gx: &[f64], gp: &[f64], step: f64, damping: bool) -> f64 {
+    fn update(&mut self, x: &[f64], xp: &[f64], gx: &[f64], gp: &[f64], step: f64, damping: bool) -> Result<f64> {
         // Update vectors s and y:
         // s_{k} = x_{k+1} - x_{k} = \alpha * d_{k}.
         // y_{k} = g_{k+1} - g_{k}.
         self.s.vecdiff(x, xp);
         let d = self.s.vec2norm();
-        assert_ne!(d, 0.0, "x not changed with step {step}\n x = {xp:?}");
+        ensure!(d != 0.0, "x not changed with step {step}\n x = {xp:?}");
         self.y.vecdiff(gx, gp);
 
         // Compute scalars ys and yy:
@@ -939,8 +939,7 @@ impl IterationData {
         // Notice that yy is used for scaling the intial inverse hessian matrix H_0 (Cholesky factor).
         let ys = self.y.vecdot(&self.s);
         let yy = self.y.vecdot(&self.y);
-        assert_ne!(yy, 0.0, "gx not changed\n g = {gx:?}");
-
+        ensure!(yy != 0.0, "gx not changed\n g = {gx:?}");
         self.ys = ys;
 
         // Al-Baali2014JOTA: Damped Techniques for the Limited Memory BFGS
@@ -973,11 +972,10 @@ impl IterationData {
                 bs.vecadd(&self.y, theta);
             } else {
                 trace!("damping case3");
-                // for theta = 1.0, yk = yk, so do nothing here.
             }
         }
 
-        ys / yy
+        Ok(ys / yy)
     }
 }
 
