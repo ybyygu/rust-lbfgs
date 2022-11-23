@@ -396,6 +396,7 @@ impl Lbfgs {
         G: FnMut(&Progress) -> bool,
     {
         let mut state = self.build(x, eval_fn)?;
+
         info!("start lbfgs loop...");
         for _ in 0.. {
             if state.is_converged() {
@@ -487,7 +488,10 @@ where
     pub fn is_converged(&mut self) -> bool {
         // Monitor the progress.
         let prgr = self.get_progress();
-        let converged = satisfying_stop_conditions(&self.vars, prgr);
+        // FIXME: work around mut access limitation of self.pf
+        let mut pf = self.pf.clone();
+        let converged = satisfying_stop_conditions(&self.vars, prgr, &mut pf);
+        self.pf = pf;
         converged
     }
 
@@ -543,11 +547,14 @@ where
         let dnorm = d.vec2norm();
         ensure!(dnorm.is_sign_positive(), "invalid norm value: {dnorm}, dvector = {d:?}");
         self.step = self.vars.max_step_size.min(dnorm) / dnorm;
+        // FIXME: for owlqn
+        self.step = 1.0;
 
         // Constrain the search direction for orthant-wise updates.
         problem.constrain_search_direction();
 
-        let progress = self.get_progress();
+        let mut progress = self.get_progress();
+
         Ok(progress)
     }
 
@@ -686,7 +693,7 @@ impl IterationData {
 
 /// test if progress satisfying stop condition
 #[inline]
-fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress) -> bool {
+fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress, pf: &mut [f64]) -> bool {
     // Buildin tests for stopping conditions
     if satisfying_max_iterations(&prgr, param.max_iterations)
         || satisfying_max_evaluations(&prgr, param.max_evaluations)

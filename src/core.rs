@@ -32,6 +32,9 @@ where
     /// Pseudo gradient for OrthantWise Limited-memory Quasi-Newton (owlqn) algorithm.
     pg: Vec<f64>,
 
+    /// For owlqn projection
+    wp: Vec<f64>,
+
     /// Search direction
     d: Vec<f64>,
 
@@ -61,6 +64,7 @@ where
             xp: vec![0.0; n],
             gp: vec![0.0; n],
             pg: vec![0.0; n],
+            wp: vec![0.0; n],
             d: vec![0.0; n],
             evaluated: false,
             neval: 0,
@@ -154,7 +158,24 @@ where
         // Choose the orthant for the new point.
         // The current point is projected onto the orthant.
         if let Some(owlqn) = self.owlqn {
-            owlqn.constraint_line_search(&mut self.x, &self.xp, &self.gp);
+            owlqn.constraint_line_search(&mut self.x, &self.wp);
+        }
+    }
+
+    pub fn fix_orthant_new_point(&mut self) {
+        // follow the mathematical definition
+        fn signum(x: f64) -> f64 {
+            if x.is_nan() || x == 0.0 {
+                0.0
+            } else {
+                x.signum()
+            }
+        }
+        let n = self.x.len();
+        // wp[i] = (xp[i] == 0.) ? -gp[i] : xp[i];
+        for i in 0..n {
+            let epsilon = if self.xp[i] == 0.0 { signum(-self.gp[i]) } else { signum(self.xp[i]) };
+            self.wp[i] = epsilon;
         }
     }
 

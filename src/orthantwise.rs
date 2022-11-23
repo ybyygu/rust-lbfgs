@@ -115,8 +115,8 @@ impl Orthantwise {
     ///
     /// During the line search, each search point is projected onto
     /// the orthant of the previous point.
-    pub(crate) fn constraint_line_search(&self, x: &mut [f64], xp: &[f64], gp: &[f64]) {
-        let (start, end) = self.start_end(xp);
+    pub(crate) fn constraint_line_search(&self, x: &mut [f64], wp: &[f64]) {
+        let (start, end) = self.start_end(x);
 
         // let epsilon = xp
         //     .iter()
@@ -126,10 +126,16 @@ impl Orthantwise {
 
         // FIXME: after constraint, x may be identical to xp, which
         // will lead to convergence failure.
+        // for i in start..end {
+        //     let epsilon = if xp[i] == 0.0 { signum(-gp[i]) } else { signum(xp[i]) };
+        //     if epsilon != signum(x[i]) {
+        //         x[i] = 0.0
+        //     }
+
         for i in start..end {
-            let epsilon = if xp[i] == 0.0 { signum(-gp[i]) } else { signum(xp[i]) };
+            let epsilon = wp[i];
             if epsilon != signum(x[i]) {
-                x[i] = 0.0
+                x[i] = 0.0;
             }
         }
     }
