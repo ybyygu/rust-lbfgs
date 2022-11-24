@@ -436,7 +436,6 @@ where
     step: f64,
     k: usize,
     lm_arr: Vec<IterationData>,
-    pf: Vec<f64>,
     ncall: usize,
 }
 
@@ -472,11 +471,6 @@ impl Lbfgs {
         }
 
         let fx = problem.fx;
-        // FIXME: not correct
-        let mut pf = vec![0.0; self.param.past];
-        if self.param.past > 0 {
-            pf[0] = fx;
-        }
         let state = LbfgsState {
             vars: self.param.clone(),
             prbl: Some(problem),
@@ -485,7 +479,6 @@ impl Lbfgs {
             k: 0,
             lm_arr,
             ncall: 0,
-            pf,
         };
 
         Ok(state)
@@ -497,13 +490,10 @@ where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     /// Check if stopping critera met. Panics if not initialized.
-    pub fn is_converged(&mut self) -> bool {
+    pub fn is_converged(&self) -> bool {
         // Monitor the progress.
         let prgr = self.get_progress();
-        // FIXME: work around mut access limitation of self.pf
-        let mut pf = self.pf.clone();
-        let converged = satisfying_stop_conditions(&self.vars, prgr, &mut pf);
-        self.pf = pf;
+        let converged = satisfying_stop_conditions(&self.vars, prgr);
         converged
     }
 
@@ -707,12 +697,12 @@ impl IterationData {
 
 /// test if progress satisfying stop condition
 #[inline]
-fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress, pf: &mut [f64]) -> bool {
+fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress) -> bool {
     // Buildin tests for stopping conditions
     if satisfying_max_iterations(&prgr, param.max_iterations)
         || satisfying_max_evaluations(&prgr, param.max_evaluations)
         || satisfying_scaled_gnorm(&prgr, param.epsilon)
-        || satisfying_delta(&prgr, pf, param.delta)
+    // || satisfying_delta(&prgr, pf, param.delta)
     // || satisfying_max_gnorm(&prgr, self.param.max_gnorm)
     {
         return true;
@@ -783,7 +773,7 @@ fn satisfying_delta<'a>(prgr: &Progress, pf: &'a mut [f64], delta: f64) -> bool 
     let past = pf.len();
     if !pf.is_empty() {
         // We don't test the stopping criterion while k < past.
-        if dbg!(past) <= dbg!(k) {
+        if past <= k {
             // Compute the relative improvement from the past.
             let rate = (pf[(k % past) as usize] - fx).abs() / fx;
             // The stopping criterion.
