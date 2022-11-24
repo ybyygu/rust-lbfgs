@@ -118,25 +118,13 @@ impl Orthantwise {
     pub(crate) fn constraint_line_search(&self, x: &mut [f64], wp: &[f64]) {
         let (start, end) = self.start_end(x);
 
-        // let epsilon = xp
-        //     .iter()
-        //     .zip(gp)
-        //     .map(|(&xpi, &gpi)| if xpi == 0.0 { signum(-gpi) } else { signum(xpi) });
-        // project(x[start..end].iter_mut(), epsilon.skip(start));
-
         // FIXME: after constraint, x may be identical to xp, which
         // will lead to convergence failure.
-        // for i in start..end {
-        //     let epsilon = if xp[i] == 0.0 { signum(-gp[i]) } else { signum(xp[i]) };
-        //     if epsilon != signum(x[i]) {
-        //         x[i] = 0.0
-        //     }
-
         for i in start..end {
+            // let epsilon = if xp[i] == 0.0 { signum(-gp[i]) } else { signum(xp[i]) };
             let epsilon = wp[i];
-            // FIXME: won't converge if using signum
-            // if epsilon != signum(x[i]) {
-            if epsilon * x[i] <= 0.0 {
+            // if epsilon * x[i] <= 0.0 {
+            if epsilon != signum(x[i]) {
                 x[i] = 0.0;
             }
         }
@@ -179,7 +167,7 @@ fn project<'a>(x: impl Iterator<Item = &'a mut f64>, y: impl Iterator<Item = f64
 }
 
 // follow the mathematical definition
-fn signum(x: f64) -> f64 {
+pub fn signum(x: f64) -> f64 {
     if x.is_nan() || x == 0.0 {
         0.0
     } else {

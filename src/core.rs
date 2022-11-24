@@ -30,7 +30,7 @@ where
     pub(crate) gp: Vec<f64>,
 
     /// Pseudo gradient for OrthantWise Limited-memory Quasi-Newton (owlqn) algorithm.
-    pub(crate) pg: Vec<f64>,
+    pg: Vec<f64>,
 
     /// For owlqn projection
     wp: Vec<f64>,
@@ -162,20 +162,18 @@ where
         }
     }
 
-    pub fn fix_orthant_new_point(&mut self) {
-        // follow the mathematical definition
-        fn signum(x: f64) -> f64 {
-            if x.is_nan() || x == 0.0 {
-                0.0
-            } else {
-                x.signum()
-            }
-        }
+    /// Choose the orthant for the new point.
+    pub fn update_orthant_new_point(&mut self) {
+        use crate::orthantwise::signum;
+
         let n = self.x.len();
-        // wp[i] = (xp[i] == 0.) ? -gp[i] : xp[i];
         for i in 0..n {
-            // let epsilon = if self.xp[i] == 0.0 { signum(-self.gp[i]) } else { signum(self.xp[i]) };
-            let epsilon = if self.xp[i] == 0.0 { -self.pg[i] } else { self.xp[i] };
+            // let epsilon = if self.xp[i] == 0.0 { -self.pg[i] } else { self.xp[i] };
+            let epsilon = if self.xp[i] == 0.0 {
+                signum(-self.pg[i])
+            } else {
+                signum(self.xp[i])
+            };
             self.wp[i] = epsilon;
         }
     }

@@ -208,8 +208,6 @@ impl LineSearch {
             } else {
                 bail!("Gradient only optimization is incompatible with MoreThuente line search.");
             }
-        } else if prb.orthantwise() {
-            line_search_backtracking_owlqn(prb, step, &self)
         } else {
             line_search_backtracking(prb, step, &self)
         }
@@ -728,15 +726,14 @@ where
     let dec: f64 = 0.5;
     let inc: f64 = 2.1;
 
-    // quick wrapper
-    let orthantwise = prb.orthantwise();
-
     // The initial value of the objective function.
     let finit = prb.fx;
     let dgtest = param.ftol * dginit;
 
+    // quick wrapper
+    let orthantwise = prb.orthantwise();
     if orthantwise {
-        prb.fix_orthant_new_point();
+        prb.update_orthant_new_point();
     }
 
     let mut width: f64;
@@ -775,52 +772,6 @@ where
             if dg.abs() <= -param.gtol * dginit.abs() {
                 return Ok(count);
             }
-        }
-
-        param.validate_step(*stp)?;
-        *stp *= width
-    }
-
-    // Maximum number of iteration.
-    info!("The line-search routine reaches the maximum number of evaluations.");
-
-    Ok(param.max_linesearch)
-}
-
-pub fn line_search_backtracking_owlqn<E>(
-    prb: &mut Problem<E>,
-    stp: &mut f64,      // step length
-    param: &LineSearch, // line search parameters
-) -> Result<usize>
-where
-    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
-    assert!(prb.orthantwise());
-
-    // The initial value of the objective function.
-    let finit = prb.fx;
-    // let dgtest = param.ftol * dginit;
-    let n = prb.x.len();
-
-    // FIXME: rewrite
-    prb.fix_orthant_new_point();
-
-    let mut width = 0.5;
-    for count in 0..param.max_linesearch {
-        prb.take_line_step(*stp);
-
-        // Evaluate the function and gradient values.
-        // Compute the L1 norm of the variables and add it to the object value.
-        prb.evaluate()?;
-
-        let mut dgtest = 0.0;
-        for i in 0..n {
-            dgtest += (prb.x[i] - prb.xp[i]) * prb.pg[i];
-        }
-
-        if prb.fx <= finit + param.ftol * dgtest {
-            /* The sufficient decrease condition. */
-            return Ok(count);
         }
 
         param.validate_step(*stp)?;
