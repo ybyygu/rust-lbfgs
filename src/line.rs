@@ -256,7 +256,7 @@ where
     let mut dgy = dginit;
     let mut dgx = dgy;
 
-    for count in 0..param.max_linesearch {
+    for count in 1..param.max_linesearch {
         // Set the minimum and maximum steps to correspond to the
         // present interval of uncertainty.
         let (stmin, stmax) = if brackt {
@@ -737,7 +737,7 @@ where
     }
 
     let mut width: f64;
-    for count in 0..param.max_linesearch {
+    for count in 1..param.max_linesearch {
         prb.take_line_step(*stp);
 
         // Evaluate the function and gradient values.

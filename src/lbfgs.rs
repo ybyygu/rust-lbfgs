@@ -408,13 +408,12 @@ impl Lbfgs {
             if state.is_converged() {
                 break;
             }
-            let prgr = state.get_progress();
+            let prgr = state.propagate()?;
             let cancel = prgr_fn(&prgr);
             if cancel {
                 info!("The minimization process has been canceled.");
                 break;
             }
-            state.propagate()?;
         }
 
         // Return the final value of the objective function.
@@ -523,6 +522,7 @@ where
             .linesearch
             .find(problem, &mut self.step)
             .context("Failure during line search")?;
+        let step_ls = self.step;
 
         problem.update_owlqn_gradient();
 
@@ -547,6 +547,7 @@ where
         // Now the search direction d is ready.
         let dnorm = d.vec2norm();
         ensure!(dnorm.is_sign_positive(), "invalid norm value: {dnorm}, dvector = {d:?}");
+
         // Constrains the step size to prevent wild steps.
         if self.vars.constrain_step_size {
             self.step = self.vars.max_step_size.min(dnorm) / dnorm;
@@ -558,6 +559,7 @@ where
         problem.constrain_search_direction();
 
         let mut progress = self.get_progress();
+        progress.step = step_ls;
 
         Ok(progress)
     }
