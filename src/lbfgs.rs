@@ -146,6 +146,11 @@ pub struct LbfgsParam {
 
     /// Powell damping
     pub damping: bool,
+
+    /// Constrains the step size to prevent wild steps, which may lead
+    /// to evaluation failure. If false, the step size will be set as
+    /// 1.
+    pub constrain_step_size: bool,
 }
 
 impl Default for LbfgsParam {
@@ -166,6 +171,7 @@ impl Default for LbfgsParam {
             initial_inverse_hessian: 1.0,
             max_step_size: 1.0,
             damping: false,
+            constrain_step_size: true,
         }
     }
 }
@@ -548,13 +554,15 @@ where
         // Apply LBFGS recursion procedure.
         self.end = lbfgs_two_loop_recursion(&mut self.lm_arr, d, gamma, self.vars.m, self.k - 1, self.end);
 
-        // Now the search direction d is ready. Constrains the step size to
-        // prevent wild steps.
+        // Now the search direction d is ready.
         let dnorm = d.vec2norm();
         ensure!(dnorm.is_sign_positive(), "invalid norm value: {dnorm}, dvector = {d:?}");
-        self.step = self.vars.max_step_size.min(dnorm) / dnorm;
-        // FIXME: for owlqn
-        self.step = 1.0;
+        // Constrains the step size to prevent wild steps.
+        if self.vars.constrain_step_size {
+            self.step = self.vars.max_step_size.min(dnorm) / dnorm;
+        } else {
+            self.step = 1.0;
+        }
 
         // Constrain the search direction for orthant-wise updates.
         problem.constrain_search_direction();
