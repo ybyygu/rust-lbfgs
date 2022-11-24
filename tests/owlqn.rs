@@ -12,11 +12,11 @@ fn test_owlqn() -> Result<()> {
     let y = read_csv("tests/y.csv")?;
     assert_eq!(y.len(), nrow);
     let ymat = DVector::from(y);
-    dbg!(ymat.shape());
+    // dbg!(ymat.shape());
     let x = read_csv("tests/x.csv")?;
     assert_eq!(x.len(), ncol * nrow);
     let xmat = DMatrix::from_vec(21, 500, x).transpose();
-    dbg!(xmat.shape());
+    // dbg!(xmat.shape());
 
     let prec = 0.0;
     let evaluate = move |x: &[f64], gx: &mut [f64]| {
@@ -44,18 +44,21 @@ fn test_owlqn() -> Result<()> {
 
     let mut xinit = vec![0.0; ncol];
     let _ = lbfgs()
-        .with_orthantwise(1.0, 0, 21)
-        .minimize(&mut xinit, evaluate, default_progress())
+        .with_orthantwise(1.0, 1, 21)
+        .with_max_iterations(69)
+        .minimize(&mut xinit, evaluate, |prgr| {
+            println!("Iteration {}:", prgr.niter);
+            println!(
+                " fx = {:-12.6} xnorm = {:-12.6}, gnorm = {:-12.6}, ls = {}, step = {}",
+                prgr.fx, prgr.xnorm, prgr.gnorm, prgr.ncall, prgr.step
+            );
+            false
+        })
         .expect("lbfgs minimize");
-    dbg!(xinit);
+    // dbg!(xinit);
 
     Ok(())
 }
-
-// fn matrix_mul(xmat: &[Vec<f64>], x: &[f64]) -> Vec<f64> {
-//     assert_eq!(xmat[0].len(), x.len());
-//     xmat.iter().map(|a| a.vecdot(x)).collect()
-// }
 
 // read x/y from csv file
 fn read_csv(f: &str) -> Result<Vec<f64>> {

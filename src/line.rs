@@ -802,12 +802,10 @@ where
     // let dgtest = param.ftol * dginit;
     let n = prb.x.len();
 
-    // // FIXME: reset stp for test
-    // *stp = 1.0;
+    // FIXME: rewrite
     prb.fix_orthant_new_point();
 
     let mut width = 0.5;
-    dbg!(*stp);
     for count in 0..param.max_linesearch {
         prb.take_line_step(*stp);
 
@@ -828,7 +826,6 @@ where
         param.validate_step(*stp)?;
         *stp *= width
     }
-    dbg!(*stp);
 
     // Maximum number of iteration.
     info!("The line-search routine reaches the maximum number of evaluations.");
