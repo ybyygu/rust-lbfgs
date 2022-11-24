@@ -174,7 +174,8 @@ where
         let n = self.x.len();
         // wp[i] = (xp[i] == 0.) ? -gp[i] : xp[i];
         for i in 0..n {
-            let epsilon = if self.xp[i] == 0.0 { signum(-self.gp[i]) } else { signum(self.xp[i]) };
+            // let epsilon = if self.xp[i] == 0.0 { signum(-self.gp[i]) } else { signum(self.xp[i]) };
+            let epsilon = if self.xp[i] == 0.0 { -self.pg[i] } else { self.xp[i] };
             self.wp[i] = epsilon;
         }
     }

@@ -153,10 +153,10 @@ impl Default for LineSearch {
         LineSearch {
             ftol: 1e-4,
             gtol: 0.9,
-            xtol: 1e-16,
+            xtol: std::f64::EPSILON,
             min_step: 1e-20,
-            max_step: 1e20,
-            max_linesearch: 40,
+            max_step: 1e+20,
+            max_linesearch: 20,
             gradient_only: false,
             algorithm: LineSearchAlgorithm::default(),
         }
