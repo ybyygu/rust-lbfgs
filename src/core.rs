@@ -30,7 +30,7 @@ where
     pub(crate) gp: Vec<f64>,
 
     /// Pseudo gradient for OrthantWise Limited-memory Quasi-Newton (owlqn) algorithm.
-    pg: Vec<f64>,
+    pub(crate) pg: Vec<f64>,
 
     /// For owlqn projection
     wp: Vec<f64>,

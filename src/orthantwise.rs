@@ -134,7 +134,9 @@ impl Orthantwise {
 
         for i in start..end {
             let epsilon = wp[i];
-            if epsilon != signum(x[i]) {
+            // FIXME: won't converge if using signum
+            // if epsilon != signum(x[i]) {
+            if epsilon * x[i] <= 0.0 {
                 x[i] = 0.0;
             }
         }

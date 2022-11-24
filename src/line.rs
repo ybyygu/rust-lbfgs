@@ -815,7 +815,7 @@ where
 
         let mut dgtest = 0.0;
         for i in 0..n {
-            dgtest += (prb.x[i] - prb.xp[i]) * prb.gp[i];
+            dgtest += (prb.x[i] - prb.xp[i]) * prb.pg[i];
         }
 
         if prb.fx <= finit + param.ftol * dgtest {
