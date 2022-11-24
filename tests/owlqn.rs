@@ -45,7 +45,8 @@ fn test_owlqn() -> Result<()> {
     let mut xinit = vec![0.0; ncol];
     let _ = lbfgs()
         .with_orthantwise(1.0, 1, 21)
-        .with_max_iterations(90)
+        // .with_max_iterations(90)
+        .with_epsilon(1E-4)
         .minimize(&mut xinit, evaluate, |prgr| {
             println!("Iteration {}:", prgr.niter);
             println!(
