@@ -1,4 +1,3 @@
-// [[file:../lbfgs.note::*header][header:1]]
 //!       Limited memory BFGS (L-BFGS).
 //
 //  Copyright (c) 1990, Jorge Nocedal
@@ -52,21 +51,18 @@
 //       Scalable training of L1-regularized log-linear models.
 //       In <i>Proceedings of the 24th International Conference on Machine
 //       Learning (ICML 2007)</i>, pp. 33-40, 2007.
-
+//
 // I would like to thank the original author, Jorge Nocedal, who has been
 // distributing the effieicnt and explanatory implementation in an open source
 // licence.
-// header:1 ends here
 
-// [[file:../lbfgs.note::*imports][imports:1]]
-use crate::core::*;
+use crate::common::*;
 use crate::orthantwise::*;
 
+use crate::core::{Problem, Progress, Report};
 use crate::line::*;
 use crate::math::LbfgsMath;
-// imports:1 ends here
 
-// [[file:../lbfgs.note::*parameters][parameters:1]]
 /// L-BFGS optimization parameters.
 ///
 /// Call lbfgs_parameter_t::default() function to initialize parameters to the
@@ -139,10 +135,7 @@ pub struct LbfgsParam {
     pub linesearch: LineSearch,
 
     /// Enable OWL-QN regulation or not
-    pub orthantwise: bool,
-
-    // FIXME: better name
-    pub owlqn: Orthantwise,
+    pub orthantwise: Option<Orthantwise>,
 
     /// A factor for scaling initial step size.
     pub initial_inverse_hessian: f64,
@@ -153,6 +146,11 @@ pub struct LbfgsParam {
 
     /// Powell damping
     pub damping: bool,
+
+    /// Constrains the step size to prevent wild steps, which may lead
+    /// to evaluation failure. If false, the step size will be set as
+    /// 1.
+    pub constrain_step_size: bool,
 }
 
 impl Default for LbfgsParam {
@@ -168,308 +166,17 @@ impl Default for LbfgsParam {
             delta: 1e-5,
             max_iterations: 0,
             max_evaluations: 0,
-            orthantwise: false,
-            owlqn: Orthantwise::default(),
+            orthantwise: None,
             linesearch: LineSearch::default(),
             initial_inverse_hessian: 1.0,
             max_step_size: 1.0,
             damping: false,
-        }
-    }
-}
-// parameters:1 ends here
-
-// [[file:../lbfgs.note::*problem][problem:1]]
-/// Represents an optimization problem.
-///
-/// `Problem` holds input variables `x`, gradient `gx` arrays, and function value `fx`.
-pub struct Problem<'a, E>
-where
-    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
-    /// x is an array of length n. on input it must contain the base point for
-    /// the line search.
-    pub x: &'a mut [f64],
-
-    /// `fx` is a variable. It must contain the value of problem `f` at
-    /// x.
-    pub fx: f64,
-
-    /// `gx` is an array of length n. It must contain the gradient of `f` at
-    /// x.
-    pub gx: Vec<f64>,
-
-    /// Cached position vector of previous step.
-    xp: Vec<f64>,
-
-    /// Cached gradient vector of previous step.
-    gp: Vec<f64>,
-
-    /// Pseudo gradient for OrthantWise Limited-memory Quasi-Newton (owlqn) algorithm.
-    pg: Vec<f64>,
-
-    /// Search direction
-    d: Vec<f64>,
-
-    /// Store callback function for evaluating objective function.
-    eval_fn: E,
-
-    /// Orthantwise operations
-    owlqn: Option<Orthantwise>,
-
-    /// Evaluated or not
-    evaluated: bool,
-
-    /// The number of evaluation.
-    neval: usize,
-}
-
-impl<'a, E> Problem<'a, E>
-where
-    E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-{
-    /// Initialize problem with array length n
-    pub fn new(x: &'a mut [f64], eval: E, owlqn: Option<Orthantwise>) -> Self {
-        let n = x.len();
-        Problem {
-            fx: 0.0,
-            gx: vec![0.0; n],
-            xp: vec![0.0; n],
-            gp: vec![0.0; n],
-            pg: vec![0.0; n],
-            d: vec![0.0; n],
-            evaluated: false,
-            neval: 0,
-            x,
-            eval_fn: eval,
-            owlqn,
-        }
-    }
-
-    /// Compute the initial gradient in the search direction.
-    pub fn dginit(&self) -> Result<f64> {
-        if self.owlqn.is_none() {
-            let dginit = self.gx.vecdot(&self.d);
-            if dginit > 0.0 {
-                warn!(
-                    "The current search direction increases the objective function value. dginit = {:-0.4}",
-                    dginit
-                );
-            }
-
-            Ok(dginit)
-        } else {
-            Ok(self.pg.vecdot(&self.d))
-        }
-    }
-
-    /// Update search direction using evaluated gradient.
-    pub fn update_search_direction(&mut self) {
-        if self.owlqn.is_some() {
-            self.d.vecncpy(&self.pg);
-        } else {
-            self.d.vecncpy(&self.gx);
-        }
-    }
-
-    /// Return a reference to current search direction vector
-    pub fn search_direction(&self) -> &[f64] {
-        &self.d
-    }
-
-    /// Return a mutable reference to current search direction vector
-    pub fn search_direction_mut(&mut self) -> &mut [f64] {
-        &mut self.d
-    }
-
-    /// Compute the gradient in the search direction without sign checking.
-    pub fn dg_unchecked(&self) -> f64 {
-        self.gx.vecdot(&self.d)
-    }
-
-    // FIXME: improve
-    pub fn evaluate(&mut self) -> Result<()> {
-        self.fx = (self.eval_fn)(&self.x, &mut self.gx)?;
-
-        // Compute the L1 norm of the variables and add it to the object value.
-        if let Some(owlqn) = self.owlqn {
-            self.fx += owlqn.x1norm(&self.x)
-        }
-
-        // FIXME: to be better
-        // if self.orthantwise {
-        // Compute the L1 norm of the variable and add it to the object value.
-        // fx += self.owlqn.x1norm(x);
-        // self.owlqn.pseudo_gradient(&mut pg, &x, &g);
-
-        self.evaluated = true;
-        self.neval += 1;
-
-        Ok(())
-    }
-
-    /// Return total number of evaluations.
-    pub fn number_of_evaluation(&self) -> usize {
-        self.neval
-    }
-
-    /// Test if `Problem` has been evaluated or not
-    pub fn evaluated(&self) -> bool {
-        self.evaluated
-    }
-
-    /// Copies all elements from src into self.
-    pub fn clone_from(&mut self, src: &Problem<E>) {
-        self.x.clone_from_slice(&src.x);
-        self.gx.clone_from_slice(&src.gx);
-        self.fx = src.fx;
-    }
-
-    /// Take a line step along search direction.
-    ///
-    /// Compute the current value of x: x <- x + (*step) * d.
-    ///
-    pub fn take_line_step(&mut self, step: f64) {
-        self.x.veccpy(&self.xp);
-        self.x.vecadd(&self.d, step);
-
-        // Choose the orthant for the new point.
-        // The current point is projected onto the orthant.
-        if let Some(owlqn) = self.owlqn {
-            owlqn.project(&mut self.x, &self.xp, &self.gp);
-        }
-    }
-
-    /// Return gradient vector norm: ||gx||
-    pub fn gnorm(&self) -> f64 {
-        if self.owlqn.is_some() {
-            self.pg.vec2norm()
-        } else {
-            self.gx.vec2norm()
-        }
-    }
-
-    /// Return position vector norm: ||x||
-    pub fn xnorm(&self) -> f64 {
-        self.x.vec2norm()
-    }
-
-    pub fn orthantwise(&self) -> bool {
-        self.owlqn.is_some()
-    }
-
-    /// Revert to previous step
-    pub fn revert(&mut self) {
-        self.x.veccpy(&self.xp);
-        self.gx.veccpy(&self.gp);
-    }
-
-    /// Store the current position and gradient vectors.
-    pub fn save_state(&mut self) {
-        self.xp.veccpy(&self.x);
-        self.gp.veccpy(&self.gx);
-    }
-
-    /// Constrain the search direction for orthant-wise updates.
-    pub fn constrain_search_direction(&mut self) {
-        if let Some(owlqn) = self.owlqn {
-            owlqn.constrain(&mut self.d, &self.pg);
-        }
-    }
-
-    // FIXME
-    pub fn update_owlqn_gradient(&mut self) {
-        if let Some(owlqn) = self.owlqn {
-            owlqn.pseudo_gradient(&mut self.pg, &self.x, &self.gx);
-        }
-    }
-}
-// problem:1 ends here
-
-// [[file:../lbfgs.note::*progress][progress:1]]
-/// Store optimization progress data, for progress monitor
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct Progress<'a> {
-    /// The current values of variables
-    pub x: &'a [f64],
-
-    /// The current gradient values of variables.
-    pub gx: &'a [f64],
-
-    /// The current value of the objective function.
-    pub fx: f64,
-
-    /// The Euclidean norm of the variables
-    pub xnorm: f64,
-
-    /// The Euclidean norm of the gradients.
-    pub gnorm: f64,
-
-    /// The line-search step used for this iteration.
-    pub step: f64,
-
-    /// The iteration count.
-    pub niter: usize,
-
-    /// The total number of evaluations.
-    pub neval: usize,
-
-    /// The number of function evaluation calls in line search procedure
-    pub ncall: usize,
-}
-
-impl<'a> Progress<'a> {
-    fn new<E>(prb: &'a Problem<E>, niter: usize, ncall: usize, step: f64) -> Self
-    where
-        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-    {
-        Progress {
-            x: &prb.x,
-            gx: &prb.gx,
-            fx: prb.fx,
-            xnorm: prb.xnorm(),
-            gnorm: prb.gnorm(),
-            neval: prb.number_of_evaluation(),
-            ncall,
-            step,
-            niter,
+            constrain_step_size: true,
         }
     }
 }
 
-pub struct Report {
-    /// The current value of the objective function.
-    pub fx: f64,
-
-    /// The Euclidean norm of the variables
-    pub xnorm: f64,
-
-    /// The Euclidean norm of the gradients.
-    pub gnorm: f64,
-
-    /// The total number of evaluations.
-    pub neval: usize,
-}
-
-impl Report {
-    fn new<E>(prb: &Problem<E>) -> Self
-    where
-        E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
-    {
-        Self {
-            fx: prb.fx,
-            xnorm: prb.xnorm(),
-            gnorm: prb.gnorm(),
-            neval: prb.number_of_evaluation(),
-        }
-    }
-}
-// progress:1 ends here
-
-// [[file:../lbfgs.note::*orthantwise][orthantwise:1]]
-// [[file:../lbfgs.note::*builder][builder:1]]
-/// LBFGS optimizer.
+/// L-BFGS optimizer.
 #[derive(Default, Debug, Clone)]
 pub struct Lbfgs {
     param: LbfgsParam,
@@ -520,7 +227,7 @@ impl Lbfgs {
         self
     }
 
-    /// Set orthantwise parameters
+    /// Set orthantwise parameters. See [Orthantwise] for parameters.
     pub fn with_orthantwise(mut self, c: f64, start: usize, end: impl Into<Option<usize>>) -> Self {
         assert!(
             c.is_sign_positive(),
@@ -528,10 +235,13 @@ impl Lbfgs {
         );
         warn!("Only the backtracking line search is available for OWL-QN algorithm.");
 
-        self.param.orthantwise = true;
-        self.param.owlqn.c = c;
-        self.param.owlqn.start = start;
-        self.param.owlqn.end = end.into();
+        self.param.orthantwise = Orthantwise {
+            c,
+            start,
+            end: end.into(),
+            ..Default::default()
+        }
+        .into();
 
         self
     }
@@ -672,9 +382,7 @@ impl Lbfgs {
         self
     }
 }
-// builder:1 ends here
 
-// [[file:../lbfgs.note::*hack][hack:1]]
 impl Lbfgs {
     /// Start the L-BFGS optimization; this will invoke the callback functions evaluate
     /// and progress.
@@ -694,28 +402,26 @@ impl Lbfgs {
         G: FnMut(&Progress) -> bool,
     {
         let mut state = self.build(x, eval_fn)?;
+
         info!("start lbfgs loop...");
         for _ in 0.. {
             if state.is_converged() {
                 break;
             }
-            let prgr = state.get_progress();
+            let prgr = state.propagate()?;
             let cancel = prgr_fn(&prgr);
             if cancel {
                 info!("The minimization process has been canceled.");
                 break;
             }
-            state.propagate()?;
         }
 
         // Return the final value of the objective function.
         Ok(state.report())
     }
 }
-// hack:1 ends here
 
-// [[file:../lbfgs.note::*state][state:1]]
-/// LBFGS optimization state allowing iterative propagation
+/// L-BFGS optimization state allowing iterative propagation
 pub struct LbfgsState<'a, E>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
@@ -729,12 +435,9 @@ where
     step: f64,
     k: usize,
     lm_arr: Vec<IterationData>,
-    pf: Vec<f64>,
     ncall: usize,
 }
-// state:1 ends here
 
-// [[file:../lbfgs.note::*build][build:1]]
 impl Lbfgs {
     /// Build LBFGS state struct for iteration.
     pub fn build<'a, E>(self, x: &'a mut [f64], eval_fn: E) -> Result<LbfgsState<'a, E>>
@@ -745,19 +448,10 @@ impl Lbfgs {
         let param = &self.param;
         let lm_arr = (0..param.m).map(|_| IterationData::new(x.len())).collect();
 
-        // Allocate working space for LBFGS optimization
-        let owlqn = if param.orthantwise {
-            Some(param.owlqn.clone())
-        } else {
-            None
-        };
-        let mut problem = Problem::new(x, eval_fn, owlqn);
+        let mut problem = Problem::new(x, eval_fn, param.orthantwise);
 
         // Evaluate the function value and its gradient.
         problem.evaluate()?;
-
-        // Compute the L1 norm of the variable and add it to the object value.
-        problem.update_owlqn_gradient();
 
         // Compute the search direction with current gradient.
         problem.update_search_direction();
@@ -772,6 +466,7 @@ impl Lbfgs {
             info!("Powell damping Enabled.");
         }
 
+        let fx = problem.fx;
         let state = LbfgsState {
             vars: self.param.clone(),
             prbl: Some(problem),
@@ -779,22 +474,19 @@ impl Lbfgs {
             step,
             k: 0,
             lm_arr,
-            pf: vec![],
             ncall: 0,
         };
 
         Ok(state)
     }
 }
-// build:1 ends here
 
-// [[file:../lbfgs.note::*propagate][propagate:1]]
 impl<'a, E> LbfgsState<'a, E>
 where
     E: FnMut(&[f64], &mut [f64]) -> Result<f64>,
 {
     /// Check if stopping critera met. Panics if not initialized.
-    pub fn is_converged(&mut self) -> bool {
+    pub fn is_converged(&self) -> bool {
         // Monitor the progress.
         let prgr = self.get_progress();
         let converged = satisfying_stop_conditions(&self.vars, prgr);
@@ -827,8 +519,7 @@ where
             .linesearch
             .find(problem, &mut self.step)
             .context("Failure during line search")?;
-
-        problem.update_owlqn_gradient();
+        let step_ls = self.step;
 
         // Update LBFGS iteration data.
         let it = &mut self.lm_arr[self.end];
@@ -839,7 +530,7 @@ where
             &problem.gp,
             self.step,
             self.vars.damping,
-        );
+        )?;
 
         // Compute the steepest direction
         problem.update_search_direction();
@@ -848,16 +539,23 @@ where
         // Apply LBFGS recursion procedure.
         self.end = lbfgs_two_loop_recursion(&mut self.lm_arr, d, gamma, self.vars.m, self.k - 1, self.end);
 
-        // Now the search direction d is ready. Constrains the step size to
-        // prevent wild steps.
+        // Now the search direction d is ready.
         let dnorm = d.vec2norm();
         ensure!(dnorm.is_sign_positive(), "invalid norm value: {dnorm}, dvector = {d:?}");
-        self.step = self.vars.max_step_size.min(dnorm) / dnorm;
+
+        // Constrains the step size to prevent wild steps.
+        if self.vars.constrain_step_size {
+            self.step = self.vars.max_step_size.min(dnorm) / dnorm;
+        } else {
+            self.step = 1.0;
+        }
 
         // Constrain the search direction for orthant-wise updates.
         problem.constrain_search_direction();
 
-        let progress = self.get_progress();
+        let mut progress = self.get_progress();
+        progress.step = step_ls;
+
         Ok(progress)
     }
 
@@ -866,9 +564,7 @@ where
         Progress::new(&problem, self.k, self.ncall, self.step)
     }
 }
-// propagate:1 ends here
 
-// [[file:../lbfgs.note::*recursion][recursion:1]]
 /// Algorithm 7.4, in Nocedal, J.; Wright, S. Numerical Optimization; Springer Science & Business Media, 2006.
 fn lbfgs_two_loop_recursion(
     lm_arr: &mut [IterationData],
@@ -906,9 +602,7 @@ fn lbfgs_two_loop_recursion(
 
     end
 }
-// recursion:1 ends here
 
-// [[file:../lbfgs.note::*iteration data][iteration data:1]]
 /// Internal iternation data for L-BFGS
 #[derive(Clone)]
 struct IterationData {
@@ -943,11 +637,13 @@ impl IterationData {
     /// * damping: applying Powell damping to the gradient difference `y` helps
     ///   stabilize L-BFGS from numerical noise in function value and gradient
     ///
-    fn update(&mut self, x: &[f64], xp: &[f64], gx: &[f64], gp: &[f64], step: f64, damping: bool) -> f64 {
+    fn update(&mut self, x: &[f64], xp: &[f64], gx: &[f64], gp: &[f64], step: f64, damping: bool) -> Result<f64> {
         // Update vectors s and y:
         // s_{k} = x_{k+1} - x_{k} = \alpha * d_{k}.
         // y_{k} = g_{k+1} - g_{k}.
         self.s.vecdiff(x, xp);
+        let d = self.s.vec2norm();
+        ensure!(d != 0.0, "x not changed with step {step}\n x = {xp:?}");
         self.y.vecdiff(gx, gp);
 
         // Compute scalars ys and yy:
@@ -956,8 +652,7 @@ impl IterationData {
         // Notice that yy is used for scaling the intial inverse hessian matrix H_0 (Cholesky factor).
         let ys = self.y.vecdot(&self.s);
         let yy = self.y.vecdot(&self.y);
-        assert_ne!(yy, 0.0, "invalid gradient vectors gx = gp: {gx:?}");
-
+        ensure!(yy != 0.0, "gx not changed\n g = {gx:?}");
         self.ys = ys;
 
         // Al-Baali2014JOTA: Damped Techniques for the Limited Memory BFGS
@@ -990,16 +685,13 @@ impl IterationData {
                 bs.vecadd(&self.y, theta);
             } else {
                 trace!("damping case3");
-                // for theta = 1.0, yk = yk, so do nothing here.
             }
         }
 
-        ys / yy
+        Ok(ys / yy)
     }
 }
-// iteration data:1 ends here
 
-// [[file:../lbfgs.note::*stopping conditions][stopping conditions:1]]
 /// test if progress satisfying stop condition
 #[inline]
 fn satisfying_stop_conditions(param: &LbfgsParam, prgr: Progress) -> bool {
@@ -1076,23 +768,20 @@ fn satisfying_delta<'a>(prgr: &Progress, pf: &'a mut [f64], delta: f64) -> bool 
     let k = prgr.niter;
     let fx = prgr.fx;
     let past = pf.len();
-    if past < 1 {
-        return false;
-    }
-
-    // We don't test the stopping criterion while k < past.
-    if past <= k {
-        // Compute the relative improvement from the past.
-        let rate = (pf[(k % past) as usize] - fx).abs() / fx;
-        // The stopping criterion.
-        if rate < delta {
-            info!("The stopping criterion.");
-            return true;
+    if !pf.is_empty() {
+        // We don't test the stopping criterion while k < past.
+        if past <= k {
+            // Compute the relative improvement from the past.
+            let rate = (pf[(k % past) as usize] - fx).abs() / fx;
+            // The stopping criterion.
+            if rate < delta {
+                info!("The stopping criterion.");
+                return true;
+            }
         }
+        // Store the current value of the objective function.
+        pf[(k % past) as usize] = fx;
     }
-    // Store the current value of the objective function.
-    pf[(k % past) as usize] = fx;
 
     false
 }
-// stopping conditions:1 ends here

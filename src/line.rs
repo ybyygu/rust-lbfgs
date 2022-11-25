@@ -1,4 +1,3 @@
-// docs
 // Copyright (c) 1990, Jorge Nocedal
 // Copyright (c) 2007-2010 Naoaki Okazaki
 // Copyright (c) 2018-2022 Wenping Guo
@@ -32,11 +31,10 @@
 //! let ncall = ls.find(&mut prb, &mut step).expect("line search");
 //! ```
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*base][base:1]]
-use crate::core::*;
-// base:1 ends here
+use crate::common::*;
+use crate::core::Problem;
+use crate::math::*;
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*algorithm][algorithm:1]]
 /// Line search algorithms.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum LineSearchAlgorithm {
@@ -88,9 +86,7 @@ impl Default for LineSearchAlgorithm {
         LineSearchAlgorithm::MoreThuente
     }
 }
-// algorithm:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*paramters][paramters:1]]
 #[derive(Debug, Copy, Clone)]
 pub struct LineSearch {
     /// Various line search algorithms.
@@ -151,24 +147,21 @@ pub struct LineSearch {
     pub gradient_only: bool,
 }
 
-// TODO: better defaults
 impl Default for LineSearch {
     fn default() -> Self {
         LineSearch {
             ftol: 1e-4,
             gtol: 0.9,
-            xtol: 1e-16,
+            xtol: std::f64::EPSILON,
             min_step: 1e-20,
-            max_step: 1e20,
-            max_linesearch: 40,
+            max_step: 1e+20,
+            max_linesearch: 20,
             gradient_only: false,
             algorithm: LineSearchAlgorithm::default(),
         }
     }
 }
-// paramters:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*adhoc][adhoc:1]]
 impl LineSearch {
     fn validate_step(&self, step: f64) -> Result<()> {
         // The step is the minimum value.
@@ -183,10 +176,6 @@ impl LineSearch {
         Ok(())
     }
 }
-// adhoc:1 ends here
-
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*entry][entry:1]]
-use crate::lbfgs::Problem;
 
 impl LineSearch {
     /// Unified entry for line searches
@@ -233,14 +222,6 @@ impl LineSearch {
         Ok(ls)
     }
 }
-// entry:1 ends here
-
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*Original documentation by J. Nocera (lbfgs.f)][Original documentation by J. Nocera (lbfgs.f):1]]
-
-// Original documentation by J. Nocera (lbfgs.f):1 ends here
-
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
-use crate::math::*;
 
 pub fn line_search_morethuente<E>(
     prb: &mut Problem<E>,
@@ -274,7 +255,7 @@ where
     let mut dgy = dginit;
     let mut dgx = dgy;
 
-    for count in 0..param.max_linesearch {
+    for count in 1..param.max_linesearch {
         // Set the minimum and maximum steps to correspond to the
         // present interval of uncertainty.
         let (stmin, stmax) = if brackt {
@@ -416,9 +397,7 @@ satisfies the sufficient decrease and curvature conditions."
 
     Ok(param.max_linesearch)
 }
-// core:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 /// Represents the original MCSTEP subroutine by J. Nocera, which is a variant
 /// of More' and Thuente's routine.
 ///
@@ -430,7 +409,7 @@ mod mcstep {
     // dependencies
     use super::{cubic_minimizer, cubic_minimizer2, quard_minimizer, quard_minimizer2};
 
-    use crate::core::*;
+    use crate::common::*;
 
     ///
     /// Update a safeguarded trial value and interval for line search.
@@ -626,9 +605,7 @@ mod mcstep {
         Ok(0)
     }
 }
-// core:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*interpolation][interpolation:1]]
 /// Find a minimizer of an interpolated cubic function.
 ///
 /// # Arguments
@@ -730,9 +707,7 @@ fn quard_minimizer2(qm: &mut f64, u: f64, du: f64, v: f64, dv: f64) {
     let a = u - v;
     *qm = v + dv / (dv - du) * a;
 }
-// interpolation:1 ends here
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*core][core:1]]
 use self::LineSearchAlgorithm::*;
 
 /// `prb` holds input variables `x`, gradient `gx` arrays, and function value
@@ -750,15 +725,18 @@ where
     let dec: f64 = 0.5;
     let inc: f64 = 2.1;
 
-    // quick wrapper
-    let orthantwise = prb.orthantwise();
-
     // The initial value of the objective function.
     let finit = prb.fx;
     let dgtest = param.ftol * dginit;
 
+    // quick wrapper
+    let orthantwise = prb.orthantwise();
+    if orthantwise {
+        prb.update_orthant_new_point();
+    }
+
     let mut width: f64;
-    for count in 0..param.max_linesearch {
+    for count in 1..param.max_linesearch {
         prb.take_line_step(*stp);
 
         // Evaluate the function and gradient values.
@@ -804,4 +782,3 @@ where
 
     Ok(param.max_linesearch)
 }
-// core:1 ends here
