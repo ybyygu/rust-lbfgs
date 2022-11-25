@@ -4,7 +4,7 @@ use liblbfgs::{default_progress, lbfgs, math::*, Progress};
 
 #[test]
 fn test_owlqn() -> Result<()> {
-    use nalgebra::{DMatrix, DVector, DVectorSlice};
+    use vecfx::nalgebra::{DMatrix, DVector, DVectorSlice};
 
     let nrow = 500;
     let ncol = 21;

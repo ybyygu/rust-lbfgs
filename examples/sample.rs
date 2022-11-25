@@ -4,7 +4,6 @@
 // :END:
 // Adopted from sample.c in original source.
 
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*sample.rs][sample.rs:1]]
 use liblbfgs::{lbfgs, Progress};
 
 fn main() {
@@ -65,4 +64,3 @@ fn main() {
 
     println!("  fx = {:}, x[0] = {}, x[1] = {}\n", prb.fx, x[0], x[1]);
 }
-// sample.rs:1 ends here

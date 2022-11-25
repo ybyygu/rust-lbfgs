@@ -17,8 +17,7 @@ anyhow = "1"
 [dev-dependencies]
 approx = "0.5"
 criterion = "0.3"
-vecfx = "0.1"
-nalgebra = "0.31"
+vecfx = { version="0.1", features = ["nalgebra"] }
 
 [[bench]]
 name = "rosenbrock"

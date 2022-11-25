@@ -1,4 +1,3 @@
-// [[file:~/Workspace/Programming/gosh-rs/lbfgs/lbfgs.note::*lj.rs][lj.rs:1]]
 use vecfx::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -69,6 +68,7 @@ fn main() {
     let mut lj = LennardJones::default();
 
     // LJ38
+    #[rustfmt::skip]
     let mut positions = [
     50.27754123,     50.04898929,     50.13164926,
     49.54021264,     50.20208324,     49.33142540,
@@ -127,4 +127,3 @@ fn main() {
         },
     );
 }
-// lj.rs:1 ends here
