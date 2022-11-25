@@ -120,14 +120,16 @@ impl Orthantwise {
 
         // FIXME: after constraint, x may be identical to xp, which
         // will lead to convergence failure.
-        for i in start..end {
-            // let epsilon = if xp[i] == 0.0 { signum(-gp[i]) } else { signum(xp[i]) };
-            let epsilon = wp[i];
-            // if epsilon * x[i] <= 0.0 {
-            if epsilon != signum(x[i]) {
-                x[i] = 0.0;
-            }
-        }
+
+        // for i in start..end {
+        //     let epsilon = wp[i];
+        //     // if epsilon * x[i] <= 0.0 {
+        //     if epsilon != signum(x[i]) {
+        //         x[i] = 0.0;
+        //     }
+        // }
+
+        project(x[start..end].iter_mut(), wp[start..end].iter().copied());
     }
 
     /// Constrain the search direction for orthant-wise updates.
@@ -140,12 +142,14 @@ impl Orthantwise {
 
         // p^k = pi(d^k; v^k)
         // where v^k = - pg^k
-        // project(d[start..end].iter_mut(), pg[start..end].iter().map(|x| -x));
-        for i in start..end {
-            if signum(d[i]) == signum(pg[i]) {
-                d[i] = 0.0;
-            }
-        }
+        project(d[start..end].iter_mut(), pg[start..end].iter().map(|x| -x));
+
+        // for i in start..end {
+        //     if signum(d[i]) != signum(-pg[i]) {
+        //     // if signum(d[i]) == signum(pg[i]) {
+        //         d[i] = 0.0;
+        //     }
+        // }
 
         // just cite the comment from here:
         //

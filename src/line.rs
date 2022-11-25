@@ -147,7 +147,6 @@ pub struct LineSearch {
     pub gradient_only: bool,
 }
 
-// TODO: better defaults
 impl Default for LineSearch {
     fn default() -> Self {
         LineSearch {
