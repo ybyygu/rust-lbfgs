@@ -43,7 +43,7 @@ fn test_owlqn() -> Result<()> {
     };
 
     let mut xinit = vec![0.0; ncol];
-    let _ = lbfgs()
+    let prb = lbfgs()
         .with_orthantwise(1.0, 1, 21)
         // .with_max_iterations(90)
         .with_epsilon(1E-4)
@@ -56,7 +56,8 @@ fn test_owlqn() -> Result<()> {
             false
         })
         .expect("lbfgs minimize");
-    // dbg!(xinit);
+
+    assert_relative_eq!(-42724.136705, prb.fx, epsilon = 1e-6);
 
     Ok(())
 }
