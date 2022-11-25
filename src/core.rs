@@ -115,13 +115,14 @@ where
         self.gx.vecdot(&self.d)
     }
 
-    // FIXME: improve
+    /// Evaluate object value and gradient.
     pub fn evaluate(&mut self) -> Result<()> {
         self.fx = (self.eval_fn)(&self.x, &mut self.gx)?;
 
         // Compute the L1 norm of the variables and add it to the object value.
         if let Some(owlqn) = self.owlqn {
-            self.fx += owlqn.x1norm(&self.x)
+            self.fx += owlqn.x1norm(&self.x);
+            owlqn.compute_pseudo_gradient(&mut self.pg, &self.x, &self.gx);
         }
 
         self.evaluated = true;
@@ -212,13 +213,6 @@ where
     pub fn constrain_search_direction(&mut self) {
         if let Some(owlqn) = self.owlqn {
             owlqn.constrain_search_direction(&mut self.d, &self.pg);
-        }
-    }
-
-    // FIXME
-    pub fn update_owlqn_gradient(&mut self) {
-        if let Some(owlqn) = self.owlqn {
-            owlqn.compute_pseudo_gradient(&mut self.pg, &self.x, &self.gx);
         }
     }
 }

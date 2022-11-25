@@ -453,9 +453,6 @@ impl Lbfgs {
         // Evaluate the function value and its gradient.
         problem.evaluate()?;
 
-        // Compute the L1 norm of the variable and add it to the object value.
-        problem.update_owlqn_gradient();
-
         // Compute the search direction with current gradient.
         problem.update_search_direction();
 
@@ -523,8 +520,6 @@ where
             .find(problem, &mut self.step)
             .context("Failure during line search")?;
         let step_ls = self.step;
-
-        problem.update_owlqn_gradient();
 
         // Update LBFGS iteration data.
         let it = &mut self.lm_arr[self.end];
